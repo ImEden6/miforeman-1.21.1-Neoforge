@@ -1,0 +1,16 @@
+{
+  "values": {
+    "modern_industrialization:advanced_motor": {
+      "maxExtractedItems": 64
+    },
+    "modern_industrialization:large_advanced_motor": {
+      "maxExtractedItems": 512
+    },
+    "modern_industrialization:large_motor": {
+      "maxExtractedItems": 16
+    },
+    "modern_industrialization:motor": {
+      "maxExtractedItems": 2
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "item.miforeman.foreman_clipboard": "Foreman's Clipboard",
+
+  "miforeman.configuration.title": "MI Foreman Configs",
+  "miforeman.configuration.section.miforeman.common.toml": "MI Foreman Configs",
+  "miforeman.configuration.section.miforeman.common.toml.title": "MI Foreman Configs",
+  "miforeman.configuration.items": "Item List",
+  "miforeman.configuration.logDirtBlock": "Log Dirt Block",
+  "miforeman.configuration.magicNumberIntroduction": "Magic Number Text",
+  "miforeman.configuration.magicNumber": "Magic Number"
+}
