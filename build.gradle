@@ -63,6 +63,12 @@ repositories {
             includeGroup "earth.terrarium.athena"
         }
     }
+    maven {
+        url "https://www.cursemaven.com"
+        content {
+            includeGroup "curse.maven"
+        }
+    }
 }
 
 base {
@@ -153,7 +159,8 @@ configurations {
 }
 
 dependencies {
-    implementation 'aztech:Modern-Industrialization:0.0.0-local'
+    implementation "curse.maven:modern-industrialization-405388:8439736"
+    localRuntime "curse.maven:guideme-1173950:8129788"
 
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime

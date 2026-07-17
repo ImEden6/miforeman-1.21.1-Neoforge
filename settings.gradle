@@ -8,5 +8,3 @@ plugins {
     id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
 }
 
-includeBuild('references/Modern-Industrialization-1.21.x')
-

@@ -163,7 +163,7 @@ public class ServerMonitoringManager {
         List<ConfigurableItemStack> itemInputs = crafter.getInventory().getItemInputs();
         List<ConfigurableFluidStack> fluidInputs = crafter.getInventory().getFluidInputs();
 
-        List<RecipeHolder<MachineRecipe>> candidates = CrafterComponent.getRecipes(level, crafter.getBehavior().recipeType(), itemInputs);
+        Collection<RecipeHolder<MachineRecipe>> candidates = CrafterComponent.getRecipes(level, crafter.getBehavior().recipeType(), itemInputs);
 
         boolean hasInputsForAnyRecipe = false;
         for (RecipeHolder<MachineRecipe> holder : candidates) {
