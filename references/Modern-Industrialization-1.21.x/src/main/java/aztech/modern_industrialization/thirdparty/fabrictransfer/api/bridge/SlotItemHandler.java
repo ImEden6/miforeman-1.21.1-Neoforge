@@ -24,6 +24,8 @@
 
 package aztech.modern_industrialization.thirdparty.fabrictransfer.api.bridge;
 
+import aztech.modern_industrialization.blocks.storage.AbstractStorageBlockEntity;
+import aztech.modern_industrialization.inventory.FilledItemStorage;
 import aztech.modern_industrialization.thirdparty.fabrictransfer.api.item.ItemVariant;
 import aztech.modern_industrialization.thirdparty.fabrictransfer.api.storage.base.SingleSlotStorage;
 import aztech.modern_industrialization.thirdparty.fabrictransfer.api.transaction.Transaction;
@@ -31,7 +33,17 @@ import com.google.common.primitives.Ints;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.items.IItemHandler;
 
-public record SlotItemHandler(SingleSlotStorage<ItemVariant> storage) implements IItemHandler {
+public final class SlotItemHandler implements IItemHandler, FilledItemStorage {
+    private final AbstractStorageBlockEntity<ItemVariant> storage;
+
+    public SlotItemHandler(AbstractStorageBlockEntity<ItemVariant> storage) {
+        this.storage = storage;
+    }
+
+    public SingleSlotStorage<ItemVariant> storage() {
+        return storage;
+    }
+
     @Override
     public int getSlots() {
         return 1;
@@ -39,7 +51,7 @@ public record SlotItemHandler(SingleSlotStorage<ItemVariant> storage) implements
 
     @Override
     public ItemStack getStackInSlot(int slot) {
-        return storage.getResource().toStack(Ints.saturatedCast(storage.getAmount()));
+        return storage.getItemStack();
     }
 
     @Override
@@ -82,5 +94,10 @@ public record SlotItemHandler(SingleSlotStorage<ItemVariant> storage) implements
     @Override
     public boolean isItemValid(int slot, ItemStack stack) {
         return true;
+    }
+
+    @Override
+    public boolean isFull() {
+        return storage.getAmount() >= storage.getCapacity();
     }
 }

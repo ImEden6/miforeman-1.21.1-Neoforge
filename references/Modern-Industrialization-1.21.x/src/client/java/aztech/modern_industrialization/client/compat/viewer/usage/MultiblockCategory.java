@@ -27,23 +27,20 @@ package aztech.modern_industrialization.client.compat.viewer.usage;
 import aztech.modern_industrialization.MI;
 import aztech.modern_industrialization.MIItem;
 import aztech.modern_industrialization.MIText;
+import aztech.modern_industrialization.client.compat.viewer.abstraction.IngredientCount;
 import aztech.modern_industrialization.client.compat.viewer.abstraction.ViewerCategory;
 import aztech.modern_industrialization.compat.rei.machines.ReiMachineRecipes;
 import aztech.modern_industrialization.machines.multiblocks.ShapeTemplate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.SortedMap;
-import java.util.TreeMap;
 import java.util.function.Consumer;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
+import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeManager;
-import net.minecraft.world.level.block.state.BlockState;
 import org.jspecify.annotations.Nullable;
 
 public class MultiblockCategory extends ViewerCategory<MultiblockCategory.Recipe> {
@@ -61,13 +58,13 @@ public class MultiblockCategory extends ViewerCategory<MultiblockCategory.Recipe
     @Override
     public void buildRecipes(RecipeManager recipeManager, RegistryAccess registryAccess, Consumer<Recipe> consumer) {
         for (ReiMachineRecipes.MultiblockShape entry : ReiMachineRecipes.multiblockShapes) {
-            consumer.accept(new Recipe(entry.machine(), entry.shapeTemplate(), entry.alternative()));
+            consumer.accept(new Recipe(entry.machine(), entry.shapeTemplate(), entry.alternative(), registryAccess));
         }
     }
 
     @Override
     public void buildLayout(Recipe recipe, LayoutBuilder builder) {
-        builder.invisibleInput(recipe.controller);
+        builder.invisibleInput(Ingredient.of(recipe.controller));
         builder.outputSlot((width / 2) - 8, 5).item(recipe.controller);
 
         builder.scrollableSlots(COLUMNS, ROWS, recipe.materials);
@@ -85,24 +82,29 @@ public class MultiblockCategory extends ViewerCategory<MultiblockCategory.Recipe
 
     protected static class Recipe {
         public final ItemStack controller;
-        public final List<ItemStack> materials = new ArrayList<>();
+        public final List<IngredientCount> materials = new ArrayList<>();
         public final ResourceLocation id;
 
-        public Recipe(ResourceLocation controller, ShapeTemplate shapeTemplate, @Nullable String alternative) {
+        public Recipe(ResourceLocation controller, ShapeTemplate shapeTemplate, @Nullable String alternative, RegistryAccess registries) {
             this.controller = BuiltInRegistries.ITEM.get(controller).getDefaultInstance();
-            SortedMap<Item, Integer> materials = new TreeMap<>(Comparator.comparing(BuiltInRegistries.ITEM::getKey));
+            List<IngredientCount> materials = new ArrayList<>();
 
+            outer:
             for (var entry : shapeTemplate.simpleMembers.entrySet()) {
-                BlockState state = entry.getValue().getPreviewState();
-                Item item = state.getBlock().asItem();
-                if (item != Items.AIR) {
-                    materials.put(item, 1 + materials.getOrDefault(item, 0));
+                var previewState = entry.getValue().getItemPreviewState(registries);
+                if (!previewState.isEmpty()) {
+                    for (var materialStack : materials) {
+                        if (materialStack.ingredient.equals(previewState)) {
+                            materialStack.count++;
+                            continue outer;
+                        }
+                    }
+                    materials.add(new IngredientCount(previewState));
                 }
             }
 
-            for (var entry : materials.entrySet()) {
-                this.materials.add(new ItemStack(entry.getKey(), entry.getValue()));
-            }
+            materials.sort(Comparator.comparing((IngredientCount material) -> material.count).reversed());
+            this.materials.addAll(materials);
             this.id = ResourceLocation.fromNamespaceAndPath(controller.getNamespace(),
                     "/" + controller.getPath() + "/" + materials.size() + (alternative == null ? "" : "/" + alternative));
         }

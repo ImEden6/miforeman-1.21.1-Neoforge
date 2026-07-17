@@ -25,15 +25,15 @@
 package aztech.modern_industrialization.client.compat.viewer.abstraction;
 
 import java.util.List;
-import net.minecraft.world.item.ItemStack;
+import org.jspecify.annotations.Nullable;
 
 public class ViewerPageManager {
-    public final List<ItemStack> stacks;
+    public final List<IngredientCount> stacks;
     public final int pageSize;
 
     public int currentPage;
 
-    public ViewerPageManager(List<ItemStack> stacks, int pageSize) {
+    public ViewerPageManager(List<IngredientCount> stacks, int pageSize) {
         this.stacks = stacks;
         this.pageSize = pageSize;
     }
@@ -53,11 +53,12 @@ public class ViewerPageManager {
         }
     }
 
-    public ItemStack getStack(int index) {
+    @Nullable
+    public IngredientCount get(int index) {
         index += pageSize * currentPage;
         if (index < stacks.size()) {
             return stacks.get(index);
         }
-        return ItemStack.EMPTY;
+        return null;
     }
 }
