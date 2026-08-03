@@ -53,3 +53,6 @@ run/
 **/src/generated/**/.cache/
 repo/
 !**/src/**/repo/
+
+### Reference clones (third-party source pulled in for research, not part of this mod) ###
+references/
