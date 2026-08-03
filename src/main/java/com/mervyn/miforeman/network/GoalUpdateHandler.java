@@ -31,7 +31,10 @@ public class GoalUpdateHandler {
                         Optional.of(plan),
                         newGoal.perHour(),
                         newGoal.threshold(),
-                        newGoal.linkedMachines()
+                        newGoal.linkedMachines(),
+                        newGoal.graphLayout(),
+                        newGoal.machineLinkHistory(),
+                        newGoal.rejectedMachines()
                 );
                 stack.set(ModComponents.PRODUCTION_GOAL.get(), updatedGoal);
             }

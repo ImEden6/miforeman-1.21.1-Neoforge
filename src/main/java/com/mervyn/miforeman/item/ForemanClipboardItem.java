@@ -1,5 +1,6 @@
 package com.mervyn.miforeman.item;
 
+import com.mervyn.miforeman.goal.MachineLinkHistory;
 import com.mervyn.miforeman.goal.ProductionGoal;
 import com.mervyn.miforeman.registry.ModComponents;
 import java.util.ArrayList;
@@ -43,37 +44,34 @@ public class ForemanClipboardItem extends Item {
                 }
 
                 List<BlockPos> linked = new ArrayList<>(goal.linkedMachines());
-                if (linked.contains(pos)) {
+                List<BlockPos> rejected = new ArrayList<>(goal.rejectedMachines());
+                boolean wasLinked = linked.contains(pos);
+                MachineLinkHistory history;
+                if (wasLinked) {
                     linked.remove(pos);
-                    ProductionGoal updatedGoal = new ProductionGoal(
-                            goal.name(),
-                            goal.type(),
-                            goal.targetId(),
-                            goal.rate(),
-                            goal.recipeSelections(),
-                            goal.plan(),
-                            goal.perHour(),
-                            goal.threshold(),
-                            linked
-                    );
-                    stack.set(ModComponents.PRODUCTION_GOAL.get(), updatedGoal);
+                    history = goal.machineLinkHistory().withToggle(pos, true, false);
                     player.sendSystemMessage(Component.literal("Unlinked machine at " + pos.toShortString()).withStyle(ChatFormatting.YELLOW));
                 } else {
                     linked.add(pos);
-                    ProductionGoal updatedGoal = new ProductionGoal(
-                            goal.name(),
-                            goal.type(),
-                            goal.targetId(),
-                            goal.rate(),
-                            goal.recipeSelections(),
-                            goal.plan(),
-                            goal.perHour(),
-                            goal.threshold(),
-                            linked
-                    );
-                    stack.set(ModComponents.PRODUCTION_GOAL.get(), updatedGoal);
+                    rejected.remove(pos); // manual link always clears a sticky rejection
+                    history = goal.machineLinkHistory().withToggle(pos, false, true);
                     player.sendSystemMessage(Component.literal("Linked machine at " + pos.toShortString()).withStyle(ChatFormatting.GREEN));
                 }
+                ProductionGoal updatedGoal = new ProductionGoal(
+                        goal.name(),
+                        goal.type(),
+                        goal.targetId(),
+                        goal.rate(),
+                        goal.recipeSelections(),
+                        goal.plan(),
+                        goal.perHour(),
+                        goal.threshold(),
+                        linked,
+                        goal.graphLayout(),
+                        history,
+                        rejected
+                );
+                stack.set(ModComponents.PRODUCTION_GOAL.get(), updatedGoal);
             }
             return InteractionResult.sidedSuccess(level.isClientSide());
         }

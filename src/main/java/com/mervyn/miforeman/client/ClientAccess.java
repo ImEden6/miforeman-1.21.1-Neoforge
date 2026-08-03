@@ -15,4 +15,11 @@ public class ClientAccess {
             clipScreen.updateLiveMonitoring(payload.machines());
         }
     }
+
+    public static void handleScanResult(com.mervyn.miforeman.network.ScanResultPayload payload) {
+        var screen = Minecraft.getInstance().screen;
+        if (screen instanceof ClipboardScreen clipScreen) {
+            clipScreen.updateScanResults(payload.candidates());
+        }
+    }
 }

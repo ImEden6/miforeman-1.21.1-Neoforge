@@ -105,5 +105,15 @@ public class MIForeman {
                 com.mervyn.miforeman.network.LiveMonitoringPayload.STREAM_CODEC,
                 com.mervyn.miforeman.network.MonitoringPacketHandlers::handleResponse
         );
+        registrar.playToServer(
+                com.mervyn.miforeman.network.ScanRequestPayload.TYPE,
+                com.mervyn.miforeman.network.ScanRequestPayload.STREAM_CODEC,
+                com.mervyn.miforeman.network.ScanPacketHandlers::handleRequest
+        );
+        registrar.playToClient(
+                com.mervyn.miforeman.network.ScanResultPayload.TYPE,
+                com.mervyn.miforeman.network.ScanResultPayload.STREAM_CODEC,
+                com.mervyn.miforeman.network.ScanPacketHandlers::handleResponse
+        );
     }
 }

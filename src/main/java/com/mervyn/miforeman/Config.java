@@ -28,6 +28,10 @@ public class Config {
             .comment("A list of items to log on common setup.")
             .defineListAllowEmpty("items", List.of("minecraft:iron_ingot"), () -> "", Config::validateItemName);
 
+    public static final ModConfigSpec.IntValue AUTOLINK_SCAN_RADIUS_CHUNKS = BUILDER
+            .comment("Default chunk radius for the machine auto-detect scan (centered on the player). Can be overridden per-scan in the review panel.")
+            .defineInRange("autolinkScanRadiusChunks", 4, 1, 16);
+
     static final ModConfigSpec SPEC = BUILDER.build();
 
     private static boolean validateItemName(final Object obj) {

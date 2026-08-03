@@ -204,5 +204,118 @@ public class ForemanGameTests {
 
         helper.succeed();
     }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testCycleRecipePlan(GameTestHelper helper) {
+        var level = helper.getLevel();
+
+        ResourceLocation targetId = ResourceLocation.parse("modern_industrialization:quantum_upgrade");
+        double rate = 1.0;
+
+        ProductionGoal goal = new ProductionGoal("cycle_test", ProductionGoal.TargetType.ITEM, targetId, rate);
+
+        // Compute initial plan and graph
+        var initialGraph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
+
+        // Find the first resource node with ambiguities
+        com.mervyn.miforeman.goal.RecipeGraphNode ambiguousNode = null;
+        for (var node : initialGraph.nodes().values()) {
+            if (node.getType() != com.mervyn.miforeman.goal.NodeType.MACHINE && !node.getAmbiguityOptions().isEmpty()) {
+                ambiguousNode = node;
+                break;
+            }
+        }
+
+        if (ambiguousNode == null) {
+            helper.fail("Expected to find at least one ambiguous resource node in the quantum_upgrade plan.");
+            return;
+        }
+
+        java.util.List<ResourceLocation> options = ambiguousNode.getAmbiguityOptions();
+        if (options.size() < 2) {
+            helper.fail("Ambiguous node " + ambiguousNode.getId() + " had fewer than 2 options: " + options.size());
+            return;
+        }
+
+        ResourceLocation firstRecipe = options.get(0);
+        ResourceLocation secondRecipe = options.get(1);
+
+        // Update selections to second recipe choice
+        java.util.Map<ResourceLocation, ResourceLocation> selections = new java.util.HashMap<>(goal.recipeSelections());
+        selections.put(ambiguousNode.getId(), secondRecipe);
+
+        ProductionGoal updatedGoal = new ProductionGoal(
+            goal.name(), goal.type(), goal.targetId(), goal.rate(),
+            selections, java.util.Optional.empty(), goal.perHour(),
+            goal.threshold(), goal.linkedMachines()
+        );
+
+        // Recompute plan and graph
+        var updatedGraph = RecipeGraphTraverser.computeRecipeGraph(level, updatedGoal);
+
+        // Assert that the updated graph contains the second recipe node but NOT the first recipe node
+        boolean hasFirstRecipe = updatedGraph.nodes().containsKey(firstRecipe);
+        boolean hasSecondRecipe = updatedGraph.nodes().containsKey(secondRecipe);
+
+        if (hasFirstRecipe) {
+            helper.fail("After cycling recipe to " + secondRecipe + ", the graph still contained the default recipe " + firstRecipe);
+            return;
+        }
+
+        if (!hasSecondRecipe) {
+            helper.fail("After cycling recipe to " + secondRecipe + ", the graph did not contain the selected recipe node.");
+            return;
+        }
+
+        // Verify that the resource node's selected ambiguity is updated
+        var updatedResNode = updatedGraph.nodes().get(ambiguousNode.getId());
+        if (updatedResNode == null) {
+            helper.fail("Resource node " + ambiguousNode.getId() + " is missing from the updated graph.");
+            return;
+        }
+
+        if (!secondRecipe.equals(updatedResNode.getSelectedAmbiguity())) {
+            helper.fail("Expected selected ambiguity to be " + secondRecipe + ", but got: " + updatedResNode.getSelectedAmbiguity());
+            return;
+        }
+
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testBuildRecipeIndex(GameTestHelper helper) {
+        var level = helper.getLevel();
+
+        ResourceLocation targetId = ResourceLocation.parse("modern_industrialization:quantum_upgrade");
+        ProductionGoal goal = new ProductionGoal("recipe_index_test", ProductionGoal.TargetType.ITEM, targetId, 1.0);
+
+        var graph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
+
+        java.util.Set<ResourceLocation> recipeIndex = com.mervyn.miforeman.goal.MachineScanner.buildRecipeIndex(graph);
+
+        long expectedMachineNodeCount = graph.nodes().values().stream()
+                .filter(node -> node.getType() == com.mervyn.miforeman.goal.NodeType.MACHINE)
+                .count();
+
+        if (expectedMachineNodeCount == 0) {
+            helper.fail("Expected at least one MACHINE-type node in the quantum_upgrade graph.");
+            return;
+        }
+
+        if (recipeIndex.size() != expectedMachineNodeCount) {
+            helper.fail("Expected recipe index to contain exactly " + expectedMachineNodeCount
+                    + " entries (one per MACHINE node), but got: " + recipeIndex.size());
+            return;
+        }
+
+        for (var node : graph.nodes().values()) {
+            if (node.getType() == com.mervyn.miforeman.goal.NodeType.MACHINE && !recipeIndex.contains(node.getId())) {
+                helper.fail("Recipe index is missing MACHINE node id: " + node.getId());
+                return;
+            }
+        }
+
+        helper.succeed();
+    }
 }
 
