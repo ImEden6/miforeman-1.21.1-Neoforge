@@ -161,6 +161,10 @@ configurations {
 dependencies {
     implementation "curse.maven:modern-industrialization-405388:8439736"
     localRuntime "curse.maven:guideme-1173950:8129788"
+    // BlockUI is a small dependency-free UI library (see .scratch/blockui-define-goal-trial/issues/03-add-blockui-dependency.md),
+    // jarJar-embedded rather than left as a separate player-installed mod like Modern Industrialization above --
+    // requiring a whole extra mod install just for one wizard step isn't a reasonable ask.
+    jarJar(implementation("curse.maven:blockui-522992:7541336"))
 
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
