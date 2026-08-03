@@ -243,6 +243,252 @@ public final class RecipeGraphTraverser {
         }
     }
 
+    public static RecipeGraph computeRecipeGraph(Level level, ProductionGoal goal) {
+        RecipeManager recipeManager = level.getRecipeManager();
+
+        Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> itemRecipes = new HashMap<>();
+        Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> fluidRecipes = new HashMap<>();
+
+        for (var recipeType : MIMachineRecipeTypes.getRecipeTypes()) {
+            for (var holder : recipeManager.getAllRecipesFor(recipeType)) {
+                MachineRecipe recipe = holder.value();
+                for (var output : recipe.itemOutputs) {
+                    if (output.amount() > 0 && output.probability() > 0) {
+                        ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(output.variant().getItem());
+                        itemRecipes.computeIfAbsent(itemId, k -> new ArrayList<>()).add(holder);
+                    }
+                }
+                for (var output : recipe.fluidOutputs) {
+                    if (output.amount() > 0 && output.probability() > 0) {
+                        ResourceLocation fluidId = BuiltInRegistries.FLUID.getKey(output.fluid());
+                        fluidRecipes.computeIfAbsent(fluidId, k -> new ArrayList<>()).add(holder);
+                    }
+                }
+            }
+        }
+
+        Map<ResourceLocation, RecipeGraphNode> nodes = new HashMap<>();
+        List<GraphEdge> edges = new ArrayList<>();
+        Set<ResourceLocation> visited = new HashSet<>();
+
+        buildGraph(
+                recipeManager,
+                itemRecipes,
+                fluidRecipes,
+                goal.type(),
+                goal.targetId(),
+                goal.rate(),
+                goal.recipeSelections(),
+                visited,
+                nodes,
+                edges,
+                0
+        );
+
+        return new RecipeGraph(goal.targetId(), goal.rate(), nodes, edges);
+    }
+
+    private static void buildGraph(
+            RecipeManager recipeManager,
+            Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> itemRecipes,
+            Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> fluidRecipes,
+            TargetType type,
+            ResourceLocation resourceId,
+            double neededRate,
+            Map<ResourceLocation, ResourceLocation> selections,
+            Set<ResourceLocation> visited,
+            Map<ResourceLocation, RecipeGraphNode> nodes,
+            List<GraphEdge> edges,
+            int depth) {
+
+        if (visited.contains(resourceId)) {
+            return;
+        }
+
+        visited.add(resourceId);
+
+        List<RecipeHolder<MachineRecipe>> candidates = type == TargetType.ITEM
+                ? itemRecipes.getOrDefault(resourceId, Collections.emptyList())
+                : fluidRecipes.getOrDefault(resourceId, Collections.emptyList());
+
+        if (candidates.isEmpty()) {
+            // Raw input
+            RecipeGraphNode node = nodes.get(resourceId);
+            if (node != null) {
+                node.setRequiredRate(node.getRequiredRate() + neededRate);
+                node.setDepth(Math.min(node.getDepth(), depth));
+            } else {
+                nodes.put(resourceId, new RecipeGraphNode(
+                        resourceId, NodeType.RAW, null, null,
+                        neededRate, 0,
+                        List.of(), null, depth
+                ));
+            }
+            visited.remove(resourceId);
+            return;
+        }
+
+        // Resolve chosen recipe
+        RecipeHolder<MachineRecipe> chosenHolder = null;
+        List<ResourceLocation> ambiguityOptions = new ArrayList<>();
+        if (candidates.size() > 1) {
+            ResourceLocation selectedRecipeId = selections.get(resourceId);
+            if (selectedRecipeId != null) {
+                for (var candidate : candidates) {
+                    if (candidate.id().equals(selectedRecipeId)) {
+                        chosenHolder = candidate;
+                        break;
+                    }
+                }
+            }
+            ambiguityOptions = candidates.stream().map(RecipeHolder::id).toList();
+        }
+        if (chosenHolder == null) {
+            chosenHolder = candidates.get(0);
+        }
+
+        MachineRecipe chosenRecipe = chosenHolder.value();
+        ResourceLocation recipeId = chosenHolder.id();
+
+        NodeType nodeType = (depth == 0) ? NodeType.TARGET : NodeType.INTERMEDIATE;
+        RecipeGraphNode resNode = nodes.get(resourceId);
+        if (resNode != null) {
+            resNode.setRequiredRate(resNode.getRequiredRate() + neededRate);
+            resNode.setDepth(Math.min(resNode.getDepth(), depth));
+            if (candidates.size() > 1) {
+                resNode.setSelectedAmbiguity(selections.get(resourceId) != null ? selections.get(resourceId) : chosenHolder.id());
+            }
+        } else {
+            resNode = new RecipeGraphNode(
+                    resourceId, nodeType, null, null,
+                    neededRate, 0,
+                    ambiguityOptions, candidates.size() > 1 ? (selections.get(resourceId) != null ? selections.get(resourceId) : chosenHolder.id()) : null, depth
+            );
+            nodes.put(resourceId, resNode);
+        }
+
+        double outputAmount = 0.0;
+        double outputProbability = 1.0;
+        if (type == TargetType.ITEM) {
+            for (var output : chosenRecipe.itemOutputs) {
+                if (BuiltInRegistries.ITEM.getKey(output.variant().getItem()).equals(resourceId)) {
+                    outputAmount = output.amount();
+                    outputProbability = output.probability();
+                    break;
+                }
+            }
+        } else if (type == TargetType.FLUID) {
+            for (var output : chosenRecipe.fluidOutputs) {
+                if (BuiltInRegistries.FLUID.getKey(output.fluid()).equals(resourceId)) {
+                    outputAmount = output.amount();
+                    outputProbability = output.probability();
+                    break;
+                }
+            }
+        }
+
+        if (outputAmount <= 0.0 || outputProbability <= 0.0) {
+            visited.remove(resourceId);
+            return;
+        }
+
+        double runsPerSecond = neededRate / (outputAmount * outputProbability);
+        double machineCount = (runsPerSecond * chosenRecipe.duration) / 20.0;
+
+        ResourceLocation machineTypeId = BuiltInRegistries.RECIPE_TYPE.getKey(chosenRecipe.getType());
+
+        RecipeGraphNode machNode = nodes.get(recipeId);
+        if (machNode != null) {
+            machNode.setRequiredRate(machNode.getRequiredRate() + neededRate);
+            machNode.setMachineCount(machNode.getMachineCount() + machineCount);
+            machNode.setDepth(Math.min(machNode.getDepth(), depth + 1));
+        } else {
+            machNode = new RecipeGraphNode(
+                    recipeId, NodeType.MACHINE, machineTypeId, chosenRecipe,
+                    neededRate, machineCount,
+                    ambiguityOptions, selections.get(resourceId),
+                    depth + 1
+            );
+            nodes.put(recipeId, machNode);
+        }
+
+        // Add edge from machine to resource
+        GraphEdge outEdge = new GraphEdge(recipeId, resourceId, neededRate);
+        if (!edges.contains(outEdge)) {
+            edges.add(outEdge);
+        }
+        if (!resNode.getInputs().contains(outEdge)) resNode.getInputs().add(outEdge);
+        if (!machNode.getOutputs().contains(outEdge)) machNode.getOutputs().add(outEdge);
+
+        // Recurse into item inputs
+        for (var input : chosenRecipe.itemInputs) {
+            List<Item> inputItems = input.getInputItems();
+            if (!inputItems.isEmpty()) {
+                Item firstItem = inputItems.get(0);
+                ResourceLocation inputItemId = BuiltInRegistries.ITEM.getKey(firstItem);
+                double neededInputRate = runsPerSecond * input.amount() * input.probability();
+
+                buildGraph(
+                        recipeManager,
+                        itemRecipes,
+                        fluidRecipes,
+                        TargetType.ITEM,
+                        inputItemId,
+                        neededInputRate,
+                        selections,
+                        visited,
+                        nodes,
+                        edges,
+                        depth + 2
+                );
+
+                // Add edge from input resource to machine
+                GraphEdge inEdge = new GraphEdge(inputItemId, recipeId, neededInputRate);
+                if (!edges.contains(inEdge)) {
+                    edges.add(inEdge);
+                }
+                RecipeGraphNode inputResNode = nodes.get(inputItemId);
+                if (inputResNode != null) {
+                    if (!inputResNode.getOutputs().contains(inEdge)) inputResNode.getOutputs().add(inEdge);
+                }
+                if (!machNode.getInputs().contains(inEdge)) machNode.getInputs().add(inEdge);
+            }
+        }
+
+        // Treat fluid inputs as raw inputs directly
+        for (var input : chosenRecipe.fluidInputs) {
+            List<Fluid> inputFluids = input.getInputFluids();
+            if (!inputFluids.isEmpty()) {
+                Fluid firstFluid = inputFluids.get(0);
+                ResourceLocation inputFluidId = BuiltInRegistries.FLUID.getKey(firstFluid);
+                double neededInputRate = runsPerSecond * input.amount() * input.probability();
+
+                RecipeGraphNode fluidNode = nodes.get(inputFluidId);
+                if (fluidNode != null) {
+                    fluidNode.setRequiredRate(fluidNode.getRequiredRate() + neededInputRate);
+                    fluidNode.setDepth(Math.min(fluidNode.getDepth(), depth + 2));
+                } else {
+                    fluidNode = new RecipeGraphNode(
+                            inputFluidId, NodeType.RAW, null, null,
+                            neededInputRate, 0,
+                            List.of(), null, depth + 2
+                    );
+                    nodes.put(inputFluidId, fluidNode);
+                }
+
+                // Add edge from fluid to machine
+                GraphEdge inEdge = new GraphEdge(inputFluidId, recipeId, neededInputRate);
+                if (!edges.contains(inEdge)) {
+                    edges.add(inEdge);
+                }
+                if (!fluidNode.getOutputs().contains(inEdge)) fluidNode.getOutputs().add(inEdge);
+                if (!machNode.getInputs().contains(inEdge)) machNode.getInputs().add(inEdge);
+            }
+        }
+
+        visited.remove(resourceId);
+    }
+
     private RecipeGraphTraverser() {
     }
 }
