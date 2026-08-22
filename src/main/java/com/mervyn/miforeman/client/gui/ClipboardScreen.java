@@ -1,11 +1,6 @@
 package com.mervyn.miforeman.client.gui;
 
-import com.mervyn.miforeman.MIForeman;
-import aztech.modern_industrialization.machines.recipe.MachineRecipe;
 import com.mervyn.miforeman.goal.ProductionGoal;
-import com.mervyn.miforeman.goal.RecipeGraphTraverser;
-import com.mervyn.miforeman.goal.ProductionGoal.TargetType;
-import com.mervyn.miforeman.goal.ProductionGoal.FactoryPlan;
 import com.mervyn.miforeman.registry.ModComponents;
 import com.mervyn.miforeman.network.GoalUpdatePayload;
 import com.mervyn.miforeman.network.RequestMonitoringUpdatePayload;
@@ -15,11 +10,8 @@ import com.mervyn.miforeman.client.gui.widget.GraphCanvas;
 import com.mervyn.miforeman.client.gui.widget.DetailCard;
 import com.mervyn.miforeman.client.gui.widget.ReviewListPanel;
 import com.mervyn.miforeman.client.WorldHighlightRenderer;
-import com.mervyn.miforeman.goal.RecipeGraph;
 import com.mervyn.miforeman.goal.RecipeGraphNode;
 import com.mervyn.miforeman.goal.NodeType;
-import com.mervyn.miforeman.goal.GraphLayoutState;
-import com.mervyn.miforeman.goal.MachineLinkHistory;
 import com.mervyn.miforeman.network.ScanRequestPayload;
 import com.mervyn.miforeman.network.ScanResultPayload;
 
@@ -30,9 +22,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.BlockPos;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 
@@ -70,20 +60,8 @@ public class ClipboardScreen extends Screen {
     private boolean hasExistingGoal = false;
     private boolean stepInitialized = false;
 
-    private String goalName;
-    private TargetType targetType;
-    private String targetIdStr;
-    private double rate;
-    private final Map<ResourceLocation, ResourceLocation> recipeSelections = new HashMap<>();
-    private boolean perHour;
-    private double threshold;
-    private final List<BlockPos> linkedMachines = new ArrayList<>();
-    private GraphLayoutState graphLayout = GraphLayoutState.EMPTY;
-    private MachineLinkHistory machineLinkHistory = MachineLinkHistory.EMPTY;
-    private final List<BlockPos> rejectedMachines = new ArrayList<>();
-
-    private FactoryPlan currentPlan;
-    private String errorMessage;
+    private final GoalDraft goalDraft;
+    private final MonitoringState monitoringState;
 
     private ResourceLocation selectedNodeId = null;
     private GraphCanvas graphCanvas;
@@ -100,54 +78,17 @@ public class ClipboardScreen extends Screen {
 
     private Button nextButton;
     private Button backButton;
-    private final List<LiveMonitoringPayload.MachineStatusData> liveData = new ArrayList<>();
-    private int tickCount = 0;
 
     private boolean isMinimized = false;
     private Button toggleModeButton;
 
-    private final List<ScanResultPayload.Candidate> lastScanResults = new ArrayList<>();
-    private boolean showRejected = false;
-    private boolean showInWorldHighlights;
-
     public ClipboardScreen(ItemStack stack) {
         super(Component.literal("Clipboard Goal Editor"));
 
-        // WorldHighlightRenderer's on/off state is static and outlives this screen's lifecycle
-        // (highlights are meant to keep rendering after the screen closes) -- read the live
-        // value here instead of hardcoding false, or the button lies about the real state
-        // every time the clipboard is reopened.
-        this.showInWorldHighlights = WorldHighlightRenderer.isEnabled();
-
         ProductionGoal goal = stack.get(ModComponents.PRODUCTION_GOAL.get());
         this.hasExistingGoal = (goal != null);
-        this.currentPlan = (goal != null) ? goal.plan().orElse(null) : null;
-
-        if (goal != null) {
-            this.goalName = goal.name();
-            this.targetType = goal.type();
-            this.targetIdStr = goal.targetId().toString();
-            this.rate = goal.rate();
-            this.recipeSelections.putAll(goal.recipeSelections());
-            this.perHour = goal.perHour();
-            this.threshold = goal.threshold();
-            this.linkedMachines.addAll(goal.linkedMachines());
-            this.graphLayout = goal.graphLayout();
-            this.machineLinkHistory = goal.machineLinkHistory();
-            this.rejectedMachines.addAll(goal.rejectedMachines());
-
-            // Adjust rate back to per hour for display if perHour is enabled
-            if (this.perHour) {
-                this.rate = this.rate * 60.0;
-            }
-        } else {
-            this.goalName = "Quantum Production";
-            this.targetType = TargetType.ITEM;
-            this.targetIdStr = "modern_industrialization:quantum_upgrade";
-            this.rate = 1.0;
-            this.perHour = false;
-            this.threshold = 0.8;
-        }
+        this.goalDraft = (goal != null) ? GoalDraft.fromGoal(goal) : GoalDraft.defaults();
+        this.monitoringState = (goal != null) ? MonitoringState.fromGoal(goal) : MonitoringState.defaults();
     }
 
     private int guiWidth() {
@@ -168,7 +109,7 @@ public class ClipboardScreen extends Screen {
             // with graph == null even though currentPlan itself is non-null. Recompute
             // whenever the graph is missing, not just when the whole plan is, or
             // GraphCanvas never gets built when backing up from Monitor into Review Plan.
-            if (hasExistingGoal && (this.currentPlan == null || this.currentPlan.graph() == null)) {
+            if (hasExistingGoal && (this.goalDraft.currentPlan == null || this.goalDraft.currentPlan.graph() == null)) {
                 computePlan();
             }
             stepInitialized = true;
@@ -178,7 +119,7 @@ public class ClipboardScreen extends Screen {
 
     private void rebuildStep(int step) {
         this.clearWidgets();
-        this.errorMessage = null;
+        this.goalDraft.errorMessage = null;
 
         int guiWidth = guiWidth();
         int guiHeight = guiHeight();
@@ -225,20 +166,16 @@ public class ClipboardScreen extends Screen {
     private void openDefineGoalWindow(String initialError) {
         DefineGoalWindow window = new DefineGoalWindow(
                 guiWidth(), guiHeight(),
-                this.goalName, this.targetType, this.targetIdStr, this.rate, this.perHour, this.threshold, initialError,
+                this.goalDraft.goalName, this.goalDraft.targetType, this.goalDraft.targetIdStr,
+                this.goalDraft.rate, this.goalDraft.perHour, this.goalDraft.threshold, initialError,
                 result -> {
-                    this.goalName = result.goalName();
-                    this.targetType = result.targetType();
-                    this.targetIdStr = result.targetIdStr();
-                    this.rate = result.rate();
-                    this.perHour = result.perHour();
-                    this.threshold = result.threshold();
+                    this.goalDraft.applyFormResult(result);
                     computePlan();
-                    if (this.errorMessage == null && this.currentPlan != null) {
+                    if (this.goalDraft.errorMessage == null && this.goalDraft.currentPlan != null) {
                         this.selectedNodeId = null;
                         goToStep(STEP_REVIEW_PLAN);
                     } else {
-                        openDefineGoalWindow(this.errorMessage);
+                        openDefineGoalWindow(this.goalDraft.errorMessage);
                     }
                 },
                 this::onClose
@@ -271,21 +208,21 @@ public class ClipboardScreen extends Screen {
         int btnY = top + guiHeight() - PADDING - ClipboardChrome.MAIN_BORDER - 22;
         int contentH = btnY - rowGap - canvasY;
 
-        if (this.currentPlan != null && this.currentPlan.graph() != null) {
+        if (this.goalDraft.currentPlan != null && this.goalDraft.currentPlan.graph() != null) {
             int detailWidth = detailCardCollapsed ? 0 : (int) (contentW * 0.42);
             int canvasWidth = contentW - (detailCardCollapsed ? 0 : detailWidth + 6);
 
             graphCanvas = new GraphCanvas(contentX, canvasY, canvasWidth, contentH,
-                    this.currentPlan.graph(), this.graphLayout, cameraX, cameraY, cameraZoom,
+                    this.goalDraft.currentPlan.graph(), this.goalDraft.graphLayout, cameraX, cameraY, cameraZoom,
                     selectedNodeId,
                     nodeId -> {
                         selectedNodeId = nodeId;
                         if (detailCard != null) {
-                            detailCard.setNode(this.currentPlan.graph().node(nodeId));
+                            detailCard.setNode(this.goalDraft.currentPlan.graph().node(nodeId));
                         }
                     },
                     layout -> {
-                        this.graphLayout = layout;
+                        this.goalDraft.graphLayout = layout;
                         if (undoLayoutButton != null) undoLayoutButton.active = graphCanvas.canUndo();
                         if (redoLayoutButton != null) redoLayoutButton.active = graphCanvas.canRedo();
                     },
@@ -300,11 +237,11 @@ public class ClipboardScreen extends Screen {
             this.addRenderableWidget(graphCanvas);
 
             if (!detailCardCollapsed) {
-                RecipeGraphNode selectedNode = selectedNodeId != null ? this.currentPlan.graph().node(selectedNodeId) : null;
-                detailCard = new DetailCard(contentX + canvasWidth + 6, canvasY, detailWidth, contentH, selectedNode, this.currentPlan, this.perHour, (resId, choiceRecipeId) -> {
-                    this.recipeSelections.put(resId, choiceRecipeId);
+                RecipeGraphNode selectedNode = selectedNodeId != null ? this.goalDraft.currentPlan.graph().node(selectedNodeId) : null;
+                detailCard = new DetailCard(contentX + canvasWidth + 6, canvasY, detailWidth, contentH, selectedNode, this.goalDraft.currentPlan, this.goalDraft.perHour, (resId, choiceRecipeId) -> {
+                    this.goalDraft.recipeSelections.put(resId, choiceRecipeId);
                     computePlan();
-                    if (selectedNodeId != null && this.currentPlan.graph().node(selectedNodeId) == null) {
+                    if (selectedNodeId != null && this.goalDraft.currentPlan.graph().node(selectedNodeId) == null) {
                         selectedNodeId = null;
                     }
                     rebuildStep(STEP_REVIEW_PLAN);
@@ -338,7 +275,7 @@ public class ClipboardScreen extends Screen {
                         // The canvas can no longer highlight a now-hidden machine node -- clear
                         // the selection so DetailCard doesn't keep showing stale details for it.
                         if (!showMachineNodes && selectedNodeId != null) {
-                            RecipeGraphNode selected = this.currentPlan.graph().node(selectedNodeId);
+                            RecipeGraphNode selected = this.goalDraft.currentPlan.graph().node(selectedNodeId);
                             if (selected != null && selected.getType() == NodeType.MACHINE) {
                                 selectedNodeId = null;
                             }
@@ -382,27 +319,29 @@ public class ClipboardScreen extends Screen {
         this.addRenderableWidget(scanButton);
 
         Button highlightsButton = Button.builder(
-                Component.literal(showInWorldHighlights ? "Highlights: On" : "Highlights: Off"),
+                Component.literal(monitoringState.showInWorldHighlights ? "Highlights: On" : "Highlights: Off"),
                 b -> {
-                    showInWorldHighlights = !showInWorldHighlights;
-                    WorldHighlightRenderer.setEnabled(showInWorldHighlights);
+                    monitoringState.showInWorldHighlights = !monitoringState.showInWorldHighlights;
+                    WorldHighlightRenderer.setEnabled(monitoringState.showInWorldHighlights);
                     rebuildStep(STEP_MONITOR);
                 }).bounds(contentX + 94, contentY + 28, 90, 14).build();
         this.addRenderableWidget(highlightsButton);
 
-        List<ReviewListPanel.ReviewRow> rows = buildReviewRows();
-        updateWorldHighlightPositions(rows);
+        List<ReviewListPanel.ReviewRow> rows = monitoringState.buildReviewRows();
+        monitoringState.updateWorldHighlightPositions(rows);
 
         int halfW = (contentW - 6) / 2;
         Button reviewButton = Button.builder(
                 Component.literal("Review Machines (" + rows.size() + ")"),
-                b -> Minecraft.getInstance().setScreen(new ReviewMachinesScreen(this))
+                b -> Minecraft.getInstance().setScreen(new ReviewMachinesScreen(
+                        monitoringState, this::onMonitoringStateChanged, this))
         ).bounds(contentX, contentY + 46, halfW, 16).build();
         this.addRenderableWidget(reviewButton);
 
         Button monitoringButton = Button.builder(
-                Component.literal("View Monitoring (" + liveData.size() + ")"),
-                b -> Minecraft.getInstance().setScreen(new MonitoringScreen(this))
+                Component.literal("View Monitoring (" + monitoringState.liveData.size() + ")"),
+                b -> Minecraft.getInstance().setScreen(new MonitoringScreen(
+                        monitoringState, goalDraft.perHour, this))
         ).bounds(contentX + halfW + 6, contentY + 46, halfW, 16).build();
         this.addRenderableWidget(monitoringButton);
 
@@ -418,200 +357,36 @@ public class ClipboardScreen extends Screen {
         new RequestMonitoringUpdatePayload().sendToServer();
     }
 
-    List<ReviewListPanel.ReviewRow> buildReviewRows() {
-        List<ReviewListPanel.ReviewRow> rows = new ArrayList<>();
-        Set<BlockPos> seen = new HashSet<>();
-
-        Map<BlockPos, LiveMonitoringPayload.MachineStatusData> liveByPos = new HashMap<>();
-        for (LiveMonitoringPayload.MachineStatusData entry : liveData) {
-            liveByPos.put(entry.pos(), entry);
-        }
-
-        for (BlockPos pos : linkedMachines) {
-            ResourceLocation machineId = resolveMachineId(pos);
-            LiveMonitoringPayload.MachineStatusData live = liveByPos.get(pos);
-            String productLabel = live == null ? null : live.recipeId().map(this::resolveProductLabel).orElse(null);
-            rows.add(new ReviewListPanel.ReviewRow(pos, machineId, true, rejectedMachines.contains(pos), false, productLabel));
-            seen.add(pos);
-        }
-
-        for (ScanResultPayload.Candidate candidate : lastScanResults) {
-            if (seen.contains(candidate.pos())) continue;
-            boolean isRejected = rejectedMachines.contains(candidate.pos());
-            if (isRejected && !showRejected) continue;
-            String productLabel = resolveProductLabel(candidate.recipeId());
-            rows.add(new ReviewListPanel.ReviewRow(candidate.pos(), candidate.machineId(), false, isRejected, true, productLabel));
-            seen.add(candidate.pos());
-        }
-
-        return rows;
-    }
-
-    private ResourceLocation resolveMachineId(BlockPos pos) {
-        if (this.minecraft != null && this.minecraft.level != null && this.minecraft.level.isLoaded(pos)) {
-            var be = this.minecraft.level.getBlockEntity(pos);
-            if (be != null) {
-                return BuiltInRegistries.BLOCK.getKey(this.minecraft.level.getBlockState(pos).getBlock());
-            }
-        }
-        return ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "unknown");
-    }
-
-    /** Resolves a recipe id to its output item/fluid name(s), or null if the recipe can no longer
-     *  be found (e.g. changed since the scan ran, or the machine isn't currently crafting anything)
-     *  or produces nothing named. Shared by Review Machines (candidates + linked rows) and
-     *  MonitoringScreen. */
-    @Nullable String resolveProductLabel(ResourceLocation recipeId) {
-        if (this.minecraft == null || this.minecraft.level == null) return null;
-        var holder = this.minecraft.level.getRecipeManager().byKey(recipeId).orElse(null);
-        if (holder == null || !(holder.value() instanceof MachineRecipe recipe)) return null;
-
-        List<String> names = new ArrayList<>();
-        for (var output : recipe.itemOutputs) {
-            if (output.amount() > 0 && output.probability() > 0) {
-                names.add(formatId(BuiltInRegistries.ITEM.getKey(output.variant().getItem())));
-            }
-        }
-        for (var output : recipe.fluidOutputs) {
-            if (output.amount() > 0 && output.probability() > 0) {
-                names.add(formatId(BuiltInRegistries.FLUID.getKey(output.fluid())));
-            }
-        }
-        return names.isEmpty() ? null : String.join(", ", names);
+    /** Wired into {@link MonitoringState}'s apply* mutators as the {@code onChange} callback --
+     *  matches what each of those methods did inline before the split. */
+    private void onMonitoringStateChanged() {
+        syncGoal();
+        rebuildStep(STEP_MONITOR);
     }
 
     private void triggerScan() {
-        if (this.currentPlan == null) return;
+        if (this.goalDraft.currentPlan == null) return;
         ProductionGoal goal = buildCurrentGoal();
         new ScanRequestPayload(goal).sendToServer();
     }
 
     public void updateScanResults(List<ScanResultPayload.Candidate> candidates) {
-        this.lastScanResults.clear();
-        this.lastScanResults.addAll(candidates);
+        monitoringState.setScanResults(candidates);
         if (currentStep == STEP_MONITOR) rebuildStep(STEP_MONITOR);
     }
 
-    boolean showRejected() {
-        return showRejected;
-    }
-
-    void toggleShowRejected() {
-        showRejected = !showRejected;
-    }
-
-    MachineLinkHistory machineLinkHistory() {
-        return machineLinkHistory;
-    }
-
-    List<LiveMonitoringPayload.MachineStatusData> liveData() {
-        return liveData;
-    }
-
-    boolean perHour() {
-        return perHour;
-    }
-
-    void applyLink(BlockPos pos) {
-        boolean wasLinked = linkedMachines.contains(pos);
-        if (!wasLinked) linkedMachines.add(pos);
-        rejectedMachines.remove(pos); // linking always clears a sticky rejection
-        machineLinkHistory = machineLinkHistory.withToggle(pos, wasLinked, true);
-        syncGoal();
-        rebuildStep(STEP_MONITOR);
-    }
-
-    void applyUnlink(BlockPos pos) {
-        boolean wasLinked = linkedMachines.contains(pos);
-        linkedMachines.remove(pos);
-        machineLinkHistory = machineLinkHistory.withToggle(pos, wasLinked, false);
-        syncGoal();
-        rebuildStep(STEP_MONITOR);
-    }
-
-    void applyReject(BlockPos pos) {
-        if (!rejectedMachines.contains(pos)) rejectedMachines.add(pos);
-        syncGoal();
-        rebuildStep(STEP_MONITOR);
-    }
-
-    void applyUnreject(BlockPos pos) {
-        rejectedMachines.remove(pos);
-        syncGoal();
-        rebuildStep(STEP_MONITOR);
-    }
-
-    void applyLinkHistoryResult(MachineLinkHistory.UndoResult result) {
-        machineLinkHistory = result.history();
-        if (result.linked()) {
-            if (!linkedMachines.contains(result.pos())) linkedMachines.add(result.pos());
-        } else {
-            linkedMachines.remove(result.pos());
-        }
-        syncGoal();
-        rebuildStep(STEP_MONITOR);
-    }
-
-    void updateWorldHighlightPositions(List<ReviewListPanel.ReviewRow> rows) {
-        List<BlockPos> linked = new ArrayList<>();
-        List<BlockPos> candidates = new ArrayList<>();
-        for (ReviewListPanel.ReviewRow row : rows) {
-            if (row.linked()) linked.add(row.pos());
-            else if (row.isNewCandidate()) candidates.add(row.pos());
-        }
-        WorldHighlightRenderer.setPositions(linked, candidates);
-    }
-
     private ProductionGoal buildCurrentGoal() {
-        ResourceLocation targetRes = ResourceLocation.tryParse(this.targetIdStr);
-        double adjustedRate = this.rate / (this.perHour ? 60.0 : 1.0);
-        return new ProductionGoal(
-                this.goalName, this.targetType, targetRes, adjustedRate, this.recipeSelections,
-                this.currentPlan != null ? Optional.of(this.currentPlan) : Optional.empty(),
-                this.perHour, this.threshold, this.linkedMachines, this.graphLayout,
-                this.machineLinkHistory, this.rejectedMachines
-        );
+        return goalDraft.buildGoal(monitoringState.linkedMachines, monitoringState.machineLinkHistory,
+                monitoringState.rejectedMachines);
     }
 
     private void syncGoal() {
-        if (this.errorMessage != null || this.goalName == null || this.goalName.isEmpty()
-                || this.targetIdStr == null || this.targetIdStr.isEmpty()) return;
-        ResourceLocation targetRes = ResourceLocation.tryParse(this.targetIdStr);
-        if (targetRes == null) return;
+        if (!goalDraft.isReadyToSave()) return;
         new GoalUpdatePayload(buildCurrentGoal()).sendToServer();
     }
 
     private void computePlan() {
-        this.errorMessage = null;
-        ResourceLocation targetRes = ResourceLocation.tryParse(this.targetIdStr);
-        if (targetRes == null) {
-            this.errorMessage = "Invalid Target ID format";
-            return;
-        }
-
-        double adjustedRate = this.rate / (this.perHour ? 60.0 : 1.0); // Compute plan internally using base rate/min
-        try {
-            ProductionGoal tempGoal = new ProductionGoal(
-                this.goalName,
-                this.targetType,
-                targetRes,
-                adjustedRate,
-                this.recipeSelections,
-                Optional.empty(),
-                this.perHour,
-                this.threshold,
-                this.linkedMachines
-            );
-            this.currentPlan = RecipeGraphTraverser.computePlan(this.minecraft.level, tempGoal);
-            if (this.currentPlan != null) {
-                RecipeGraph graph = RecipeGraphTraverser.computeRecipeGraph(this.minecraft.level, tempGoal);
-                this.currentPlan = this.currentPlan.withGraph(graph);
-                this.graphLayout = this.graphLayout.prunedTo(graph);
-            }
-        } catch (Exception e) {
-            this.errorMessage = "Error calculating plan: " + e.getMessage();
-            this.currentPlan = null;
-        }
+        goalDraft.computePlan(this.minecraft.level, monitoringState.linkedMachines);
     }
 
     private void drawStepIndicator(GuiGraphics guiGraphics, int left, int top) {
@@ -627,35 +402,16 @@ public class ClipboardScreen extends Screen {
         }
     }
 
-    private String formatId(ResourceLocation id) {
-        String path = id.getPath();
-        String[] parts = path.split("_");
-        StringBuilder sb = new StringBuilder();
-        for (String part : parts) {
-            if (!part.isEmpty()) {
-                sb.append(Character.toUpperCase(part.charAt(0)))
-                  .append(part.substring(1))
-                  .append(" ");
-            }
-        }
-        return sb.toString().trim();
-    }
-
     @Override
     public void tick() {
         super.tick();
-        if (currentStep == STEP_MONITOR) {
-            tickCount++;
-            if (tickCount >= 20) {
-                tickCount = 0;
-                new RequestMonitoringUpdatePayload().sendToServer();
-            }
+        if (currentStep == STEP_MONITOR && monitoringState.tickAndShouldPoll()) {
+            new RequestMonitoringUpdatePayload().sendToServer();
         }
     }
 
     public void updateLiveMonitoring(List<LiveMonitoringPayload.MachineStatusData> data) {
-        this.liveData.clear();
-        this.liveData.addAll(data);
+        monitoringState.setLiveData(data);
     }
 
     @Override
@@ -705,23 +461,23 @@ public class ClipboardScreen extends Screen {
         int currentY = contentY + 20;
 
         guiGraphics.drawString(this.font, Component.literal("Goal Name:"), contentX, currentY, COLOR_LABEL);
-        guiGraphics.drawString(this.font, Component.literal(this.goalName), contentX + 80, currentY, COLOR_TEXT);
+        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.goalName), contentX + 80, currentY, COLOR_TEXT);
         currentY += 15;
 
         guiGraphics.drawString(this.font, Component.literal("Target ID:"), contentX, currentY, COLOR_LABEL);
-        guiGraphics.drawString(this.font, Component.literal(this.targetIdStr), contentX + 80, currentY, COLOR_TEXT);
+        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.targetIdStr), contentX + 80, currentY, COLOR_TEXT);
         currentY += 15;
 
         guiGraphics.drawString(this.font, Component.literal("Target Type:"), contentX, currentY, COLOR_LABEL);
-        guiGraphics.drawString(this.font, Component.literal(this.targetType.name()), contentX + 80, currentY, COLOR_TEXT);
+        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.targetType.name()), contentX + 80, currentY, COLOR_TEXT);
         currentY += 15;
 
-        String rateStr = String.format("%.2f units/%s", this.rate, this.perHour ? "hour" : "min");
+        String rateStr = String.format("%.2f units/%s", this.goalDraft.rate, this.goalDraft.perHour ? "hour" : "min");
         guiGraphics.drawString(this.font, Component.literal("Desired Rate:"), contentX, currentY, COLOR_LABEL);
         guiGraphics.drawString(this.font, Component.literal(rateStr), contentX + 80, currentY, COLOR_TEXT);
         currentY += 15;
 
-        String thresholdStr = String.format("%d%%", (int) (this.threshold * 100));
+        String thresholdStr = String.format("%d%%", (int) (this.goalDraft.threshold * 100));
         guiGraphics.drawString(this.font, Component.literal("Threshold:"), contentX, currentY, COLOR_LABEL);
         guiGraphics.drawString(this.font, Component.literal(thresholdStr), contentX + 80, currentY, COLOR_TEXT);
         currentY += 20;
@@ -729,7 +485,7 @@ public class ClipboardScreen extends Screen {
         String statusStr = "Status: Planning Complete";
         int statusColor = COLOR_GREEN;
         if (currentStep == STEP_MONITOR) {
-            statusStr = "Status: Live Monitoring Active (" + this.liveData.size() + " nodes)";
+            statusStr = "Status: Live Monitoring Active (" + this.monitoringState.liveData.size() + " nodes)";
             statusColor = COLOR_CYAN;
         } else if (currentStep == STEP_DEFINE_GOAL) {
             statusStr = "Status: Goal Definition Draft";
@@ -751,13 +507,13 @@ public class ClipboardScreen extends Screen {
         guiGraphics.drawString(this.font, Component.literal("Factory Monitoring"), contentX, contentY, COLOR_TITLE);
 
         int currentY = contentY + 16;
-        if (this.liveData.isEmpty()) {
+        if (this.monitoringState.liveData.isEmpty()) {
             guiGraphics.drawString(this.font, Component.literal(" - None linked yet"), contentX + 4, currentY, COLOR_MUTED);
             return;
         }
 
         int red = 0, orange = 0, yellow = 0, green = 0, other = 0;
-        for (var machine : this.liveData) {
+        for (var machine : this.monitoringState.liveData) {
             switch (machine.status()) {
                 case "RED" -> red++;
                 case "ORANGE" -> orange++;
@@ -768,7 +524,7 @@ public class ClipboardScreen extends Screen {
         }
 
         // Counts lead with RED/ORANGE (what actually needs attention), not machine order.
-        String prefix = this.liveData.size() + " machines: ";
+        String prefix = this.monitoringState.liveData.size() + " machines: ";
         guiGraphics.drawString(this.font, Component.literal(prefix), contentX + 4, currentY, COLOR_TEXT);
         int segX = contentX + 4 + this.font.width(prefix);
         segX = drawStatusCount(guiGraphics, segX, currentY, red, "RED", COLOR_ERROR);
@@ -786,32 +542,8 @@ public class ClipboardScreen extends Screen {
     }
 
     private void save() {
-        if (this.errorMessage != null || this.goalName.isEmpty() || this.targetIdStr.isEmpty()) {
-            return;
-        }
-        ResourceLocation targetRes = ResourceLocation.tryParse(this.targetIdStr);
-        if (targetRes == null) {
-            return;
-        }
-
-        double adjustedRate = this.rate / (this.perHour ? 60.0 : 1.0); // Save internally as rate/min
-
-        ProductionGoal finalGoal = new ProductionGoal(
-            this.goalName,
-            this.targetType,
-            targetRes,
-            adjustedRate,
-            this.recipeSelections,
-            this.currentPlan != null ? Optional.of(this.currentPlan) : Optional.empty(),
-            this.perHour,
-            this.threshold,
-            this.linkedMachines,
-            this.graphLayout,
-            this.machineLinkHistory,
-            this.rejectedMachines
-        );
-
-        new GoalUpdatePayload(finalGoal).sendToServer();
+        if (!goalDraft.isReadyToSave()) return;
+        new GoalUpdatePayload(buildCurrentGoal()).sendToServer();
     }
 
     @Override

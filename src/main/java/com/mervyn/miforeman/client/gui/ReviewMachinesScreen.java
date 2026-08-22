@@ -14,12 +14,11 @@ import java.util.List;
 /**
  * Full-window scanned/linked machine review list, opened from {@link ClipboardScreen}'s Monitor
  * step so the list gets nearly the whole window instead of the small leftover strip it used to be
- * squeezed into. Owns no state of its own -- {@code linkedMachines}/{@code rejectedMachines}/
- * {@code machineLinkHistory}/{@code lastScanResults}/{@code showRejected} all stay on the parent
- * {@link ClipboardScreen}; every mutation here delegates to the parent's existing apply* methods
- * (unchanged, still call syncGoal() for server sync) and then re-renders itself via {@link
- * #rebuild()}, the same clear-and-repopulate idiom {@code ClipboardScreen.rebuildStep()} already
- * uses.
+ * squeezed into. Reads/mutates the {@link MonitoringState} directly instead of reaching through a
+ * parent screen; every mutation here delegates to the state's existing apply* methods (still
+ * running {@code onChange}, which triggers syncGoal() on the real ClipboardScreen) and then
+ * re-renders itself via {@link #rebuild()}, the same clear-and-repopulate idiom
+ * {@code ClipboardScreen.rebuildStep()} already uses.
  */
 public class ReviewMachinesScreen extends Screen {
     private static final int MIN_GUI_WIDTH = 440;
@@ -27,12 +26,16 @@ public class ReviewMachinesScreen extends Screen {
     private static final int PADDING = 8;
     private static final int COLOR_TITLE = 0xFFDAA520;
 
-    private final ClipboardScreen parent;
+    private final MonitoringState state;
+    private final Runnable onChange;
+    private final Screen backTarget;
     private int scrollOffset = 0;
 
-    public ReviewMachinesScreen(ClipboardScreen parent) {
+    public ReviewMachinesScreen(MonitoringState state, Runnable onChange, Screen backTarget) {
         super(Component.literal("Review Machines"));
-        this.parent = parent;
+        this.state = state;
+        this.onChange = onChange;
+        this.backTarget = backTarget;
     }
 
     private int guiWidth() {
@@ -60,53 +63,53 @@ public class ReviewMachinesScreen extends Screen {
         int btnY = top + guiHeight() - PADDING - ClipboardChrome.MAIN_BORDER - 22;
 
         Button showRejectedButton = Button.builder(
-                Component.literal(parent.showRejected() ? "Hide Rejected" : "Show Rejected"),
+                Component.literal(state.showRejected ? "Hide Rejected" : "Show Rejected"),
                 b -> {
-                    parent.toggleShowRejected();
+                    state.showRejected = !state.showRejected;
                     rebuild();
                 }
         ).bounds(contentX, contentY, 90, 14).build();
         this.addRenderableWidget(showRejectedButton);
 
         Button undoButton = Button.builder(Component.literal("Undo"), b -> {
-            MachineLinkHistory.UndoResult result = parent.machineLinkHistory().undo();
+            MachineLinkHistory.UndoResult result = state.machineLinkHistory.undo();
             if (result != null) {
-                parent.applyLinkHistoryResult(result);
+                state.applyLinkHistoryResult(result, onChange);
                 rebuild();
             }
         }).bounds(contentX + 94, contentY, 40, 14).build();
-        undoButton.active = !parent.machineLinkHistory().undoStack().isEmpty();
+        undoButton.active = !state.machineLinkHistory.undoStack().isEmpty();
         this.addRenderableWidget(undoButton);
 
         Button redoButton = Button.builder(Component.literal("Redo"), b -> {
-            MachineLinkHistory.UndoResult result = parent.machineLinkHistory().redo();
+            MachineLinkHistory.UndoResult result = state.machineLinkHistory.redo();
             if (result != null) {
-                parent.applyLinkHistoryResult(result);
+                state.applyLinkHistoryResult(result, onChange);
                 rebuild();
             }
         }).bounds(contentX + 138, contentY, 40, 14).build();
-        redoButton.active = !parent.machineLinkHistory().redoStack().isEmpty();
+        redoButton.active = !state.machineLinkHistory.redoStack().isEmpty();
         this.addRenderableWidget(redoButton);
 
-        List<ReviewListPanel.ReviewRow> rows = parent.buildReviewRows();
+        List<ReviewListPanel.ReviewRow> rows = state.buildReviewRows();
         int listY = contentY + 18;
         ReviewListPanel listPanel = new ReviewListPanel(contentX, listY, contentW, btnY - 6 - listY,
                 rows, this::handleReviewToggle, this::handleRejectCandidateRequest, this::handleUnreject,
                 scrollOffset, v -> scrollOffset = v);
         this.addRenderableWidget(listPanel);
-        parent.updateWorldHighlightPositions(rows);
+        state.updateWorldHighlightPositions(rows);
 
         Button backButton = Button.builder(Component.literal("<- Back"),
-                b -> Minecraft.getInstance().setScreen(parent)
+                b -> Minecraft.getInstance().setScreen(backTarget)
         ).bounds(contentX, btnY, 80, 16).build();
         this.addRenderableWidget(backButton);
     }
 
     private void handleReviewToggle(ReviewListPanel.ReviewRow row) {
         if (row.linked()) {
-            parent.applyUnlink(row.pos());
+            state.applyUnlink(row.pos(), onChange);
         } else {
-            parent.applyLink(row.pos());
+            state.applyLink(row.pos(), onChange);
         }
         rebuild();
     }
@@ -116,7 +119,7 @@ public class ReviewMachinesScreen extends Screen {
                 confirmed -> {
                     Minecraft.getInstance().setScreen(this);
                     if (confirmed) {
-                        parent.applyReject(row.pos());
+                        state.applyReject(row.pos(), onChange);
                         rebuild();
                     }
                 },
@@ -126,13 +129,13 @@ public class ReviewMachinesScreen extends Screen {
     }
 
     private void handleUnreject(ReviewListPanel.ReviewRow row) {
-        parent.applyUnreject(row.pos());
+        state.applyUnreject(row.pos(), onChange);
         rebuild();
     }
 
     @Override
     public void onClose() {
-        Minecraft.getInstance().setScreen(parent);
+        Minecraft.getInstance().setScreen(backTarget);
     }
 
     @Override

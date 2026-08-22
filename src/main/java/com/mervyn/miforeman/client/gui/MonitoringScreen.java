@@ -15,8 +15,9 @@ import java.util.List;
 
 /**
  * Full-window live machine status list, opened from ClipboardScreen's Monitor step so every
- * machine gets a row instead of the old hardcoded top-3 summary. Owns no state of its own --
- * {@code ClipboardScreen.liveData()} stays the single source of truth. Keeps polling
+ * machine gets a row instead of the old hardcoded top-3 summary. Reads/mutates the
+ * {@link MonitoringState} directly instead of reaching through a parent screen --
+ * {@code state.liveData} stays the single source of truth. Keeps polling
  * (RequestMonitoringUpdatePayload) while it's the active screen and refreshes its list whenever a
  * response arrives (see ClientAccess.handleLiveMonitoring); polling naturally hands back to
  * ClipboardScreen the moment the player leaves, since only the active Screen gets ticked.
@@ -29,13 +30,17 @@ public class MonitoringScreen extends Screen {
     private static final int POLL_INTERVAL_TICKS = 20;
     private static final List<String> STATUS_PRIORITY = List.of("RED", "ORANGE", "YELLOW", "GREEN");
 
-    private final ClipboardScreen parent;
+    private final MonitoringState state;
+    private final boolean perHour;
+    private final Screen backTarget;
     private int tickCount = 0;
     private int scrollOffset = 0;
 
-    public MonitoringScreen(ClipboardScreen parent) {
+    public MonitoringScreen(MonitoringState state, boolean perHour, Screen backTarget) {
         super(Component.literal("Live Monitoring"));
-        this.parent = parent;
+        this.state = state;
+        this.perHour = perHour;
+        this.backTarget = backTarget;
     }
 
     private int guiWidth() {
@@ -62,19 +67,19 @@ public class MonitoringScreen extends Screen {
         int contentW = guiWidth() - (PADDING + ClipboardChrome.MAIN_BORDER) * 2 - 4;
         int btnY = top + guiHeight() - PADDING - ClipboardChrome.MAIN_BORDER - 22;
 
-        List<LiveMonitoringPayload.MachineStatusData> sorted = new ArrayList<>(parent.liveData());
+        List<LiveMonitoringPayload.MachineStatusData> sorted = new ArrayList<>(state.liveData);
         sorted.sort(Comparator.comparingInt(this::statusRank));
 
         List<MonitoringListPanel.MonitoringRow> displayRows = sorted.stream()
-                .map(m -> new MonitoringListPanel.MonitoringRow(m, m.recipeId().map(parent::resolveProductLabel).orElse(null)))
+                .map(m -> new MonitoringListPanel.MonitoringRow(m, m.recipeId().map(MonitoringState::resolveProductLabel).orElse(null)))
                 .toList();
 
         MonitoringListPanel listPanel = new MonitoringListPanel(contentX, contentY, contentW, btnY - 6 - contentY,
-                displayRows, parent.perHour(), scrollOffset, v -> scrollOffset = v);
+                displayRows, perHour, scrollOffset, v -> scrollOffset = v);
         this.addRenderableWidget(listPanel);
 
         Button backButton = Button.builder(Component.literal("<- Back"),
-                b -> Minecraft.getInstance().setScreen(parent)
+                b -> Minecraft.getInstance().setScreen(backTarget)
         ).bounds(contentX, btnY, 80, 16).build();
         this.addRenderableWidget(backButton);
 
@@ -87,7 +92,7 @@ public class MonitoringScreen extends Screen {
     }
 
     public void updateLiveMonitoring(List<LiveMonitoringPayload.MachineStatusData> data) {
-        parent.updateLiveMonitoring(data);
+        state.setLiveData(data);
         rebuild();
     }
 
@@ -103,7 +108,7 @@ public class MonitoringScreen extends Screen {
 
     @Override
     public void onClose() {
-        Minecraft.getInstance().setScreen(parent);
+        Minecraft.getInstance().setScreen(backTarget);
     }
 
     @Override

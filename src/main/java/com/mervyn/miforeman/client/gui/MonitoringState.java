@@ -1,0 +1,190 @@
+package com.mervyn.miforeman.client.gui;
+
+import aztech.modern_industrialization.machines.recipe.MachineRecipe;
+import com.mervyn.miforeman.MIForeman;
+import com.mervyn.miforeman.client.DisplayFormat;
+import com.mervyn.miforeman.client.WorldHighlightRenderer;
+import com.mervyn.miforeman.client.gui.widget.ReviewListPanel;
+import com.mervyn.miforeman.goal.MachineLinkHistory;
+import com.mervyn.miforeman.goal.ProductionGoal;
+import com.mervyn.miforeman.network.LiveMonitoringPayload;
+import com.mervyn.miforeman.network.ScanResultPayload;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * Step-3 (Review Machines / Monitor) state -- split out of {@link ClipboardScreen} (see
+ * .claude/plans/gleaming-mapping-waffle.md). This is exactly the state {@link ReviewMachinesScreen}
+ * and {@link MonitoringScreen} already read through the parent screen today, so they now hold a
+ * reference to this directly instead of the whole {@link ClipboardScreen}.
+ */
+class MonitoringState {
+    final List<BlockPos> linkedMachines = new ArrayList<>();
+    final List<BlockPos> rejectedMachines = new ArrayList<>();
+    MachineLinkHistory machineLinkHistory = MachineLinkHistory.EMPTY;
+    final List<LiveMonitoringPayload.MachineStatusData> liveData = new ArrayList<>();
+    final List<ScanResultPayload.Candidate> lastScanResults = new ArrayList<>();
+    boolean showRejected = false;
+    boolean showInWorldHighlights;
+    private int tickCount = 0;
+
+    private MonitoringState() {
+        // WorldHighlightRenderer's on/off state is static and outlives any screen's lifecycle
+        // (highlights are meant to keep rendering after the clipboard closes) -- read the live
+        // value here instead of hardcoding false, or the button lies about the real state every
+        // time the clipboard is reopened.
+        this.showInWorldHighlights = WorldHighlightRenderer.isEnabled();
+    }
+
+    static MonitoringState fromGoal(ProductionGoal goal) {
+        MonitoringState state = new MonitoringState();
+        state.linkedMachines.addAll(goal.linkedMachines());
+        state.machineLinkHistory = goal.machineLinkHistory();
+        state.rejectedMachines.addAll(goal.rejectedMachines());
+        return state;
+    }
+
+    static MonitoringState defaults() {
+        return new MonitoringState();
+    }
+
+    void applyLink(BlockPos pos, Runnable onChange) {
+        boolean wasLinked = linkedMachines.contains(pos);
+        if (!wasLinked) linkedMachines.add(pos);
+        rejectedMachines.remove(pos); // linking always clears a sticky rejection
+        machineLinkHistory = machineLinkHistory.withToggle(pos, wasLinked, true);
+        onChange.run();
+    }
+
+    void applyUnlink(BlockPos pos, Runnable onChange) {
+        boolean wasLinked = linkedMachines.contains(pos);
+        linkedMachines.remove(pos);
+        machineLinkHistory = machineLinkHistory.withToggle(pos, wasLinked, false);
+        onChange.run();
+    }
+
+    void applyReject(BlockPos pos, Runnable onChange) {
+        if (!rejectedMachines.contains(pos)) rejectedMachines.add(pos);
+        onChange.run();
+    }
+
+    void applyUnreject(BlockPos pos, Runnable onChange) {
+        rejectedMachines.remove(pos);
+        onChange.run();
+    }
+
+    void applyLinkHistoryResult(MachineLinkHistory.UndoResult result, Runnable onChange) {
+        machineLinkHistory = result.history();
+        if (result.linked()) {
+            if (!linkedMachines.contains(result.pos())) linkedMachines.add(result.pos());
+        } else {
+            linkedMachines.remove(result.pos());
+        }
+        onChange.run();
+    }
+
+    void setScanResults(List<ScanResultPayload.Candidate> candidates) {
+        this.lastScanResults.clear();
+        this.lastScanResults.addAll(candidates);
+    }
+
+    void setLiveData(List<LiveMonitoringPayload.MachineStatusData> data) {
+        this.liveData.clear();
+        this.liveData.addAll(data);
+    }
+
+    /** Increments the poll counter and reports whether it's time to send another
+     *  RequestMonitoringUpdatePayload, resetting itself when it does. */
+    boolean tickAndShouldPoll() {
+        tickCount++;
+        if (tickCount >= 20) {
+            tickCount = 0;
+            return true;
+        }
+        return false;
+    }
+
+    List<ReviewListPanel.ReviewRow> buildReviewRows() {
+        List<ReviewListPanel.ReviewRow> rows = new ArrayList<>();
+        Set<BlockPos> seen = new HashSet<>();
+
+        Map<BlockPos, LiveMonitoringPayload.MachineStatusData> liveByPos = new HashMap<>();
+        for (LiveMonitoringPayload.MachineStatusData entry : liveData) {
+            liveByPos.put(entry.pos(), entry);
+        }
+
+        for (BlockPos pos : linkedMachines) {
+            ResourceLocation machineId = resolveMachineId(pos);
+            LiveMonitoringPayload.MachineStatusData live = liveByPos.get(pos);
+            String productLabel = live == null ? null : live.recipeId().map(MonitoringState::resolveProductLabel).orElse(null);
+            rows.add(new ReviewListPanel.ReviewRow(pos, machineId, true, rejectedMachines.contains(pos), false, productLabel));
+            seen.add(pos);
+        }
+
+        for (ScanResultPayload.Candidate candidate : lastScanResults) {
+            if (seen.contains(candidate.pos())) continue;
+            boolean isRejected = rejectedMachines.contains(candidate.pos());
+            if (isRejected && !showRejected) continue;
+            String productLabel = resolveProductLabel(candidate.recipeId());
+            rows.add(new ReviewListPanel.ReviewRow(candidate.pos(), candidate.machineId(), false, isRejected, true, productLabel));
+            seen.add(candidate.pos());
+        }
+
+        return rows;
+    }
+
+    void updateWorldHighlightPositions(List<ReviewListPanel.ReviewRow> rows) {
+        List<BlockPos> linked = new ArrayList<>();
+        List<BlockPos> candidates = new ArrayList<>();
+        for (ReviewListPanel.ReviewRow row : rows) {
+            if (row.linked()) linked.add(row.pos());
+            else if (row.isNewCandidate()) candidates.add(row.pos());
+        }
+        WorldHighlightRenderer.setPositions(linked, candidates);
+    }
+
+    private static ResourceLocation resolveMachineId(BlockPos pos) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level != null && mc.level.isLoaded(pos)) {
+            var be = mc.level.getBlockEntity(pos);
+            if (be != null) {
+                return BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(pos).getBlock());
+            }
+        }
+        return ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "unknown");
+    }
+
+    /** Resolves a recipe id to its output item/fluid name(s), or null if the recipe can no longer
+     *  be found (e.g. changed since the scan ran, or the machine isn't currently crafting anything)
+     *  or produces nothing named. Shared by Review Machines (candidates + linked rows) and
+     *  MonitoringScreen. */
+    static @Nullable String resolveProductLabel(ResourceLocation recipeId) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return null;
+        var holder = mc.level.getRecipeManager().byKey(recipeId).orElse(null);
+        if (holder == null || !(holder.value() instanceof MachineRecipe recipe)) return null;
+
+        List<String> names = new ArrayList<>();
+        for (var output : recipe.itemOutputs) {
+            if (output.amount() > 0 && output.probability() > 0) {
+                names.add(DisplayFormat.formatId(BuiltInRegistries.ITEM.getKey(output.variant().getItem())));
+            }
+        }
+        for (var output : recipe.fluidOutputs) {
+            if (output.amount() > 0 && output.probability() > 0) {
+                names.add(DisplayFormat.formatId(BuiltInRegistries.FLUID.getKey(output.fluid())));
+            }
+        }
+        return names.isEmpty() ? null : String.join(", ", names);
+    }
+}

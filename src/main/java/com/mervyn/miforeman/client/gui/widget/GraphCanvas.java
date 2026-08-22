@@ -1,5 +1,6 @@
 package com.mervyn.miforeman.client.gui.widget;
 
+import com.mervyn.miforeman.client.DisplayFormat;
 import com.mervyn.miforeman.goal.GraphEdge;
 import com.mervyn.miforeman.goal.GraphLayoutState;
 import com.mervyn.miforeman.goal.NodePosition;
@@ -12,7 +13,6 @@ import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.util.Mth;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -41,7 +41,6 @@ public class GraphCanvas extends AbstractWidget {
     private static final int NODE_HEIGHT = 26;
     private static final int COLUMN_SPACING = 140;
     private static final int ROW_SPACING = 40;
-    private static final double CLICK_DRAG_THRESHOLD = 4.0;
     private static final float MIN_ZOOM = 0.25f;
     private static final float MAX_ZOOM = 3.0f;
 
@@ -61,14 +60,7 @@ public class GraphCanvas extends AbstractWidget {
     private final Consumer<GraphLayoutState> onLayoutChange;
     private final CameraChangeListener onCameraChange;
 
-    private double panX, panY;
-    private float zoom;
-
-    private @Nullable ResourceLocation draggingNodeId;
-    private @Nullable NodePosition dragNodeOriginalPos;
-    private @Nullable NodePosition liveDragPos;
-    private double dragAccumPixels;
-    private boolean panning;
+    private final GraphCamera camera;
 
     public GraphCanvas(int x, int y, int width, int height, RecipeGraph graph,
                         GraphLayoutState layoutState, double panX, double panY, float zoom,
@@ -81,9 +73,7 @@ public class GraphCanvas extends AbstractWidget {
         super(x, y, width, height, Component.literal("Recipe Graph"));
         this.graph = graph;
         this.layoutState = layoutState;
-        this.panX = panX;
-        this.panY = panY;
-        this.zoom = zoom;
+        this.camera = new GraphCamera(panX, panY, zoom);
         this.selectedNodeId = selectedNodeId;
         this.onSelect = onSelect;
         this.onLayoutChange = onLayoutChange;
@@ -154,24 +144,16 @@ public class GraphCanvas extends AbstractWidget {
     }
 
     private NodePosition positionOf(RecipeGraphNode node) {
-        if (node.getId().equals(draggingNodeId) && liveDragPos != null) {
-            return liveDragPos;
+        if (node.getId().equals(camera.draggingNodeId()) && camera.liveDragPos() != null) {
+            return camera.liveDragPos();
         }
         NodePosition manual = layoutState.nodePositions().get(node.getId());
         return manual != null ? manual : autoLayout.get(node.getId());
     }
 
-    private double toCanvasX(double screenMouseX) {
-        return (screenMouseX - (getX() + panX)) / zoom;
-    }
-
-    private double toCanvasY(double screenMouseY) {
-        return (screenMouseY - (getY() + panY)) / zoom;
-    }
-
     private @Nullable RecipeGraphNode nodeAt(double screenMouseX, double screenMouseY) {
-        double cx = toCanvasX(screenMouseX);
-        double cy = toCanvasY(screenMouseY);
+        double cx = camera.toCanvasX(getX(), screenMouseX);
+        double cy = camera.toCanvasY(getY(), screenMouseY);
         for (RecipeGraphNode node : visibleNodes.values()) {
             NodePosition p = positionOf(node);
             if (p == null) continue;
@@ -215,8 +197,8 @@ public class GraphCanvas extends AbstractWidget {
         guiGraphics.enableScissor(getX() + 1, getY() + 1, getX() + getWidth() - 1, getY() + getHeight() - 1);
 
         guiGraphics.pose().pushPose();
-        guiGraphics.pose().translate(getX() + panX, getY() + panY, 0);
-        guiGraphics.pose().scale(zoom, zoom, 1);
+        guiGraphics.pose().translate(getX() + camera.panX(), getY() + camera.panY(), 0);
+        guiGraphics.pose().scale(camera.zoom(), camera.zoom(), 1);
 
         // Edges: simple elbow (horizontal-vertical-horizontal) connectors, one flat color.
         // Plain edges only in this build -- rate-thickness/utilization styling is out of scope.
@@ -243,7 +225,7 @@ public class GraphCanvas extends AbstractWidget {
             }
             guiGraphics.renderOutline(pos.x(), pos.y(), NODE_WIDTH, NODE_HEIGHT, COLOR_BORDER);
 
-            String name = formatId(node.getId());
+            String name = DisplayFormat.formatId(node.getId());
             boolean hasAmbiguity = !node.getAmbiguityOptions().isEmpty();
             if (hasAmbiguity) {
                 name = "⚠ " + name;
@@ -282,20 +264,6 @@ public class GraphCanvas extends AbstractWidget {
         }
     }
 
-    private String formatId(ResourceLocation id) {
-        String path = id.getPath();
-        String[] parts = path.split("_");
-        StringBuilder sb = new StringBuilder();
-        for (String part : parts) {
-            if (!part.isEmpty()) {
-                sb.append(Character.toUpperCase(part.charAt(0)))
-                  .append(part.substring(1))
-                  .append(" ");
-            }
-        }
-        return sb.toString().trim();
-    }
-
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (!visible || !active || button != 0) return false;
@@ -303,53 +271,29 @@ public class GraphCanvas extends AbstractWidget {
             return false;
         }
 
-        dragAccumPixels = 0;
         RecipeGraphNode hit = nodeAt(mouseX, mouseY);
-        if (hit != null) {
-            draggingNodeId = hit.getId();
-            dragNodeOriginalPos = positionOf(hit);
-            liveDragPos = dragNodeOriginalPos;
-            panning = false;
-        } else {
-            draggingNodeId = null;
-            panning = true;
-        }
+        camera.beginDrag(hit != null ? hit.getId() : null, hit != null ? positionOf(hit) : null);
         return true;
     }
 
     @Override
     protected void onDrag(double mouseX, double mouseY, double dragX, double dragY) {
-        dragAccumPixels += Math.abs(dragX) + Math.abs(dragY);
-        if (dragEnabled && draggingNodeId != null && liveDragPos != null) {
-            liveDragPos = new NodePosition(
-                    liveDragPos.x() + (int) Math.round(dragX / zoom),
-                    liveDragPos.y() + (int) Math.round(dragY / zoom));
-        } else {
-            // View mode (dragEnabled == false): always pan, even if the drag started on a node --
-            // that's the whole point, dragging can never nudge a node out of place.
-            panX += dragX;
-            panY += dragY;
-            onCameraChange.onCameraChange(panX, panY, zoom);
+        boolean panned = camera.onDrag(dragEnabled, dragX, dragY);
+        if (panned) {
+            onCameraChange.onCameraChange(camera.panX(), camera.panY(), camera.zoom());
         }
     }
 
     @Override
     public void onRelease(double mouseX, double mouseY) {
-        if (draggingNodeId != null) {
-            if (dragEnabled && dragAccumPixels > CLICK_DRAG_THRESHOLD && liveDragPos != null && dragNodeOriginalPos != null) {
-                layoutState = layoutState.withMove(draggingNodeId, dragNodeOriginalPos, liveDragPos);
-                onLayoutChange.accept(layoutState);
-            } else if (dragAccumPixels <= CLICK_DRAG_THRESHOLD) {
-                selectedNodeId = draggingNodeId;
-                onSelect.accept(draggingNodeId);
-            }
-            // else: view mode, dragged past the threshold starting on a node -- already panned
-            // live in onDrag(), nothing to commit.
-            liveDragPos = null;
-            dragNodeOriginalPos = null;
-            draggingNodeId = null;
+        GraphCamera.DragEnd end = camera.onRelease(dragEnabled);
+        if (end.committedNodeId() != null) {
+            layoutState = layoutState.withMove(end.committedNodeId(), end.committedFrom(), end.committedTo());
+            onLayoutChange.accept(layoutState);
+        } else if (end.clickedNodeId() != null) {
+            selectedNodeId = end.clickedNodeId();
+            onSelect.accept(end.clickedNodeId());
         }
-        panning = false;
     }
 
     @Override
@@ -359,13 +303,8 @@ public class GraphCanvas extends AbstractWidget {
             return false;
         }
 
-        double canvasXBefore = toCanvasX(mouseX);
-        double canvasYBefore = toCanvasY(mouseY);
-        float newZoom = Mth.clamp((float) (zoom * Math.pow(1.1, scrollY)), MIN_ZOOM, MAX_ZOOM);
-        zoom = newZoom;
-        panX = mouseX - getX() - canvasXBefore * zoom;
-        panY = mouseY - getY() - canvasYBefore * zoom;
-        onCameraChange.onCameraChange(panX, panY, zoom);
+        camera.zoomAt(getX(), getY(), mouseX, mouseY, scrollY, MIN_ZOOM, MAX_ZOOM);
+        onCameraChange.onCameraChange(camera.panX(), camera.panY(), camera.zoom());
         return true;
     }
 
