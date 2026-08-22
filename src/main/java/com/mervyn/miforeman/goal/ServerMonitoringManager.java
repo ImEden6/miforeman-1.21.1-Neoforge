@@ -17,6 +17,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -41,6 +42,9 @@ public class ServerMonitoringManager {
         public final BlockPos pos;
         public String status = "RED";
         public ResourceLocation lastRecipeId = null;
+        /** Recipe a saturating (ORANGE) machine would run once its output clears -- distinct from
+         *  lastRecipeId, which only tracks an actually in-progress craft. */
+        public ResourceLocation saturatedRecipeId = null;
         public long lastUsedEnergy = 0;
         public long lastRecipeEnergy = 0;
         public final List<EnergyEvent> energyEvents = new ArrayList<>();
@@ -144,20 +148,31 @@ public class ServerMonitoringManager {
                             tracker.lastRecipeEnergy = recipeEnergy;
                         }
                         tracker.status = "GREEN";
+                        tracker.saturatedRecipeId = null;
                     } else {
                         tracker.lastRecipeId = null;
                         tracker.lastUsedEnergy = 0;
                         tracker.lastRecipeEnergy = 0;
-                        tracker.status = getMachinePassiveStatus(crafter, level);
+                        PassiveStatus passive = getMachinePassiveStatusDetailed(crafter, level);
+                        tracker.status = passive.status();
+                        tracker.saturatedRecipeId = passive.matchedRecipeId();
                     }
                 }
             }
         }
     }
 
+    public record PassiveStatus(String status, @Nullable ResourceLocation matchedRecipeId) {}
+
     public static String getMachinePassiveStatus(CrafterComponent crafter, ServerLevel level) {
+        return getMachinePassiveStatusDetailed(crafter, level).status();
+    }
+
+    /** Same passive-status decision as {@link #getMachinePassiveStatus}, but also reports which
+     *  recipe matched when saturating (ORANGE) -- the machine would run it once its output clears. */
+    public static PassiveStatus getMachinePassiveStatusDetailed(CrafterComponent crafter, ServerLevel level) {
         if (crafter.hasActiveRecipe()) {
-            return "GREEN";
+            return new PassiveStatus("GREEN", null);
         }
 
         List<ConfigurableItemStack> itemInputs = crafter.getInventory().getItemInputs();
@@ -165,23 +180,17 @@ public class ServerMonitoringManager {
 
         Collection<RecipeHolder<MachineRecipe>> candidates = CrafterComponent.getRecipes(level, crafter.getBehavior().recipeType(), itemInputs);
 
-        boolean hasInputsForAnyRecipe = false;
         for (RecipeHolder<MachineRecipe> holder : candidates) {
             MachineRecipe recipe = holder.value();
             if (crafter.getBehavior().banRecipe(recipe)) {
                 continue;
             }
             if (CrafterComponent.doInputsMatch(itemInputs, fluidInputs, recipe)) {
-                hasInputsForAnyRecipe = true;
-                break;
+                return new PassiveStatus("ORANGE", holder.id()); // Saturating
             }
         }
 
-        if (hasInputsForAnyRecipe) {
-            return "ORANGE"; // Saturating
-        } else {
-            return "RED"; // Starving
-        }
+        return new PassiveStatus("RED", null); // Starving
     }
 
     public static double getExpectedRate(ProductionGoal goal, ResourceLocation resourceId) {
