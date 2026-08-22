@@ -1,6 +1,7 @@
 package com.mervyn.miforeman.client.gui;
 
 import com.mervyn.miforeman.MIForeman;
+import aztech.modern_industrialization.machines.recipe.MachineRecipe;
 import com.mervyn.miforeman.goal.ProductionGoal;
 import com.mervyn.miforeman.goal.RecipeGraphTraverser;
 import com.mervyn.miforeman.goal.ProductionGoal.TargetType;
@@ -16,13 +17,13 @@ import com.mervyn.miforeman.client.gui.widget.ReviewListPanel;
 import com.mervyn.miforeman.client.WorldHighlightRenderer;
 import com.mervyn.miforeman.goal.RecipeGraph;
 import com.mervyn.miforeman.goal.RecipeGraphNode;
+import com.mervyn.miforeman.goal.NodeType;
 import com.mervyn.miforeman.goal.GraphLayoutState;
 import com.mervyn.miforeman.goal.MachineLinkHistory;
 import com.mervyn.miforeman.network.ScanRequestPayload;
 import com.mervyn.miforeman.network.ScanResultPayload;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.GuiGraphics;
@@ -31,32 +32,18 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.BlockPos;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 
 public class ClipboardScreen extends Screen {
-    // --- GUI Texture Resources ---
-    private static final ResourceLocation TEX_MAIN = ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "textures/gui/clipboard_main.png");
-    private static final ResourceLocation TEX_CLIP = ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "textures/gui/clipboard_clip.png");
-
-    // --- 9-Slice Constants ---
-    private static final int MAIN_TEX_SIZE = 64;
-    private static final int MAIN_BORDER = 6;
-
-    // --- Clip Accent (rotated to sit on the left edge, like a landscape
-    // clipboard's spring clip -- see tools/gen_clipboard_textures.py) ---
-    private static final int CLIP_WIDTH = 16;
-    private static final int CLIP_HEIGHT = 32;
-    private static final int CLIP_OVERHANG = 6;
-
     // --- Layout Constants ---
-    // The wizard fills the window down to SCREEN_MARGIN on each side, never shrinking
-    // below the original MIN_GUI_WIDTH/MIN_GUI_HEIGHT design size on tiny windows.
+    // The wizard fills the window down to ClipboardChrome.SCREEN_MARGIN on each side, never
+    // shrinking below the original MIN_GUI_WIDTH/MIN_GUI_HEIGHT design size on tiny windows.
     // Widened/flattened from the old 380x280 so the board reads as a landscape
     // clipboard rather than a stretched portrait one.
     private static final int MIN_GUI_WIDTH = 440;
     private static final int MIN_GUI_HEIGHT = 230;
-    private static final int SCREEN_MARGIN = 20;
     private static final int PADDING = 8;
 
     // --- Text Colors ---
@@ -104,7 +91,11 @@ public class ClipboardScreen extends Screen {
     private double cameraX, cameraY;
     private float cameraZoom = 1.0f;
     private boolean detailCardCollapsed = false;
+    private boolean showMachineNodes = true;
+    private boolean graphDragEnabled = true;
     private Button toggleDetailButton;
+    private Button toggleMachineViewButton;
+    private Button toggleDragModeButton;
     private Button undoLayoutButton, redoLayoutButton;
 
     private Button nextButton;
@@ -117,12 +108,17 @@ public class ClipboardScreen extends Screen {
 
     private final List<ScanResultPayload.Candidate> lastScanResults = new ArrayList<>();
     private boolean showRejected = false;
-    private boolean showInWorldHighlights = false;
-    private ReviewListPanel reviewListPanel;
+    private boolean showInWorldHighlights;
 
     public ClipboardScreen(ItemStack stack) {
         super(Component.literal("Clipboard Goal Editor"));
-        
+
+        // WorldHighlightRenderer's on/off state is static and outlives this screen's lifecycle
+        // (highlights are meant to keep rendering after the screen closes) -- read the live
+        // value here instead of hardcoding false, or the button lies about the real state
+        // every time the clipboard is reopened.
+        this.showInWorldHighlights = WorldHighlightRenderer.isEnabled();
+
         ProductionGoal goal = stack.get(ModComponents.PRODUCTION_GOAL.get());
         this.hasExistingGoal = (goal != null);
         this.currentPlan = (goal != null) ? goal.plan().orElse(null) : null;
@@ -155,11 +151,11 @@ public class ClipboardScreen extends Screen {
     }
 
     private int guiWidth() {
-        return Math.max(MIN_GUI_WIDTH, this.width - SCREEN_MARGIN * 2);
+        return ClipboardChrome.guiWidth(this.width, MIN_GUI_WIDTH);
     }
 
     private int guiHeight() {
-        return Math.max(MIN_GUI_HEIGHT, this.height - SCREEN_MARGIN * 2);
+        return ClipboardChrome.guiHeight(this.height, MIN_GUI_HEIGHT);
     }
 
     @Override
@@ -259,9 +255,9 @@ public class ClipboardScreen extends Screen {
         int left = (this.width - guiWidth()) / 2;
         int top = (this.height - guiHeight()) / 2;
 
-        int contentX = left + PADDING + MAIN_BORDER + 2;
-        int contentY = top + PADDING + MAIN_BORDER + 18;
-        int contentW = guiWidth() - (PADDING + MAIN_BORDER) * 2 - 4;
+        int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
+        int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
+        int contentW = guiWidth() - (PADDING + ClipboardChrome.MAIN_BORDER) * 2 - 4;
 
         // Top-down layout, derived from actual row heights rather than hardcoded offsets that can
         // drift out of sync (title/button-row and button-row/canvas overlaps both traced back to
@@ -272,7 +268,7 @@ public class ClipboardScreen extends Screen {
 
         int topButtonRowY = contentY + titleRowHeight;
         int canvasY = topButtonRowY + topButtonRowHeight + rowGap;
-        int btnY = top + guiHeight() - PADDING - MAIN_BORDER - 22;
+        int btnY = top + guiHeight() - PADDING - ClipboardChrome.MAIN_BORDER - 22;
         int contentH = btnY - rowGap - canvasY;
 
         if (this.currentPlan != null && this.currentPlan.graph() != null) {
@@ -297,7 +293,9 @@ public class ClipboardScreen extends Screen {
                         this.cameraX = panX;
                         this.cameraY = panY;
                         this.cameraZoom = zoomLevel;
-                    }
+                    },
+                    showMachineNodes,
+                    graphDragEnabled
             );
             this.addRenderableWidget(graphCanvas);
 
@@ -332,6 +330,32 @@ public class ClipboardScreen extends Screen {
                     .bounds(contentX + 44, topButtonRowY, 40, 12).build();
             redoLayoutButton.active = graphCanvas.canRedo();
             this.addRenderableWidget(redoLayoutButton);
+
+            toggleMachineViewButton = Button.builder(
+                    Component.literal(showMachineNodes ? "Items Only" : "Show Machines"),
+                    b -> {
+                        showMachineNodes = !showMachineNodes;
+                        // The canvas can no longer highlight a now-hidden machine node -- clear
+                        // the selection so DetailCard doesn't keep showing stale details for it.
+                        if (!showMachineNodes && selectedNodeId != null) {
+                            RecipeGraphNode selected = this.currentPlan.graph().node(selectedNodeId);
+                            if (selected != null && selected.getType() == NodeType.MACHINE) {
+                                selectedNodeId = null;
+                            }
+                        }
+                        rebuildStep(STEP_REVIEW_PLAN);
+                    }
+            ).bounds(contentX + 88, topButtonRowY, 86, 12).build();
+            this.addRenderableWidget(toggleMachineViewButton);
+
+            toggleDragModeButton = Button.builder(
+                    Component.literal(graphDragEnabled ? "Edit Mode" : "View Mode"),
+                    b -> {
+                        graphDragEnabled = !graphDragEnabled;
+                        rebuildStep(STEP_REVIEW_PLAN);
+                    }
+            ).bounds(contentX + 178, topButtonRowY, 86, 12).build();
+            this.addRenderableWidget(toggleDragModeButton);
         }
 
         backButton = Button.builder(Component.literal("<- Back"), b -> goToStep(STEP_DEFINE_GOAL))
@@ -349,35 +373,13 @@ public class ClipboardScreen extends Screen {
         int left = (this.width - guiWidth()) / 2;
         int top = (this.height - guiHeight()) / 2;
 
-        int contentX = left + PADDING + MAIN_BORDER + 2;
-        int contentY = top + PADDING + MAIN_BORDER + 18;
-        int contentW = guiWidth() - (PADDING + MAIN_BORDER) * 2 - 4;
-        int contentH = guiHeight() - (PADDING + MAIN_BORDER) * 2 - 40;
+        int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
+        int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
+        int contentW = guiWidth() - (PADDING + ClipboardChrome.MAIN_BORDER) * 2 - 4;
 
         Button scanButton = Button.builder(Component.literal("Scan Nearby"), b -> triggerScan())
-                .bounds(contentX, contentY + 44, 90, 14).build();
+                .bounds(contentX, contentY + 28, 90, 14).build();
         this.addRenderableWidget(scanButton);
-
-        Button showRejectedButton = Button.builder(Component.literal(showRejected ? "Hide Rejected" : "Show Rejected"),
-                b -> {
-                    showRejected = !showRejected;
-                    rebuildStep(STEP_MONITOR);
-                }).bounds(contentX + 94, contentY + 44, 90, 14).build();
-        this.addRenderableWidget(showRejectedButton);
-
-        Button undoLinkButton = Button.builder(Component.literal("Undo"), b -> {
-            MachineLinkHistory.UndoResult result = machineLinkHistory.undo();
-            if (result != null) applyLinkHistoryResult(result);
-        }).bounds(contentX + 188, contentY + 44, 40, 14).build();
-        undoLinkButton.active = !machineLinkHistory.undoStack().isEmpty();
-        this.addRenderableWidget(undoLinkButton);
-
-        Button redoLinkButton = Button.builder(Component.literal("Redo"), b -> {
-            MachineLinkHistory.UndoResult result = machineLinkHistory.redo();
-            if (result != null) applyLinkHistoryResult(result);
-        }).bounds(contentX + 232, contentY + 44, 40, 14).build();
-        redoLinkButton.active = !machineLinkHistory.redoStack().isEmpty();
-        this.addRenderableWidget(redoLinkButton);
 
         Button highlightsButton = Button.builder(
                 Component.literal(showInWorldHighlights ? "Highlights: On" : "Highlights: Off"),
@@ -385,16 +387,26 @@ public class ClipboardScreen extends Screen {
                     showInWorldHighlights = !showInWorldHighlights;
                     WorldHighlightRenderer.setEnabled(showInWorldHighlights);
                     rebuildStep(STEP_MONITOR);
-                }).bounds(contentX + 276, contentY + 44, 90, 14).build();
+                }).bounds(contentX + 94, contentY + 28, 90, 14).build();
         this.addRenderableWidget(highlightsButton);
 
         List<ReviewListPanel.ReviewRow> rows = buildReviewRows();
-        reviewListPanel = new ReviewListPanel(contentX, contentY + 62, contentW, contentH - 62, rows,
-                this::handleReviewToggle, this::handleRejectCandidateRequest, this::handleUnreject);
-        this.addRenderableWidget(reviewListPanel);
         updateWorldHighlightPositions(rows);
 
-        int btnY = top + guiHeight() - PADDING - MAIN_BORDER - 22;
+        int halfW = (contentW - 6) / 2;
+        Button reviewButton = Button.builder(
+                Component.literal("Review Machines (" + rows.size() + ")"),
+                b -> Minecraft.getInstance().setScreen(new ReviewMachinesScreen(this))
+        ).bounds(contentX, contentY + 46, halfW, 16).build();
+        this.addRenderableWidget(reviewButton);
+
+        Button monitoringButton = Button.builder(
+                Component.literal("View Monitoring (" + liveData.size() + ")"),
+                b -> Minecraft.getInstance().setScreen(new MonitoringScreen(this))
+        ).bounds(contentX + halfW + 6, contentY + 46, halfW, 16).build();
+        this.addRenderableWidget(monitoringButton);
+
+        int btnY = top + guiHeight() - PADDING - ClipboardChrome.MAIN_BORDER - 22;
         backButton = Button.builder(Component.literal("<- Back"), b -> goToStep(STEP_REVIEW_PLAN))
                 .bounds(contentX, btnY, 80, 16).build();
         this.addRenderableWidget(backButton);
@@ -406,13 +418,20 @@ public class ClipboardScreen extends Screen {
         new RequestMonitoringUpdatePayload().sendToServer();
     }
 
-    private List<ReviewListPanel.ReviewRow> buildReviewRows() {
+    List<ReviewListPanel.ReviewRow> buildReviewRows() {
         List<ReviewListPanel.ReviewRow> rows = new ArrayList<>();
         Set<BlockPos> seen = new HashSet<>();
 
+        Map<BlockPos, LiveMonitoringPayload.MachineStatusData> liveByPos = new HashMap<>();
+        for (LiveMonitoringPayload.MachineStatusData entry : liveData) {
+            liveByPos.put(entry.pos(), entry);
+        }
+
         for (BlockPos pos : linkedMachines) {
             ResourceLocation machineId = resolveMachineId(pos);
-            rows.add(new ReviewListPanel.ReviewRow(pos, machineId, true, rejectedMachines.contains(pos), false));
+            LiveMonitoringPayload.MachineStatusData live = liveByPos.get(pos);
+            String productLabel = live == null ? null : live.recipeId().map(this::resolveProductLabel).orElse(null);
+            rows.add(new ReviewListPanel.ReviewRow(pos, machineId, true, rejectedMachines.contains(pos), false, productLabel));
             seen.add(pos);
         }
 
@@ -420,7 +439,8 @@ public class ClipboardScreen extends Screen {
             if (seen.contains(candidate.pos())) continue;
             boolean isRejected = rejectedMachines.contains(candidate.pos());
             if (isRejected && !showRejected) continue;
-            rows.add(new ReviewListPanel.ReviewRow(candidate.pos(), candidate.machineId(), false, isRejected, true));
+            String productLabel = resolveProductLabel(candidate.recipeId());
+            rows.add(new ReviewListPanel.ReviewRow(candidate.pos(), candidate.machineId(), false, isRejected, true, productLabel));
             seen.add(candidate.pos());
         }
 
@@ -437,6 +457,29 @@ public class ClipboardScreen extends Screen {
         return ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "unknown");
     }
 
+    /** Resolves a recipe id to its output item/fluid name(s), or null if the recipe can no longer
+     *  be found (e.g. changed since the scan ran, or the machine isn't currently crafting anything)
+     *  or produces nothing named. Shared by Review Machines (candidates + linked rows) and
+     *  MonitoringScreen. */
+    @Nullable String resolveProductLabel(ResourceLocation recipeId) {
+        if (this.minecraft == null || this.minecraft.level == null) return null;
+        var holder = this.minecraft.level.getRecipeManager().byKey(recipeId).orElse(null);
+        if (holder == null || !(holder.value() instanceof MachineRecipe recipe)) return null;
+
+        List<String> names = new ArrayList<>();
+        for (var output : recipe.itemOutputs) {
+            if (output.amount() > 0 && output.probability() > 0) {
+                names.add(formatId(BuiltInRegistries.ITEM.getKey(output.variant().getItem())));
+            }
+        }
+        for (var output : recipe.fluidOutputs) {
+            if (output.amount() > 0 && output.probability() > 0) {
+                names.add(formatId(BuiltInRegistries.FLUID.getKey(output.fluid())));
+            }
+        }
+        return names.isEmpty() ? null : String.join(", ", names);
+    }
+
     private void triggerScan() {
         if (this.currentPlan == null) return;
         ProductionGoal goal = buildCurrentGoal();
@@ -449,30 +492,27 @@ public class ClipboardScreen extends Screen {
         if (currentStep == STEP_MONITOR) rebuildStep(STEP_MONITOR);
     }
 
-    private void handleReviewToggle(ReviewListPanel.ReviewRow row) {
-        if (row.linked()) {
-            applyUnlink(row.pos());
-        } else {
-            applyLink(row.pos());
-        }
+    boolean showRejected() {
+        return showRejected;
     }
 
-    private void handleRejectCandidateRequest(ReviewListPanel.ReviewRow row) {
-        Minecraft.getInstance().setScreen(new ConfirmScreen(
-                confirmed -> {
-                    Minecraft.getInstance().setScreen(this);
-                    if (confirmed) applyReject(row.pos());
-                },
-                Component.literal("Reject this machine?"),
-                Component.literal("It will be hidden from future scans until un-rejected. Confirm?")
-        ));
+    void toggleShowRejected() {
+        showRejected = !showRejected;
     }
 
-    private void handleUnreject(ReviewListPanel.ReviewRow row) {
-        applyUnreject(row.pos());
+    MachineLinkHistory machineLinkHistory() {
+        return machineLinkHistory;
     }
 
-    private void applyLink(BlockPos pos) {
+    List<LiveMonitoringPayload.MachineStatusData> liveData() {
+        return liveData;
+    }
+
+    boolean perHour() {
+        return perHour;
+    }
+
+    void applyLink(BlockPos pos) {
         boolean wasLinked = linkedMachines.contains(pos);
         if (!wasLinked) linkedMachines.add(pos);
         rejectedMachines.remove(pos); // linking always clears a sticky rejection
@@ -481,7 +521,7 @@ public class ClipboardScreen extends Screen {
         rebuildStep(STEP_MONITOR);
     }
 
-    private void applyUnlink(BlockPos pos) {
+    void applyUnlink(BlockPos pos) {
         boolean wasLinked = linkedMachines.contains(pos);
         linkedMachines.remove(pos);
         machineLinkHistory = machineLinkHistory.withToggle(pos, wasLinked, false);
@@ -489,19 +529,19 @@ public class ClipboardScreen extends Screen {
         rebuildStep(STEP_MONITOR);
     }
 
-    private void applyReject(BlockPos pos) {
+    void applyReject(BlockPos pos) {
         if (!rejectedMachines.contains(pos)) rejectedMachines.add(pos);
         syncGoal();
         rebuildStep(STEP_MONITOR);
     }
 
-    private void applyUnreject(BlockPos pos) {
+    void applyUnreject(BlockPos pos) {
         rejectedMachines.remove(pos);
         syncGoal();
         rebuildStep(STEP_MONITOR);
     }
 
-    private void applyLinkHistoryResult(MachineLinkHistory.UndoResult result) {
+    void applyLinkHistoryResult(MachineLinkHistory.UndoResult result) {
         machineLinkHistory = result.history();
         if (result.linked()) {
             if (!linkedMachines.contains(result.pos())) linkedMachines.add(result.pos());
@@ -512,7 +552,7 @@ public class ClipboardScreen extends Screen {
         rebuildStep(STEP_MONITOR);
     }
 
-    private void updateWorldHighlightPositions(List<ReviewListPanel.ReviewRow> rows) {
+    void updateWorldHighlightPositions(List<ReviewListPanel.ReviewRow> rows) {
         List<BlockPos> linked = new ArrayList<>();
         List<BlockPos> candidates = new ArrayList<>();
         for (ReviewListPanel.ReviewRow row : rows) {
@@ -635,13 +675,8 @@ public class ClipboardScreen extends Screen {
         int left = (this.width - guiWidth) / 2;
         int top = (this.height - guiHeight) / 2;
 
-        // --- Draw main clipboard background (9-slice) ---
-        NineSliceTexture.blit(guiGraphics, TEX_MAIN, left, top, guiWidth, guiHeight, MAIN_BORDER, MAIN_TEX_SIZE);
-
-        // --- Draw metallic clip accent on the left edge (landscape orientation) ---
-        int clipX = left - CLIP_OVERHANG;
-        int clipY = top + (guiHeight - CLIP_HEIGHT) / 2;
-        guiGraphics.blit(TEX_CLIP, clipX, clipY, 0, 0, CLIP_WIDTH, CLIP_HEIGHT, CLIP_WIDTH, CLIP_HEIGHT);
+        // --- Draw parchment background + clip accent ---
+        ClipboardChrome.drawBackground(guiGraphics, left, top, guiWidth, guiHeight);
 
         // --- Draw step indicator ---
         if (!isMinimized) {
@@ -662,8 +697,8 @@ public class ClipboardScreen extends Screen {
     }
 
     private void renderViewMode(GuiGraphics guiGraphics, int left, int top) {
-        int contentX = left + PADDING + MAIN_BORDER + 2;
-        int contentY = top + PADDING + MAIN_BORDER + 18;
+        int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
+        int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
 
         guiGraphics.drawString(this.font, Component.literal("Production Goal Summary"), contentX, contentY, COLOR_TITLE);
 
@@ -704,41 +739,50 @@ public class ClipboardScreen extends Screen {
     }
 
     private void renderStepReviewPlan(GuiGraphics guiGraphics, int left, int top) {
-        int contentX = left + PADDING + MAIN_BORDER + 2;
-        int contentY = top + PADDING + MAIN_BORDER + 18;
+        int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
+        int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
         guiGraphics.drawString(this.font, Component.literal("Factory Plan"), contentX, contentY, COLOR_TITLE);
     }
 
     private void renderStepMonitor(GuiGraphics guiGraphics, int left, int top) {
-        int contentX = left + PADDING + MAIN_BORDER + 2;
-        int contentY = top + PADDING + MAIN_BORDER + 18;
+        int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
+        int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
 
         guiGraphics.drawString(this.font, Component.literal("Factory Monitoring"), contentX, contentY, COLOR_TITLE);
 
         int currentY = contentY + 16;
         if (this.liveData.isEmpty()) {
             guiGraphics.drawString(this.font, Component.literal(" - None linked yet"), contentX + 4, currentY, COLOR_MUTED);
-        } else {
-            int displayed = Math.min(this.liveData.size(), 3);
-            for (int i = 0; i < displayed; i++) {
-                var machine = this.liveData.get(i);
-                int color = COLOR_MUTED;
-                if ("GREEN".equals(machine.status())) color = COLOR_GREEN;
-                else if ("YELLOW".equals(machine.status())) color = COLOR_AMBER;
-                else if ("RED".equals(machine.status())) color = COLOR_ERROR;
-                else if ("ORANGE".equals(machine.status())) color = 0xFFE67700;
+            return;
+        }
 
-                guiGraphics.fill(contentX + 2, currentY + 3, contentX + 6, currentY + 7, color);
-
-                double rateVal = machine.actualRate() * (this.perHour ? 60.0 : 1.0);
-                String text = String.format("%s: %.2f/%s (%s)", formatId(machine.machineId()), rateVal, this.perHour ? "hr" : "min", machine.status());
-                guiGraphics.drawString(this.font, Component.literal(text), contentX + 10, currentY, color);
-                currentY += 12;
-            }
-            if (this.liveData.size() > 3) {
-                guiGraphics.drawString(this.font, Component.literal(" - ... and " + (this.liveData.size() - 3) + " more"), contentX + 4, currentY, COLOR_MUTED);
+        int red = 0, orange = 0, yellow = 0, green = 0, other = 0;
+        for (var machine : this.liveData) {
+            switch (machine.status()) {
+                case "RED" -> red++;
+                case "ORANGE" -> orange++;
+                case "YELLOW" -> yellow++;
+                case "GREEN" -> green++;
+                default -> other++;
             }
         }
+
+        // Counts lead with RED/ORANGE (what actually needs attention), not machine order.
+        String prefix = this.liveData.size() + " machines: ";
+        guiGraphics.drawString(this.font, Component.literal(prefix), contentX + 4, currentY, COLOR_TEXT);
+        int segX = contentX + 4 + this.font.width(prefix);
+        segX = drawStatusCount(guiGraphics, segX, currentY, red, "RED", COLOR_ERROR);
+        segX = drawStatusCount(guiGraphics, segX, currentY, orange, "ORANGE", 0xFFE67700);
+        segX = drawStatusCount(guiGraphics, segX, currentY, yellow, "YELLOW", COLOR_AMBER);
+        segX = drawStatusCount(guiGraphics, segX, currentY, green, "GREEN", COLOR_GREEN);
+        drawStatusCount(guiGraphics, segX, currentY, other, "OTHER", COLOR_MUTED);
+    }
+
+    private int drawStatusCount(GuiGraphics guiGraphics, int x, int y, int count, String label, int color) {
+        if (count == 0) return x;
+        String segment = count + " " + label + "  ";
+        guiGraphics.drawString(this.font, Component.literal(segment), x, y, color);
+        return x + this.font.width(segment);
     }
 
     private void save() {

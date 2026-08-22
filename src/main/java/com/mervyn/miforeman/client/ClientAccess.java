@@ -1,6 +1,7 @@
 package com.mervyn.miforeman.client;
 
 import com.mervyn.miforeman.client.gui.ClipboardScreen;
+import com.mervyn.miforeman.client.gui.MonitoringScreen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.item.ItemStack;
 
@@ -13,6 +14,8 @@ public class ClientAccess {
         var screen = Minecraft.getInstance().screen;
         if (screen instanceof ClipboardScreen clipScreen) {
             clipScreen.updateLiveMonitoring(payload.machines());
+        } else if (screen instanceof MonitoringScreen monScreen) {
+            monScreen.updateLiveMonitoring(payload.machines());
         }
     }
 

@@ -8,9 +8,11 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.function.Consumer;
+import java.util.function.IntConsumer;
 
 /**
  * Unified toggle list of linked machines and newly-detected candidates for the auto-detect
@@ -18,9 +20,10 @@ import java.util.function.Consumer;
  * confirmation logic; ClipboardScreen owns that and decides what each callback actually does.
  */
 public class ReviewListPanel extends AbstractWidget {
-    public record ReviewRow(BlockPos pos, ResourceLocation machineId, boolean linked, boolean rejected, boolean isNewCandidate) {}
+    public record ReviewRow(BlockPos pos, ResourceLocation machineId, boolean linked, boolean rejected,
+                             boolean isNewCandidate, @Nullable String productLabel) {}
 
-    private static final int ROW_HEIGHT = 16;
+    private static final int ROW_HEIGHT = 26;
     private static final int COLOR_BORDER = 0xFF6B5030;
     private static final int COLOR_TEXT = 0xFF3A2A18;
     private static final int COLOR_MUTED = 0xFF8A7A68;
@@ -30,26 +33,36 @@ public class ReviewListPanel extends AbstractWidget {
     private static final int COLOR_HOVER = 0x156B5030;
     private static final int CHECKBOX_SIZE = 10;
     private static final int ACTION_BUTTON_WIDTH = 46;
+    private static final int ACTION_BUTTON_HEIGHT = 14;
 
     private final List<ReviewRow> rows;
     private final Consumer<ReviewRow> onToggleLink;
     private final Consumer<ReviewRow> onRejectRequest;
     private final Consumer<ReviewRow> onUnreject;
-    private int scrollOffset = 0;
+    private final IntConsumer onScrollChange;
+    private int scrollOffset;
 
     public ReviewListPanel(int x, int y, int width, int height, List<ReviewRow> rows,
                             Consumer<ReviewRow> onToggleLink,
                             Consumer<ReviewRow> onRejectRequest,
-                            Consumer<ReviewRow> onUnreject) {
+                            Consumer<ReviewRow> onUnreject,
+                            int initialScrollOffset,
+                            IntConsumer onScrollChange) {
         super(x, y, width, height, Component.literal("Machine Review List"));
         this.rows = rows;
         this.onToggleLink = onToggleLink;
         this.onRejectRequest = onRejectRequest;
         this.onUnreject = onUnreject;
+        this.scrollOffset = initialScrollOffset;
+        this.onScrollChange = onScrollChange;
     }
 
     private int actionButtonX() {
         return getX() + getWidth() - ACTION_BUTTON_WIDTH - 6;
+    }
+
+    private int actionButtonY(int rowY) {
+        return rowY + (ROW_HEIGHT - ACTION_BUTTON_HEIGHT) / 2;
     }
 
     @Override
@@ -59,7 +72,11 @@ public class ReviewListPanel extends AbstractWidget {
 
         int totalHeight = rows.size() * ROW_HEIGHT;
         int maxScroll = Math.max(0, totalHeight - getHeight() + 4);
-        scrollOffset = Mth.clamp(scrollOffset, 0, maxScroll);
+        int clamped = Mth.clamp(scrollOffset, 0, maxScroll);
+        if (clamped != scrollOffset) {
+            scrollOffset = clamped;
+            onScrollChange.accept(scrollOffset);
+        }
 
         guiGraphics.enableScissor(getX() + 1, getY() + 1, getX() + getWidth() - 1, getY() + getHeight() - 1);
 
@@ -102,17 +119,21 @@ public class ReviewListPanel extends AbstractWidget {
                 String posText = row.pos().toShortString();
                 guiGraphics.drawString(mc.font, posText, textX, currentY + 4 + 9, COLOR_MUTED, false);
 
+                if (row.productLabel() != null) {
+                    guiGraphics.drawString(mc.font, row.productLabel(), textX, currentY + 4 + 18, COLOR_MUTED, false);
+                }
+
                 if (showUnreject) {
                     int btnX = actionButtonX();
-                    int btnY = currentY + 2;
-                    guiGraphics.fill(btnX, btnY, btnX + ACTION_BUTTON_WIDTH, btnY + ROW_HEIGHT - 4, 0xFFD8C3A5);
-                    guiGraphics.renderOutline(btnX, btnY, ACTION_BUTTON_WIDTH, ROW_HEIGHT - 4, COLOR_BORDER);
+                    int btnY = actionButtonY(currentY);
+                    guiGraphics.fill(btnX, btnY, btnX + ACTION_BUTTON_WIDTH, btnY + ACTION_BUTTON_HEIGHT, 0xFFD8C3A5);
+                    guiGraphics.renderOutline(btnX, btnY, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT, COLOR_BORDER);
                     guiGraphics.drawString(mc.font, "Unreject", btnX + 3, btnY + 3, COLOR_TEXT, false);
                 } else if (row.isNewCandidate() && !row.linked()) {
                     int btnX = actionButtonX();
-                    int btnY = currentY + 2;
-                    guiGraphics.fill(btnX, btnY, btnX + ACTION_BUTTON_WIDTH, btnY + ROW_HEIGHT - 4, 0xFFD8C3A5);
-                    guiGraphics.renderOutline(btnX, btnY, ACTION_BUTTON_WIDTH, ROW_HEIGHT - 4, COLOR_BORDER);
+                    int btnY = actionButtonY(currentY);
+                    guiGraphics.fill(btnX, btnY, btnX + ACTION_BUTTON_WIDTH, btnY + ACTION_BUTTON_HEIGHT, 0xFFD8C3A5);
+                    guiGraphics.renderOutline(btnX, btnY, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT, COLOR_BORDER);
                     guiGraphics.drawString(mc.font, "Reject", btnX + 8, btnY + 3, COLOR_TEXT, false);
                 }
             }
@@ -142,9 +163,9 @@ public class ReviewListPanel extends AbstractWidget {
             if (mouseY >= currentY && mouseY < currentY + ROW_HEIGHT) {
                 boolean showUnreject = row.rejected() && !row.linked();
                 int btnX = actionButtonX();
-                int btnY = currentY + 2;
+                int btnY = actionButtonY(currentY);
                 boolean inActionButton = mouseX >= btnX && mouseX < btnX + ACTION_BUTTON_WIDTH &&
-                        mouseY >= btnY && mouseY < btnY + ROW_HEIGHT - 4;
+                        mouseY >= btnY && mouseY < btnY + ACTION_BUTTON_HEIGHT;
 
                 if (showUnreject) {
                     if (inActionButton) {
@@ -179,6 +200,7 @@ public class ReviewListPanel extends AbstractWidget {
         int maxScroll = Math.max(0, totalHeight - getHeight() + 4);
         if (maxScroll > 0) {
             scrollOffset = Mth.clamp(scrollOffset - (int) (scrollY * ROW_HEIGHT * 2), 0, maxScroll);
+            onScrollChange.accept(scrollOffset);
             return true;
         }
         return false;
