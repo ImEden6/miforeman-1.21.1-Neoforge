@@ -1,5 +1,6 @@
 package com.mervyn.miforeman.client.gui.widget;
 
+import com.mervyn.miforeman.client.DisplayFormat;
 import com.mervyn.miforeman.goal.RecipeGraphNode;
 import com.mervyn.miforeman.goal.GraphEdge;
 import com.mervyn.miforeman.goal.NodeType;
@@ -90,7 +91,7 @@ public class DetailCard extends AbstractWidget {
             String targetText = String.format(" - %.2f/%s %s",
                     plan.graph() != null ? plan.graph().targetRate() * (perHour ? 60.0 : 1.0) : 1.0,
                     perHour ? "h" : "m",
-                    plan.graph() != null ? formatId(plan.graph().target()) : "Goal");
+                    plan.graph() != null ? DisplayFormat.formatId(plan.graph().target()) : "Goal");
             guiGraphics.drawString(fontSource.font, targetText, getX() + 10, currentY, COLOR_TEXT, false);
             currentY += 15;
 
@@ -103,7 +104,7 @@ public class DetailCard extends AbstractWidget {
                 currentY += 10;
             } else {
                 for (MachineRequirement req : machines) {
-                    String machLine = String.format(" - %.1f x %s", req.count(), formatId(req.machineId()));
+                    String machLine = String.format(" - %.1f x %s", req.count(), DisplayFormat.formatId(req.machineId()));
                     guiGraphics.drawString(fontSource.font, machLine, getX() + 10, currentY, COLOR_TEXT, false);
                     currentY += 10;
                 }
@@ -120,14 +121,14 @@ public class DetailCard extends AbstractWidget {
             } else {
                 for (MaterialFlow flow : rawInputs) {
                     double rateVal = flow.rate() * (perHour ? 60.0 : 1.0);
-                    String flowLine = String.format(" - %.1f/%s %s", rateVal, perHour ? "h" : "m", formatId(flow.resourceId()));
+                    String flowLine = String.format(" - %.1f/%s %s", rateVal, perHour ? "h" : "m", DisplayFormat.formatId(flow.resourceId()));
                     guiGraphics.drawString(fontSource.font, flowLine, getX() + 10, currentY, COLOR_TEXT, false);
                     currentY += 10;
                 }
             }
         } else {
             // Node Details Mode
-            String title = formatId(node.getId());
+            String title = DisplayFormat.formatId(node.getId());
             if (node.getType() == NodeType.MACHINE) {
                 title = "Recipe: " + title;
             }
@@ -137,7 +138,7 @@ public class DetailCard extends AbstractWidget {
             if (node.getType() == NodeType.MACHINE) {
                 // Machine Node Details
                 guiGraphics.drawString(fontSource.font, "Machine Count:", getX() + 6, currentY, COLOR_LABEL, false);
-                String countLine = String.format(" %.2f x %s", node.getMachineCount(), formatId(node.getMachineType()));
+                String countLine = String.format(" %.2f x %s", node.getMachineCount(), DisplayFormat.formatId(node.getMachineType()));
                 guiGraphics.drawString(fontSource.font, countLine, getX() + 10, currentY + 10, COLOR_TEXT, false);
                 currentY += 24;
 
@@ -159,7 +160,7 @@ public class DetailCard extends AbstractWidget {
                 } else {
                     for (GraphEdge edge : node.getInputs()) {
                         double rateVal = edge.rate() * (perHour ? 60.0 : 1.0);
-                        String inputLine = String.format(" - %.1f/%s %s", rateVal, perHour ? "h" : "m", formatId(edge.from()));
+                        String inputLine = String.format(" - %.1f/%s %s", rateVal, perHour ? "h" : "m", DisplayFormat.formatId(edge.from()));
                         guiGraphics.drawString(fontSource.font, inputLine, getX() + 10, currentY, COLOR_TEXT, false);
                         currentY += 10;
                     }
@@ -175,7 +176,7 @@ public class DetailCard extends AbstractWidget {
                 } else {
                     for (GraphEdge edge : node.getOutputs()) {
                         double rateVal = edge.rate() * (perHour ? 60.0 : 1.0);
-                        String outputLine = String.format(" - %.1f/%s %s", rateVal, perHour ? "h" : "m", formatId(edge.to()));
+                        String outputLine = String.format(" - %.1f/%s %s", rateVal, perHour ? "h" : "m", DisplayFormat.formatId(edge.to()));
                         guiGraphics.drawString(fontSource.font, outputLine, getX() + 10, currentY, COLOR_TEXT, false);
                         currentY += 10;
                     }
@@ -197,7 +198,7 @@ public class DetailCard extends AbstractWidget {
                     currentY += 10;
                 } else {
                     for (GraphEdge edge : node.getInputs()) {
-                        guiGraphics.drawString(fontSource.font, " - " + formatId(edge.from()), getX() + 10, currentY, COLOR_TEXT, false);
+                        guiGraphics.drawString(fontSource.font, " - " + DisplayFormat.formatId(edge.from()), getX() + 10, currentY, COLOR_TEXT, false);
                         currentY += 10;
                     }
                 }
@@ -211,7 +212,7 @@ public class DetailCard extends AbstractWidget {
                     currentY += 10;
                 } else {
                     for (GraphEdge edge : node.getOutputs()) {
-                        guiGraphics.drawString(fontSource.font, " - " + formatId(edge.to()), getX() + 10, currentY, COLOR_TEXT, false);
+                        guiGraphics.drawString(fontSource.font, " - " + DisplayFormat.formatId(edge.to()), getX() + 10, currentY, COLOR_TEXT, false);
                         currentY += 10;
                     }
                 }
@@ -302,19 +303,6 @@ public class DetailCard extends AbstractWidget {
         return false;
     }
 
-    private String formatId(ResourceLocation id) {
-        String path = id.getPath();
-        String[] parts = path.split("_");
-        StringBuilder sb = new StringBuilder();
-        for (String part : parts) {
-            if (!part.isEmpty()) {
-                sb.append(Character.toUpperCase(part.charAt(0)))
-                  .append(part.substring(1))
-                  .append(" ");
-            }
-        }
-        return sb.toString().trim();
-    }
 
     @Override
     protected void updateWidgetNarration(NarrationElementOutput narrationElementOutput) {

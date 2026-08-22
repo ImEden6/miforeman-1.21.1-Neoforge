@@ -1,13 +1,12 @@
 package com.mervyn.miforeman.client.gui.widget;
 
+import com.mervyn.miforeman.client.DisplayFormat;
 import com.mervyn.miforeman.network.LiveMonitoringPayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.util.Mth;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
@@ -33,8 +32,7 @@ public class MonitoringListPanel extends AbstractWidget {
 
     private final List<MonitoringRow> rows;
     private final boolean perHour;
-    private final IntConsumer onScrollChange;
-    private int scrollOffset;
+    private final ListScroll scroll;
 
     public MonitoringListPanel(int x, int y, int width, int height,
                                 List<MonitoringRow> rows, boolean perHour,
@@ -42,8 +40,7 @@ public class MonitoringListPanel extends AbstractWidget {
         super(x, y, width, height, Component.literal("Machine Monitoring List"));
         this.rows = rows;
         this.perHour = perHour;
-        this.scrollOffset = initialScrollOffset;
-        this.onScrollChange = onScrollChange;
+        this.scroll = new ListScroll(ROW_HEIGHT, initialScrollOffset, onScrollChange);
     }
 
     @Override
@@ -51,18 +48,12 @@ public class MonitoringListPanel extends AbstractWidget {
         guiGraphics.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(), 0x113A2A18);
         guiGraphics.renderOutline(getX(), getY(), getWidth(), getHeight(), COLOR_BORDER);
 
-        int totalHeight = rows.size() * ROW_HEIGHT;
-        int maxScroll = Math.max(0, totalHeight - getHeight() + 4);
-        int clamped = Mth.clamp(scrollOffset, 0, maxScroll);
-        if (clamped != scrollOffset) {
-            scrollOffset = clamped;
-            onScrollChange.accept(scrollOffset);
-        }
+        scroll.clampForRender(rows.size(), getHeight());
 
         guiGraphics.enableScissor(getX() + 1, getY() + 1, getX() + getWidth() - 1, getY() + getHeight() - 1);
 
         Minecraft mc = Minecraft.getInstance();
-        int currentY = getY() + 2 - scrollOffset;
+        int currentY = getY() + 2 - scroll.offset();
 
         for (MonitoringRow row : rows) {
             LiveMonitoringPayload.MachineStatusData machine = row.machine();
@@ -77,7 +68,7 @@ public class MonitoringListPanel extends AbstractWidget {
                 guiGraphics.fill(getX() + 4, currentY + 4, getX() + 8, currentY + 8, color);
 
                 double rateVal = machine.actualRate() * (perHour ? 60.0 : 1.0);
-                String text = String.format("%s: %.2f/%s (%s)", formatId(machine.machineId()), rateVal, perHour ? "hr" : "min", machine.status());
+                String text = String.format("%s: %.2f/%s (%s)", DisplayFormat.formatId(machine.machineId()), rateVal, perHour ? "hr" : "min", machine.status());
                 int maxTextWidth = getWidth() - 16;
                 if (mc.font.width(text) > maxTextWidth && maxTextWidth > 0) {
                     text = mc.font.plainSubstrByWidth(text, Math.max(0, maxTextWidth - 8)) + "..";
@@ -93,26 +84,13 @@ public class MonitoringListPanel extends AbstractWidget {
 
         guiGraphics.disableScissor();
 
-        if (maxScroll > 0) {
-            int scrollbarWidth = 4;
-            int scrollbarHeight = Math.max(10, (int) (((double) getHeight() / totalHeight) * getHeight()));
-            int scrollbarX = getX() + getWidth() - scrollbarWidth - 2;
-            int scrollbarY = getY() + 2 + (int) (((double) scrollOffset / maxScroll) * (getHeight() - scrollbarHeight - 4));
-            guiGraphics.fill(scrollbarX, scrollbarY, scrollbarX + scrollbarWidth, scrollbarY + scrollbarHeight, COLOR_BORDER);
-        }
+        scroll.drawScrollbar(guiGraphics, getX(), getY(), getWidth(), getHeight(), rows.size(), COLOR_BORDER);
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         if (!visible || !active) return false;
-        int totalHeight = rows.size() * ROW_HEIGHT;
-        int maxScroll = Math.max(0, totalHeight - getHeight() + 4);
-        if (maxScroll > 0) {
-            scrollOffset = Mth.clamp(scrollOffset - (int) (scrollY * ROW_HEIGHT * 2), 0, maxScroll);
-            onScrollChange.accept(scrollOffset);
-            return true;
-        }
-        return false;
+        return scroll.onWheel(scrollY, rows.size(), getHeight());
     }
 
     private int statusColor(String status) {
@@ -123,20 +101,6 @@ public class MonitoringListPanel extends AbstractWidget {
             case "GREEN" -> COLOR_GREEN;
             default -> COLOR_MUTED;
         };
-    }
-
-    private String formatId(ResourceLocation id) {
-        String path = id.getPath();
-        String[] parts = path.split("_");
-        StringBuilder sb = new StringBuilder();
-        for (String part : parts) {
-            if (!part.isEmpty()) {
-                sb.append(Character.toUpperCase(part.charAt(0)))
-                  .append(part.substring(1))
-                  .append(" ");
-            }
-        }
-        return sb.toString().trim();
     }
 
     @Override

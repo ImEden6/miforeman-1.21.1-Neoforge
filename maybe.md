@@ -50,3 +50,15 @@ Not scheduled, just captured so they don't get lost. Mostly aimed at
 - Re-check aspect ratio (`MIN_GUI_WIDTH`/`MIN_GUI_HEIGHT` in
   `ClipboardScreen.java`) after living with the landscape layout for a bit —
   440x230 was a first guess, not a measured choice.
+
+## Code health
+
+- **`RecipeGraphTraverser.java` complexity** — per Omen (`omen tdg`), this is
+  the lowest-graded file in the repo: TDG grade B-, cyclomatic complexity 77,
+  6 levels of nesting, 24.6% internal duplication. Unlike the `ClipboardScreen`/
+  `GraphCanvas` cohesion split or the `formatId`/list-scroll dedup (both
+  mechanical extractions), this is a real algorithmic-complexity problem in
+  the recipe-traversal logic itself — reducing it means restructuring how the
+  graph traversal branches, not just moving code around. Needs its own
+  focused pass with test coverage before touching it, not an opportunistic
+  cleanup.

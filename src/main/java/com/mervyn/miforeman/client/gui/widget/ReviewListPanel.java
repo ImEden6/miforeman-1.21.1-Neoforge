@@ -1,5 +1,6 @@
 package com.mervyn.miforeman.client.gui.widget;
 
+import com.mervyn.miforeman.client.DisplayFormat;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
@@ -7,7 +8,6 @@ import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.util.Mth;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
@@ -39,8 +39,7 @@ public class ReviewListPanel extends AbstractWidget {
     private final Consumer<ReviewRow> onToggleLink;
     private final Consumer<ReviewRow> onRejectRequest;
     private final Consumer<ReviewRow> onUnreject;
-    private final IntConsumer onScrollChange;
-    private int scrollOffset;
+    private final ListScroll scroll;
 
     public ReviewListPanel(int x, int y, int width, int height, List<ReviewRow> rows,
                             Consumer<ReviewRow> onToggleLink,
@@ -53,8 +52,7 @@ public class ReviewListPanel extends AbstractWidget {
         this.onToggleLink = onToggleLink;
         this.onRejectRequest = onRejectRequest;
         this.onUnreject = onUnreject;
-        this.scrollOffset = initialScrollOffset;
-        this.onScrollChange = onScrollChange;
+        this.scroll = new ListScroll(ROW_HEIGHT, initialScrollOffset, onScrollChange);
     }
 
     private int actionButtonX() {
@@ -70,18 +68,12 @@ public class ReviewListPanel extends AbstractWidget {
         guiGraphics.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(), 0x113A2A18);
         guiGraphics.renderOutline(getX(), getY(), getWidth(), getHeight(), COLOR_BORDER);
 
-        int totalHeight = rows.size() * ROW_HEIGHT;
-        int maxScroll = Math.max(0, totalHeight - getHeight() + 4);
-        int clamped = Mth.clamp(scrollOffset, 0, maxScroll);
-        if (clamped != scrollOffset) {
-            scrollOffset = clamped;
-            onScrollChange.accept(scrollOffset);
-        }
+        scroll.clampForRender(rows.size(), getHeight());
 
         guiGraphics.enableScissor(getX() + 1, getY() + 1, getX() + getWidth() - 1, getY() + getHeight() - 1);
 
         Minecraft mc = Minecraft.getInstance();
-        int currentY = getY() + 2 - scrollOffset;
+        int currentY = getY() + 2 - scroll.offset();
 
         for (ReviewRow row : rows) {
             if (currentY + ROW_HEIGHT > getY() && currentY < getY() + getHeight()) {
@@ -103,7 +95,7 @@ public class ReviewListPanel extends AbstractWidget {
                 }
 
                 int textX = checkboxX + CHECKBOX_SIZE + 6;
-                String name = formatId(row.machineId());
+                String name = DisplayFormat.formatId(row.machineId());
                 int color = row.rejected() ? COLOR_REJECTED : (row.linked() ? COLOR_LINKED : COLOR_CANDIDATE);
                 if (row.rejected()) {
                     name = "[rejected] " + name;
@@ -142,13 +134,7 @@ public class ReviewListPanel extends AbstractWidget {
 
         guiGraphics.disableScissor();
 
-        if (maxScroll > 0) {
-            int scrollbarWidth = 4;
-            int scrollbarHeight = Math.max(10, (int) (((double) getHeight() / totalHeight) * getHeight()));
-            int scrollbarX = getX() + getWidth() - scrollbarWidth - 2;
-            int scrollbarY = getY() + 2 + (int) (((double) scrollOffset / maxScroll) * (getHeight() - scrollbarHeight - 4));
-            guiGraphics.fill(scrollbarX, scrollbarY, scrollbarX + scrollbarWidth, scrollbarY + scrollbarHeight, COLOR_BORDER);
-        }
+        scroll.drawScrollbar(guiGraphics, getX(), getY(), getWidth(), getHeight(), rows.size(), COLOR_BORDER);
     }
 
     @Override
@@ -158,7 +144,7 @@ public class ReviewListPanel extends AbstractWidget {
             return false;
         }
 
-        int currentY = getY() + 2 - scrollOffset;
+        int currentY = getY() + 2 - scroll.offset();
         for (ReviewRow row : rows) {
             if (mouseY >= currentY && mouseY < currentY + ROW_HEIGHT) {
                 boolean showUnreject = row.rejected() && !row.linked();
@@ -196,28 +182,7 @@ public class ReviewListPanel extends AbstractWidget {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         if (!visible || !active) return false;
-        int totalHeight = rows.size() * ROW_HEIGHT;
-        int maxScroll = Math.max(0, totalHeight - getHeight() + 4);
-        if (maxScroll > 0) {
-            scrollOffset = Mth.clamp(scrollOffset - (int) (scrollY * ROW_HEIGHT * 2), 0, maxScroll);
-            onScrollChange.accept(scrollOffset);
-            return true;
-        }
-        return false;
-    }
-
-    private String formatId(ResourceLocation id) {
-        String path = id.getPath();
-        String[] parts = path.split("_");
-        StringBuilder sb = new StringBuilder();
-        for (String part : parts) {
-            if (!part.isEmpty()) {
-                sb.append(Character.toUpperCase(part.charAt(0)))
-                  .append(part.substring(1))
-                  .append(" ");
-            }
-        }
-        return sb.toString().trim();
+        return scroll.onWheel(scrollY, rows.size(), getHeight());
     }
 
     @Override
