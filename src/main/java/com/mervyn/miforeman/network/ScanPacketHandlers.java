@@ -4,6 +4,7 @@ import com.mervyn.miforeman.Config;
 import com.mervyn.miforeman.goal.MachineScanner;
 import com.mervyn.miforeman.goal.ProductionGoal;
 import com.mervyn.miforeman.goal.RecipeGraph;
+import com.mervyn.miforeman.goal.RecipeGraphTraverser;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -19,11 +20,11 @@ public class ScanPacketHandlers {
             ServerLevel level = player.serverLevel();
             ProductionGoal goal = payload.goal();
 
-            RecipeGraph graph = goal.plan().map(ProductionGoal.FactoryPlan::graph).orElse(null);
-            if (graph == null) {
-                context.reply(new ScanResultPayload(List.of()));
-                return;
-            }
+            // FactoryPlan.graph is deliberately excluded from ProductionGoal.STREAM_CODEC (see
+            // ProductionGoal.java) since it holds live MachineRecipe references that aren't
+            // network-safe -- goal.plan().graph() is always null once the goal has crossed the
+            // wire. Recompute it server-side instead, exactly like ClipboardScreen does client-side.
+            RecipeGraph graph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
 
             Set<ResourceLocation> recipeIndex = MachineScanner.buildRecipeIndex(graph);
             int radius = Config.AUTOLINK_SCAN_RADIUS_CHUNKS.get();
