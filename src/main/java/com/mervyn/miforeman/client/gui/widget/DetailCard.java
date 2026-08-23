@@ -19,6 +19,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.function.BiConsumer;
+import java.util.function.IntConsumer;
 
 public class DetailCard extends AbstractWidget {
     private static final int COLOR_BORDER = 0xFF6B5030;
@@ -36,7 +37,8 @@ public class DetailCard extends AbstractWidget {
     private final FactoryPlan plan;
     private final boolean perHour;
     private final BiConsumer<ResourceLocation, ResourceLocation> onAmbiguity;
-    private int scrollOffset = 0;
+    private final IntConsumer onScrollChange;
+    private int scrollOffset;
     private int totalContentHeight = 0;
 
     // Boundaries of the inline cycle recipe box (for mouse click detection)
@@ -48,17 +50,21 @@ public class DetailCard extends AbstractWidget {
 
     public DetailCard(int x, int y, int width, int height, @Nullable RecipeGraphNode node,
                       FactoryPlan plan, boolean perHour,
-                      BiConsumer<ResourceLocation, ResourceLocation> onAmbiguity) {
+                      BiConsumer<ResourceLocation, ResourceLocation> onAmbiguity,
+                      int initialScrollOffset, IntConsumer onScrollChange) {
         super(x, y, width, height, Component.literal("Detail Card"));
         this.node = node;
         this.plan = plan;
         this.perHour = perHour;
         this.onAmbiguity = onAmbiguity;
+        this.scrollOffset = initialScrollOffset;
+        this.onScrollChange = onScrollChange;
     }
 
     public void setNode(@Nullable RecipeGraphNode node) {
         this.node = node;
         this.scrollOffset = 0;
+        this.onScrollChange.accept(0);
     }
 
     @Override
@@ -71,7 +77,13 @@ public class DetailCard extends AbstractWidget {
         guiGraphics.fill(getX(), getY(), getX() + 1, getY() + getHeight(), COLOR_BORDER);
 
         int maxScroll = Math.max(0, totalContentHeight - getHeight() + 8);
-        scrollOffset = Mth.clamp(scrollOffset, 0, maxScroll);
+        // totalContentHeight is only known after a render pass has measured it (set at the end of
+        // this method) -- on a freshly-constructed instance it's still 0, so skip the clamp on that
+        // first frame or it would immediately zero out a restored initialScrollOffset before the
+        // real content height is ever known.
+        if (totalContentHeight > 0) {
+            scrollOffset = Mth.clamp(scrollOffset, 0, maxScroll);
+        }
 
         guiGraphics.enableScissor(getX() + 1, getY() + 1, getX() + getWidth() - 1, getY() + getHeight() - 1);
 
@@ -298,6 +310,7 @@ public class DetailCard extends AbstractWidget {
         int maxScroll = Math.max(0, totalContentHeight - getHeight() + 8);
         if (maxScroll > 0) {
             scrollOffset = Mth.clamp(scrollOffset - (int) (scrollY * 12 * 2), 0, maxScroll);
+            onScrollChange.accept(scrollOffset);
             return true;
         }
         return false;

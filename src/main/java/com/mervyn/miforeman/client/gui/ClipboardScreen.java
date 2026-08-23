@@ -68,6 +68,7 @@ public class ClipboardScreen extends Screen {
     private DetailCard detailCard;
     private double cameraX, cameraY;
     private float cameraZoom = 1.0f;
+    private int detailScrollOffset = 0;
     private boolean detailCardCollapsed = false;
     private boolean showMachineNodes = true;
     private boolean graphDragEnabled = true;
@@ -241,11 +242,11 @@ public class ClipboardScreen extends Screen {
                 detailCard = new DetailCard(contentX + canvasWidth + 6, canvasY, detailWidth, contentH, selectedNode, this.goalDraft.currentPlan, this.goalDraft.perHour, (resId, choiceRecipeId) -> {
                     this.goalDraft.recipeSelections.put(resId, choiceRecipeId);
                     computePlan();
-                    if (selectedNodeId != null && this.goalDraft.currentPlan.graph().node(selectedNodeId) == null) {
+                    if (this.goalDraft.currentPlan != null && selectedNodeId != null && this.goalDraft.currentPlan.graph().node(selectedNodeId) == null) {
                         selectedNodeId = null;
                     }
                     rebuildStep(STEP_REVIEW_PLAN);
-                });
+                }, detailScrollOffset, v -> this.detailScrollOffset = v);
                 this.addRenderableWidget(detailCard);
             } else {
                 detailCard = null;
