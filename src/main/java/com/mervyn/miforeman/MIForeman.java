@@ -115,5 +115,10 @@ public class MIForeman {
                 com.mervyn.miforeman.network.ScanResultPayload.STREAM_CODEC,
                 com.mervyn.miforeman.network.ScanPacketHandlers::handleResponse
         );
+        registrar.playToClient(
+                com.mervyn.miforeman.network.MachineLinkSyncPayload.TYPE,
+                com.mervyn.miforeman.network.MachineLinkSyncPayload.STREAM_CODEC,
+                com.mervyn.miforeman.network.MachineLinkSyncHandler::handle
+        );
     }
 }

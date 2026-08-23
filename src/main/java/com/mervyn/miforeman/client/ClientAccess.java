@@ -25,4 +25,8 @@ public class ClientAccess {
             clipScreen.updateScanResults(payload.candidates());
         }
     }
+
+    public static void handleMachineLinkSync(com.mervyn.miforeman.network.MachineLinkSyncPayload payload) {
+        WorldHighlightRenderer.setLinked(payload.pos(), payload.linked());
+    }
 }

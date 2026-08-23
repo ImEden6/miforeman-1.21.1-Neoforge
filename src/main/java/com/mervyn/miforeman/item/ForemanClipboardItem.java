@@ -2,12 +2,14 @@ package com.mervyn.miforeman.item;
 
 import com.mervyn.miforeman.goal.MachineLinkHistory;
 import com.mervyn.miforeman.goal.ProductionGoal;
+import com.mervyn.miforeman.network.MachineLinkSyncPayload;
 import com.mervyn.miforeman.registry.ModComponents;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.InteractionResultHolder;
@@ -18,6 +20,7 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 public class ForemanClipboardItem extends Item {
     public ForemanClipboardItem(Properties properties) {
@@ -72,6 +75,11 @@ public class ForemanClipboardItem extends Item {
                         rejected
                 );
                 stack.set(ModComponents.PRODUCTION_GOAL.get(), updatedGoal);
+
+                if (player instanceof ServerPlayer serverPlayer) {
+                    boolean nowLinked = !wasLinked;
+                    PacketDistributor.sendToPlayer(serverPlayer, new MachineLinkSyncPayload(pos, nowLinked));
+                }
             }
             return InteractionResult.sidedSuccess(level.isClientSide());
         }
