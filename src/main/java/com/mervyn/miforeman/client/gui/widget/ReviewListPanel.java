@@ -23,7 +23,7 @@ public class ReviewListPanel extends AbstractWidget {
     public record ReviewRow(BlockPos pos, ResourceLocation machineId, boolean linked, boolean rejected,
                              boolean isNewCandidate, @Nullable String productLabel) {}
 
-    private static final int ROW_HEIGHT = 26;
+    private static final int ROW_HEIGHT = 34;
     private static final int COLOR_BORDER = 0xFF6B5030;
     private static final int COLOR_TEXT = 0xFF3A2A18;
     private static final int COLOR_MUTED = 0xFF8A7A68;
