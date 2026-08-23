@@ -44,6 +44,16 @@ public class MachineScanner {
         return index;
     }
 
+    /** Whether {@code pos} falls within the same square chunk-grid bound {@link #scan} enumerates
+     *  (a chunk-grid check, not a Euclidean/block-radius one) -- used to validate positions a
+     *  client claims came from a legitimate scan without re-running the whole scan. */
+    public static boolean isWithinScanRadius(BlockPos center, BlockPos pos, int radiusChunks) {
+        ChunkPos centerChunk = new ChunkPos(center);
+        ChunkPos posChunk = new ChunkPos(pos);
+        return Math.abs(posChunk.x - centerChunk.x) <= radiusChunks
+                && Math.abs(posChunk.z - centerChunk.z) <= radiusChunks;
+    }
+
     public static List<ScanCandidate> scan(ServerLevel level, BlockPos center, int radiusChunks, Set<ResourceLocation> recipeIndex) {
         List<ScanCandidate> found = new ArrayList<>();
         ChunkPos centerChunk = new ChunkPos(center);
