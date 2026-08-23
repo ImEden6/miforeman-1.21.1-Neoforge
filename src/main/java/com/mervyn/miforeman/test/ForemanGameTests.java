@@ -5,7 +5,6 @@ import com.mervyn.miforeman.goal.ProductionGoal;
 import com.mervyn.miforeman.goal.RecipeGraphTraverser;
 import com.mervyn.miforeman.registry.ModComponents;
 import com.mervyn.miforeman.registry.ModItems;
-import aztech.modern_industrialization.machines.init.MIMachineRecipeTypes;
 import aztech.modern_industrialization.machines.recipe.MachineRecipe;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -15,7 +14,8 @@ import net.minecraft.world.item.crafting.RecipeHolder;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
-import java.util.Collection;
+import java.util.List;
+import java.util.Map;
 import aztech.modern_industrialization.machines.MachineBlockEntity;
 import aztech.modern_industrialization.machines.components.CrafterComponent;
 import com.mervyn.miforeman.goal.ServerMonitoringManager;
@@ -67,9 +67,11 @@ public class ForemanGameTests {
 
         MIForeman.LOGGER.info("Starting MI Recipe Registry Extraction feasibility spike in GameTest...");
 
-        for (var recipeType : MIMachineRecipeTypes.getRecipeTypes()) {
-            Collection<RecipeHolder<MachineRecipe>> recipes = recipeManager.getAllRecipesFor(recipeType);
-            MIForeman.LOGGER.info("Recipe Type: {} - Found {} recipes", recipeType.getId(), recipes.size());
+        Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> byType = RecipeGraphTraverser.groupMachineRecipesByType(recipeManager);
+
+        for (var entry : byType.entrySet()) {
+            var recipes = entry.getValue();
+            MIForeman.LOGGER.info("Recipe Type: {} - Found {} recipes", entry.getKey(), recipes.size());
             totalRecipes += recipes.size();
             for (var recipeHolder : recipes) {
                 var recipe = recipeHolder.value();
@@ -138,8 +140,8 @@ public class ForemanGameTests {
                 .mapToDouble(ProductionGoal.MaterialFlow::rate)
                 .sum();
 
-        if (Math.abs(pvcRate - 461500.0) > 0.001) {
-            helper.fail("Expected 461500.0 polyvinyl_chloride rate, but calculated: " + pvcRate);
+        if (Math.abs(pvcRate - 437500.0) > 0.001) {
+            helper.fail("Expected 437500.0 polyvinyl_chloride rate, but calculated: " + pvcRate);
             return;
         }
 

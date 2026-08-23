@@ -3,6 +3,7 @@ package com.mervyn.miforeman.command;
 import static net.minecraft.commands.Commands.argument;
 import static net.minecraft.commands.Commands.literal;
 
+import aztech.modern_industrialization.machines.recipe.MachineRecipe;
 import com.mervyn.miforeman.goal.ProductionGoal;
 import com.mervyn.miforeman.goal.ProductionGoal.FactoryPlan;
 import com.mervyn.miforeman.goal.RecipeGraphTraverser;
@@ -18,10 +19,12 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.RecipeHolder;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -243,9 +246,11 @@ public class ForemanCommands {
         var recipeManager = level.getRecipeManager();
         int totalRecipes = 0;
 
-        for (var recipeType : aztech.modern_industrialization.machines.init.MIMachineRecipeTypes.getRecipeTypes()) {
-            var recipes = recipeManager.getAllRecipesFor(recipeType);
-            source.sendSuccess(() -> Component.literal("Recipe Type: " + recipeType.getId() + " - " + recipes.size() + " recipes"), false);
+        Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> byType = RecipeGraphTraverser.groupMachineRecipesByType(recipeManager);
+
+        for (var entry : byType.entrySet()) {
+            var recipes = entry.getValue();
+            source.sendSuccess(() -> Component.literal("Recipe Type: " + entry.getKey() + " - " + recipes.size() + " recipes"), false);
             totalRecipes += recipes.size();
             for (var recipeHolder : recipes) {
                 var recipe = recipeHolder.value();

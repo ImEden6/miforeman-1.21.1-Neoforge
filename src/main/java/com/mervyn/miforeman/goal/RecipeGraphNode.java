@@ -47,6 +47,15 @@ public class RecipeGraphNode {
     public void setSelectedAmbiguity(@Nullable ResourceLocation selectedAmbiguity) { this.selectedAmbiguity = selectedAmbiguity; }
     public List<GraphEdge> getInputs() { return inputs; }
     public List<GraphEdge> getOutputs() { return outputs; }
+    /** Replaces (rather than appends) any existing entry for the same {@code (from,to)} pair --
+     *  edges are keyed by endpoints only, so a rate-updated {@link GraphEdge} for a pair already
+     *  present must overwrite it instead of sitting alongside a stale duplicate. */
+    public void putInput(GraphEdge edge) { replaceByFromTo(inputs, edge); }
+    public void putOutput(GraphEdge edge) { replaceByFromTo(outputs, edge); }
+    private static void replaceByFromTo(List<GraphEdge> list, GraphEdge edge) {
+        list.removeIf(e -> e.from().equals(edge.from()) && e.to().equals(edge.to()));
+        list.add(edge);
+    }
     public int getDepth() { return depth; }
     public void setRequiredRate(double requiredRate) { this.requiredRate = requiredRate; }
     public void setMachineCount(double machineCount) { this.machineCount = machineCount; }
