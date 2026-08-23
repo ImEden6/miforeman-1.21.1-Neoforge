@@ -5,14 +5,12 @@ import com.ldtteam.blockui.controls.ButtonImage;
 import com.ldtteam.blockui.controls.Text;
 import com.ldtteam.blockui.controls.TextFieldVanilla;
 import com.ldtteam.blockui.views.BOWindow;
-import com.mervyn.miforeman.MIForeman;
+import com.mervyn.miforeman.client.gui.ClipboardChrome;
 import com.mervyn.miforeman.client.gui.GoalFormResult;
 import com.mervyn.miforeman.client.gui.GoalFormValidation;
-import com.mervyn.miforeman.client.gui.NineSliceTexture;
 import com.mervyn.miforeman.goal.ProductionGoal.TargetType;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -37,14 +35,6 @@ import java.util.function.Consumer;
  * dialog floating on top of it.
  */
 public class DefineGoalWindow extends BOWindow {
-    private static final ResourceLocation TEX_MAIN = ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "textures/gui/clipboard_main.png");
-    private static final ResourceLocation TEX_CLIP = ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "textures/gui/clipboard_clip.png");
-    private static final int MAIN_TEX_SIZE = 64;
-    private static final int MAIN_BORDER = 6;
-    private static final int CLIP_WIDTH = 16;
-    private static final int CLIP_HEIGHT = 32;
-    private static final int CLIP_OVERHANG = 6;
-
     private static final int PADDING = 8;
     private static final int FIELD_HEIGHT = 14;
     private static final int COLOR_TITLE = 0xFFDAA520;
@@ -125,9 +115,7 @@ public class DefineGoalWindow extends BOWindow {
         RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        NineSliceTexture.blit(target, TEX_MAIN, 0, 0, getWidth(), getHeight(), MAIN_BORDER, MAIN_TEX_SIZE);
-        int clipY = (getHeight() - CLIP_HEIGHT) / 2;
-        target.blit(TEX_CLIP, -CLIP_OVERHANG, clipY, 0, 0, CLIP_WIDTH, CLIP_HEIGHT, CLIP_WIDTH, CLIP_HEIGHT);
+        ClipboardChrome.drawBackground(target, 0, 0, getWidth(), getHeight());
         RenderSystem.disableBlend();
         RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
 
@@ -135,8 +123,8 @@ public class DefineGoalWindow extends BOWindow {
     }
 
     private void buildUi() {
-        int contentX = PADDING + MAIN_BORDER + 2;
-        int contentY = PADDING + MAIN_BORDER + 4;
+        int contentX = PADDING + ClipboardChrome.MAIN_BORDER + 2;
+        int contentY = PADDING + ClipboardChrome.MAIN_BORDER + 4;
 
         Text title = new Text();
         title.setPosition(contentX, contentY);
@@ -146,7 +134,7 @@ public class DefineGoalWindow extends BOWindow {
         addChild(title);
 
         int y = contentY + 24;
-        int contentW = getWidth() - contentX - (PADDING + MAIN_BORDER);
+        int contentW = getWidth() - contentX - (PADDING + ClipboardChrome.MAIN_BORDER);
 
         addChild(label("Goal Name", contentX, y, contentW));
         y += 10;
@@ -235,7 +223,7 @@ public class DefineGoalWindow extends BOWindow {
         errorText.setColors(COLOR_ERROR);
         addChild(errorText);
 
-        int btnY = getHeight() - PADDING - MAIN_BORDER - 22;
+        int btnY = getHeight() - PADDING - ClipboardChrome.MAIN_BORDER - 22;
         ButtonImage cancelButton = vanillaButton(contentX, btnY, 80, 16, "Cancel");
         cancelButton.setHandler(btn -> close());
         addChild(cancelButton);
