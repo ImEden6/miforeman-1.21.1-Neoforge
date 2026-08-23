@@ -1,5 +1,6 @@
 package com.mervyn.miforeman.client.gui;
 
+import com.mervyn.miforeman.client.WorldHighlightRenderer;
 import com.mervyn.miforeman.client.gui.widget.MonitoringListPanel;
 import com.mervyn.miforeman.network.LiveMonitoringPayload;
 import com.mervyn.miforeman.network.RequestMonitoringUpdatePayload;
@@ -7,6 +8,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
@@ -75,7 +77,8 @@ public class MonitoringScreen extends Screen {
                 .toList();
 
         MonitoringListPanel listPanel = new MonitoringListPanel(contentX, contentY, contentW, btnY - 6 - contentY,
-                displayRows, perHour, scrollOffset, v -> scrollOffset = v);
+                displayRows, perHour, WorldHighlightRenderer.getSelected(), this::handleLocate,
+                scrollOffset, v -> scrollOffset = v);
         this.addRenderableWidget(listPanel);
 
         Button backButton = Button.builder(Component.literal("<- Back"),
@@ -84,6 +87,19 @@ public class MonitoringScreen extends Screen {
         this.addRenderableWidget(backButton);
 
         new RequestMonitoringUpdatePayload().sendToServer();
+    }
+
+    /** Independent of the general Highlights on/off toggle -- clicking Locate on the current
+     *  selection clears it, otherwise it becomes the new selection. Either way it's visible
+     *  regardless of whether the linked/candidate highlights are on. */
+    private void handleLocate(MonitoringListPanel.MonitoringRow row) {
+        BlockPos pos = row.machine().pos();
+        if (pos.equals(WorldHighlightRenderer.getSelected())) {
+            WorldHighlightRenderer.setSelected(null);
+        } else {
+            WorldHighlightRenderer.setSelected(pos);
+        }
+        rebuild();
     }
 
     private int statusRank(LiveMonitoringPayload.MachineStatusData machine) {

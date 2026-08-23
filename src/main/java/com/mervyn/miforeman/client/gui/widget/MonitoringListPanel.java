@@ -6,10 +6,12 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 
 /**
@@ -23,24 +25,43 @@ public class MonitoringListPanel extends AbstractWidget {
 
     private static final int ROW_HEIGHT = 24;
     private static final int COLOR_BORDER = 0xFF6B5030;
+    private static final int COLOR_TEXT = 0xFF3A2A18;
     private static final int COLOR_MUTED = 0xFF8A7A68;
     private static final int COLOR_GREEN = 0xFF2E7D32;
     private static final int COLOR_AMBER = 0xFF9A6C00;
     private static final int COLOR_RED = 0xFFCC3333;
     private static final int COLOR_ORANGE = 0xFFE67700;
     private static final int COLOR_HOVER = 0x156B5030;
+    private static final int COLOR_SELECTED_ROW = 0x2000E5FF;
+    private static final int COLOR_LOCATE_BUTTON = 0xFFD8C3A5;
+    private static final int COLOR_LOCATED_BUTTON = 0xFF9FE8EE;
+    private static final int ACTION_BUTTON_WIDTH = 46;
+    private static final int ACTION_BUTTON_HEIGHT = 14;
 
     private final List<MonitoringRow> rows;
     private final boolean perHour;
+    private final @Nullable BlockPos selectedPos;
+    private final Consumer<MonitoringRow> onLocate;
     private final ListScroll scroll;
 
     public MonitoringListPanel(int x, int y, int width, int height,
-                                List<MonitoringRow> rows, boolean perHour,
+                                List<MonitoringRow> rows, boolean perHour, @Nullable BlockPos selectedPos,
+                                Consumer<MonitoringRow> onLocate,
                                 int initialScrollOffset, IntConsumer onScrollChange) {
         super(x, y, width, height, Component.literal("Machine Monitoring List"));
         this.rows = rows;
         this.perHour = perHour;
+        this.selectedPos = selectedPos;
+        this.onLocate = onLocate;
         this.scroll = new ListScroll(ROW_HEIGHT, initialScrollOffset, onScrollChange);
+    }
+
+    private int actionButtonX() {
+        return getX() + getWidth() - ACTION_BUTTON_WIDTH - 6;
+    }
+
+    private int actionButtonY(int rowY) {
+        return rowY + (ROW_HEIGHT - ACTION_BUTTON_HEIGHT) / 2;
     }
 
     @Override
@@ -57,7 +78,11 @@ public class MonitoringListPanel extends AbstractWidget {
 
         for (MonitoringRow row : rows) {
             LiveMonitoringPayload.MachineStatusData machine = row.machine();
+            boolean isSelected = machine.pos().equals(selectedPos);
             if (currentY + ROW_HEIGHT > getY() && currentY < getY() + getHeight()) {
+                if (isSelected) {
+                    guiGraphics.fill(getX() + 2, currentY, getX() + getWidth() - 2, currentY + ROW_HEIGHT, COLOR_SELECTED_ROW);
+                }
                 boolean isHovered = mouseX >= getX() + 1 && mouseX < getX() + getWidth() - 1 &&
                         mouseY >= currentY && mouseY < currentY + ROW_HEIGHT;
                 if (isHovered) {
@@ -69,7 +94,7 @@ public class MonitoringListPanel extends AbstractWidget {
 
                 double rateVal = machine.actualRate() * (perHour ? 60.0 : 1.0);
                 String text = String.format("%s: %.2f/%s (%s)", DisplayFormat.formatId(machine.machineId()), rateVal, perHour ? "hr" : "min", machine.status());
-                int maxTextWidth = getWidth() - 16;
+                int maxTextWidth = actionButtonX() - (getX() + 12) - 4;
                 if (mc.font.width(text) > maxTextWidth && maxTextWidth > 0) {
                     text = mc.font.plainSubstrByWidth(text, Math.max(0, maxTextWidth - 8)) + "..";
                 }
@@ -78,6 +103,13 @@ public class MonitoringListPanel extends AbstractWidget {
                 if (row.productLabel() != null) {
                     guiGraphics.drawString(mc.font, row.productLabel(), getX() + 12, currentY + 13, COLOR_MUTED, false);
                 }
+
+                int btnX = actionButtonX();
+                int btnY = actionButtonY(currentY);
+                guiGraphics.fill(btnX, btnY, btnX + ACTION_BUTTON_WIDTH, btnY + ACTION_BUTTON_HEIGHT,
+                        isSelected ? COLOR_LOCATED_BUTTON : COLOR_LOCATE_BUTTON);
+                guiGraphics.renderOutline(btnX, btnY, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT, COLOR_BORDER);
+                guiGraphics.drawString(mc.font, isSelected ? "Located" : "Locate", btnX + 3, btnY + 3, COLOR_TEXT, false);
             }
             currentY += ROW_HEIGHT;
         }
@@ -85,6 +117,32 @@ public class MonitoringListPanel extends AbstractWidget {
         guiGraphics.disableScissor();
 
         scroll.drawScrollbar(guiGraphics, getX(), getY(), getWidth(), getHeight(), rows.size(), COLOR_BORDER);
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (!visible || !active || button != 0) return false;
+        if (mouseX < getX() || mouseX >= getX() + getWidth() || mouseY < getY() || mouseY >= getY() + getHeight()) {
+            return false;
+        }
+
+        int currentY = getY() + 2 - scroll.offset();
+        for (MonitoringRow row : rows) {
+            if (mouseY >= currentY && mouseY < currentY + ROW_HEIGHT) {
+                int btnX = actionButtonX();
+                int btnY = actionButtonY(currentY);
+                boolean inActionButton = mouseX >= btnX && mouseX < btnX + ACTION_BUTTON_WIDTH &&
+                        mouseY >= btnY && mouseY < btnY + ACTION_BUTTON_HEIGHT;
+                if (inActionButton) {
+                    onLocate.accept(row);
+                    this.playDownSound(Minecraft.getInstance().getSoundManager());
+                    return true;
+                }
+                return false;
+            }
+            currentY += ROW_HEIGHT;
+        }
+        return false;
     }
 
     @Override
