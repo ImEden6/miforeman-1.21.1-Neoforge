@@ -241,15 +241,9 @@ public class ClipboardScreen extends Screen {
                 RecipeGraphNode selectedNode = selectedNodeId != null ? this.goalDraft.currentPlan.graph().node(selectedNodeId) : null;
                 detailCard = new DetailCard(contentX + canvasWidth + 6, canvasY, detailWidth, contentH, selectedNode, this.goalDraft.currentPlan, this.goalDraft.perHour, (resId, choiceRecipeId) -> {
                     this.goalDraft.recipeSelections.put(resId, choiceRecipeId);
-                    // A MACHINE node's own id IS its recipe id, so cycling the recipe of the
-                    // currently-selected machine node makes that id vanish from the rebuilt graph.
-                    // Follow the selection onto the newly-chosen recipe's node instead of losing it.
-                    boolean cyclingSelectedMachine = selectedNode != null && selectedNode.getType() == NodeType.MACHINE;
                     computePlan();
                     if (this.goalDraft.currentPlan != null && selectedNodeId != null && this.goalDraft.currentPlan.graph().node(selectedNodeId) == null) {
-                        selectedNodeId = cyclingSelectedMachine && this.goalDraft.currentPlan.graph().node(choiceRecipeId) != null
-                                ? choiceRecipeId
-                                : null;
+                        selectedNodeId = null;
                     }
                     rebuildStep(STEP_REVIEW_PLAN);
                 }, detailScrollOffset, v -> this.detailScrollOffset = v);
