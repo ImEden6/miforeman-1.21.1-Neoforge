@@ -1,5 +1,6 @@
 package com.mervyn.miforeman.client.gui;
 
+import com.mervyn.miforeman.client.gui.widget.ClipboardButton;
 import com.mervyn.miforeman.client.gui.widget.ReviewListPanel;
 import com.mervyn.miforeman.goal.MachineLinkHistory;
 import net.minecraft.client.Minecraft;
@@ -62,32 +63,34 @@ public class ReviewMachinesScreen extends Screen {
         int contentW = guiWidth() - (PADDING + ClipboardChrome.MAIN_BORDER) * 2 - 4;
         int btnY = top + guiHeight() - PADDING - ClipboardChrome.MAIN_BORDER - 22;
 
-        Button showRejectedButton = Button.builder(
+        Button showRejectedButton = new ClipboardButton(contentX, contentY, 90, 14,
                 Component.literal(state.showRejected ? "Hide Rejected" : "Show Rejected"),
                 b -> {
                     state.showRejected = !state.showRejected;
                     rebuild();
                 }
-        ).bounds(contentX, contentY, 90, 14).build();
+        );
         this.addRenderableWidget(showRejectedButton);
 
-        Button undoButton = Button.builder(Component.literal("Undo"), b -> {
+        Button undoButton = new ClipboardButton(contentX + 94, contentY, 40, 14,
+                Component.literal("Undo"), b -> {
             MachineLinkHistory.UndoResult result = state.machineLinkHistory.undo();
             if (result != null) {
                 state.applyLinkHistoryResult(result, onChange);
                 rebuild();
             }
-        }).bounds(contentX + 94, contentY, 40, 14).build();
+        });
         undoButton.active = !state.machineLinkHistory.undoStack().isEmpty();
         this.addRenderableWidget(undoButton);
 
-        Button redoButton = Button.builder(Component.literal("Redo"), b -> {
+        Button redoButton = new ClipboardButton(contentX + 138, contentY, 40, 14,
+                Component.literal("Redo"), b -> {
             MachineLinkHistory.UndoResult result = state.machineLinkHistory.redo();
             if (result != null) {
                 state.applyLinkHistoryResult(result, onChange);
                 rebuild();
             }
-        }).bounds(contentX + 138, contentY, 40, 14).build();
+        });
         redoButton.active = !state.machineLinkHistory.redoStack().isEmpty();
         this.addRenderableWidget(redoButton);
 
@@ -99,9 +102,10 @@ public class ReviewMachinesScreen extends Screen {
         this.addRenderableWidget(listPanel);
         state.updateWorldHighlightPositions(rows);
 
-        Button backButton = Button.builder(Component.literal("<- Back"),
+        Button backButton = new ClipboardButton(contentX, btnY, 80, 16,
+                Component.literal("<- Back"),
                 b -> Minecraft.getInstance().setScreen(backTarget)
-        ).bounds(contentX, btnY, 80, 16).build();
+        );
         this.addRenderableWidget(backButton);
     }
 

@@ -7,6 +7,7 @@ import com.mervyn.miforeman.network.GoalUpdatePayload;
 import com.mervyn.miforeman.network.RequestMonitoringUpdatePayload;
 import com.mervyn.miforeman.network.LiveMonitoringPayload;
 import com.mervyn.miforeman.client.gui.blockui.DefineGoalWindow;
+import com.mervyn.miforeman.client.gui.widget.ClipboardButton;
 import com.mervyn.miforeman.client.gui.widget.GraphCanvas;
 import com.mervyn.miforeman.client.gui.widget.DetailCard;
 import com.mervyn.miforeman.client.gui.widget.ReviewListPanel;
@@ -164,13 +165,13 @@ public class ClipboardScreen extends Screen {
         int left = (this.width - guiWidth) / 2;
         int top = (this.height - guiHeight) / 2;
 
-        toggleModeButton = Button.builder(
+        toggleModeButton = new ClipboardButton(left + guiWidth - 54, top + 8, 46, 14,
             Component.literal(this.isMinimized ? "Edit" : "View"),
             b -> {
                 this.isMinimized = !this.isMinimized;
                 rebuildStep(this.currentStep);
             }
-        ).bounds(left + guiWidth - 54, top + 8, 46, 14).build();
+        );
         this.addRenderableWidget(toggleModeButton);
 
         if (this.isMinimized) {
@@ -301,24 +302,25 @@ public class ClipboardScreen extends Screen {
                 detailCard = null;
             }
 
-            toggleDetailButton = Button.builder(Component.literal(detailCardCollapsed ? "Show Details" : "Hide Details"),
+            toggleDetailButton = new ClipboardButton(contentX + contentW - 90, topButtonRowY, 90, 12,
+                    Component.literal(detailCardCollapsed ? "Show Details" : "Hide Details"),
                     b -> {
                         detailCardCollapsed = !detailCardCollapsed;
                         rebuildStep(STEP_REVIEW_PLAN);
-                    }).bounds(contentX + contentW - 90, topButtonRowY, 90, 12).build();
+                    });
             this.addRenderableWidget(toggleDetailButton);
 
-            undoLayoutButton = Button.builder(Component.literal("Undo"), b -> graphCanvas.undo())
-                    .bounds(contentX, topButtonRowY, 40, 12).build();
+            undoLayoutButton = new ClipboardButton(contentX, topButtonRowY, 40, 12,
+                    Component.literal("Undo"), b -> graphCanvas.undo());
             undoLayoutButton.active = graphCanvas.canUndo();
             this.addRenderableWidget(undoLayoutButton);
 
-            redoLayoutButton = Button.builder(Component.literal("Redo"), b -> graphCanvas.redo())
-                    .bounds(contentX + 44, topButtonRowY, 40, 12).build();
+            redoLayoutButton = new ClipboardButton(contentX + 44, topButtonRowY, 40, 12,
+                    Component.literal("Redo"), b -> graphCanvas.redo());
             redoLayoutButton.active = graphCanvas.canRedo();
             this.addRenderableWidget(redoLayoutButton);
 
-            toggleMachineViewButton = Button.builder(
+            toggleMachineViewButton = new ClipboardButton(contentX + 88, topButtonRowY, 86, 12,
                     Component.literal(showMachineNodes ? "Items Only" : "Show Machines"),
                     b -> {
                         showMachineNodes = !showMachineNodes;
@@ -332,27 +334,28 @@ public class ClipboardScreen extends Screen {
                         }
                         rebuildStep(STEP_REVIEW_PLAN);
                     }
-            ).bounds(contentX + 88, topButtonRowY, 86, 12).build();
+            );
             this.addRenderableWidget(toggleMachineViewButton);
 
-            toggleDragModeButton = Button.builder(
+            toggleDragModeButton = new ClipboardButton(contentX + 178, topButtonRowY, 86, 12,
                     Component.literal(graphDragEnabled ? "Edit Mode" : "View Mode"),
                     b -> {
                         graphDragEnabled = !graphDragEnabled;
                         rebuildStep(STEP_REVIEW_PLAN);
                     }
-            ).bounds(contentX + 178, topButtonRowY, 86, 12).build();
+            );
             this.addRenderableWidget(toggleDragModeButton);
         }
 
-        backButton = Button.builder(Component.literal("<- Back"), b -> goToStep(STEP_DEFINE_GOAL))
-                .bounds(contentX, btnY, 80, 16).build();
+        backButton = new ClipboardButton(contentX, btnY, 80, 16,
+                Component.literal("<- Back"), b -> goToStep(STEP_DEFINE_GOAL));
         this.addRenderableWidget(backButton);
 
-        nextButton = Button.builder(Component.literal("Save & Monitor"), b -> {
+        nextButton = new ClipboardButton(contentX + contentW - 110, btnY, 110, 16,
+                Component.literal("Save & Monitor"), b -> {
             save();
             goToStep(STEP_MONITOR);
-        }).bounds(contentX + contentW - 110, btnY, 110, 16).build();
+        });
         this.addRenderableWidget(nextButton);
     }
 
@@ -364,44 +367,44 @@ public class ClipboardScreen extends Screen {
         int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
         int contentW = guiWidth() - (PADDING + ClipboardChrome.MAIN_BORDER) * 2 - 4;
 
-        Button scanButton = Button.builder(Component.literal("Scan Nearby"), b -> triggerScan())
-                .bounds(contentX, contentY + 28, 90, 14).build();
+        Button scanButton = new ClipboardButton(contentX, contentY + 28, 90, 14,
+                Component.literal("Scan Nearby"), b -> triggerScan());
         this.addRenderableWidget(scanButton);
 
-        Button highlightsButton = Button.builder(
+        Button highlightsButton = new ClipboardButton(contentX + 94, contentY + 28, 90, 14,
                 Component.literal(monitoringState.showInWorldHighlights ? "Highlights: On" : "Highlights: Off"),
                 b -> {
                     monitoringState.showInWorldHighlights = !monitoringState.showInWorldHighlights;
                     WorldHighlightRenderer.setEnabled(monitoringState.showInWorldHighlights);
                     rebuildStep(STEP_MONITOR);
-                }).bounds(contentX + 94, contentY + 28, 90, 14).build();
+                });
         this.addRenderableWidget(highlightsButton);
 
         List<ReviewListPanel.ReviewRow> rows = monitoringState.buildReviewRows();
         monitoringState.updateWorldHighlightPositions(rows);
 
         int halfW = (contentW - 6) / 2;
-        Button reviewButton = Button.builder(
+        Button reviewButton = new ClipboardButton(contentX, contentY + 46, halfW, 16,
                 Component.literal("Review Machines (" + rows.size() + ")"),
                 b -> Minecraft.getInstance().setScreen(new ReviewMachinesScreen(
                         monitoringState, this::onMonitoringStateChanged, this))
-        ).bounds(contentX, contentY + 46, halfW, 16).build();
+        );
         this.addRenderableWidget(reviewButton);
 
-        Button monitoringButton = Button.builder(
+        Button monitoringButton = new ClipboardButton(contentX + halfW + 6, contentY + 46, halfW, 16,
                 Component.literal("View Monitoring (" + monitoringState.liveData.size() + ")"),
                 b -> Minecraft.getInstance().setScreen(new MonitoringScreen(
                         monitoringState, goalDraft.perHour, this))
-        ).bounds(contentX + halfW + 6, contentY + 46, halfW, 16).build();
+        );
         this.addRenderableWidget(monitoringButton);
 
         int btnY = top + guiHeight() - PADDING - ClipboardChrome.MAIN_BORDER - 22;
-        backButton = Button.builder(Component.literal("<- Back"), b -> goToStep(STEP_REVIEW_PLAN))
-                .bounds(contentX, btnY, 80, 16).build();
+        backButton = new ClipboardButton(contentX, btnY, 80, 16,
+                Component.literal("<- Back"), b -> goToStep(STEP_REVIEW_PLAN));
         this.addRenderableWidget(backButton);
 
-        nextButton = Button.builder(Component.literal("Done"), b -> this.onClose())
-                .bounds(contentX + contentW - 80, btnY, 80, 16).build();
+        nextButton = new ClipboardButton(contentX + contentW - 80, btnY, 80, 16,
+                Component.literal("Done"), b -> this.onClose());
         this.addRenderableWidget(nextButton);
 
         new RequestMonitoringUpdatePayload().sendToServer();

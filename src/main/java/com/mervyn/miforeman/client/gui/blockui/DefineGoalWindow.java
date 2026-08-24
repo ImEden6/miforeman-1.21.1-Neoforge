@@ -280,7 +280,8 @@ public class DefineGoalWindow extends BOWindow {
     }
 
     private ButtonImage vanillaButton(int x, int y, int w, int h, String text) {
-        ButtonImage button = new ButtonImage(true);
+        ButtonImage button = new ClipboardButtonImage();
+        button.setColors(0xFFFFFFFF, 0xFFFFFFFF, 0xFFA0A0A0);
         button.setSize(w, h);
         button.setPosition(x, y);
         button.setText(Component.literal(text));

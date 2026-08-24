@@ -1,6 +1,7 @@
 package com.mervyn.miforeman.client.gui;
 
 import com.mervyn.miforeman.client.WorldHighlightRenderer;
+import com.mervyn.miforeman.client.gui.widget.ClipboardButton;
 import com.mervyn.miforeman.client.gui.widget.MonitoringListPanel;
 import com.mervyn.miforeman.network.LiveMonitoringPayload;
 import com.mervyn.miforeman.network.RequestMonitoringUpdatePayload;
@@ -81,9 +82,10 @@ public class MonitoringScreen extends Screen {
                 scrollOffset, v -> scrollOffset = v);
         this.addRenderableWidget(listPanel);
 
-        Button backButton = Button.builder(Component.literal("<- Back"),
+        Button backButton = new ClipboardButton(contentX, btnY, 80, 16,
+                Component.literal("<- Back"),
                 b -> Minecraft.getInstance().setScreen(backTarget)
-        ).bounds(contentX, btnY, 80, 16).build();
+        );
         this.addRenderableWidget(backButton);
 
         new RequestMonitoringUpdatePayload().sendToServer();
