@@ -68,12 +68,12 @@ Tests use `@PrefixGameTestTemplate(false)` + `template="empty"` — no structure
 ## Conventions & gotchas
 
 - **`localRuntime` not `runtimeOnly`**: Use `localRuntime` for optional test deps. `runtimeOnly` publishes the dep; `localRuntime` keeps it local.
-- **Mixin config exists but empty**: `miforeman.mixins.json` at `com.mervyn.miforeman.mixin`. `"mixins": []`. Add class refs here when adding mixins.
+- **Mixin config**: `miforeman.mixins.json` at `com.mervyn.miforeman.mixin`. Currently one accessor mixin, `CrafterComponentAccessor` (read access to `CrafterComponent.activeRecipe`). Add class refs here when adding mixins.
 - **Config is COMMON side**: `ModContainer.registerConfig(ModConfig.Type.COMMON, ...)`.
 - **CurseMaven dependency** for MI (`build.gradle:162`): `implementation "curse.maven:modern-industrialization-405388:8439736"`. Not declared in `neoforge.mods.toml`.
 - **Template expansion**: `neoforge.mods.toml` lives in `src/main/templates/META-INF/`. Expanded via Groovy `${property}` in `generateModMetadata`. `neoForge.ideSyncTask` ensures re-expansion on IDE sync.
 - **Datagen output dir**: `src/generated/resources/` is declared as an input in `sourceSets.main.resources` but may not exist yet. Generate with `./gradlew runData`.
-- **Reflection**: `ServerMonitoringManager.java:60-70` uses `java.lang.reflect.Field` to access `CrafterComponent.activeRecipe`. Fragile across MI versions.
+- **Dimension-safe monitoring**: `ServerMonitoringManager.TRACKERS` is keyed by `GlobalPos`, not bare `BlockPos` -- same coordinates in different dimensions get independent trackers. Stale trackers are pruned every 200 ticks against currently-linked machines.
 - **Parchment mappings**: `parchment_mappings_version=2024.11.17` for `parchment_minecraft_version=1.21.1`.
 - **Gradle 9.2.1** with BIN distribution (not ALL).
 - **ProductionGoal rate** stored as per-minute; perHour toggle divides/multiplies by 60 for display.
