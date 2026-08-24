@@ -151,14 +151,7 @@ public class ForemanCommands {
         }
 
         FactoryPlan plan = RecipeGraphTraverser.computePlan(source.getLevel(), goal);
-        ProductionGoal updatedGoal = new ProductionGoal(
-                goal.name(),
-                goal.type(),
-                goal.targetId(),
-                goal.rate(),
-                goal.recipeSelections(),
-                Optional.of(plan)
-        );
+        ProductionGoal updatedGoal = goal.withPlan(Optional.of(plan));
         stack.set(ModComponents.PRODUCTION_GOAL.get(), updatedGoal);
         player.setItemInHand(InteractionHand.MAIN_HAND, stack);
 
@@ -215,24 +208,10 @@ public class ForemanCommands {
         Map<ResourceLocation, ResourceLocation> updatedSelections = new HashMap<>(goal.recipeSelections());
         updatedSelections.put(target, recipe);
 
-        ProductionGoal tempGoal = new ProductionGoal(
-                goal.name(),
-                goal.type(),
-                goal.targetId(),
-                goal.rate(),
-                updatedSelections,
-                Optional.empty()
-        );
+        ProductionGoal tempGoal = goal.withRecipeSelections(updatedSelections);
         FactoryPlan newPlan = RecipeGraphTraverser.computePlan(source.getLevel(), tempGoal);
 
-        ProductionGoal updatedGoal = new ProductionGoal(
-                goal.name(),
-                goal.type(),
-                goal.targetId(),
-                goal.rate(),
-                updatedSelections,
-                Optional.of(newPlan)
-        );
+        ProductionGoal updatedGoal = tempGoal.withPlan(Optional.of(newPlan));
 
         stack.set(ModComponents.PRODUCTION_GOAL.get(), updatedGoal);
         player.setItemInHand(InteractionHand.MAIN_HAND, stack);

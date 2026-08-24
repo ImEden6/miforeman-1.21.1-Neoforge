@@ -1,7 +1,8 @@
-# Maybe — UI/UX nice-to-haves
+# Maybe — nice-to-haves
 
-Not scheduled, just captured so they don't get lost. Mostly aimed at
-`GraphCanvas` (recipe graph) and `DetailCard`.
+Not scheduled, just captured so they don't get lost. Started as UI/UX polish
+for `GraphCanvas` (recipe graph) and `DetailCard`; now also collects
+correctness fixes, feature ideas, and docs debt.
 
 ## Visual polish
 
@@ -51,6 +52,53 @@ Not scheduled, just captured so they don't get lost. Mostly aimed at
   `ClipboardScreen.java`) after living with the landscape layout for a bit —
   440x230 was a first guess, not a measured choice.
 
+## Monitoring & correctness
+
+- **Persist or cache `FactoryPlan.graph`** — `FactoryPlan.CODEC`/`STREAM_CODEC` drop the graph
+  (`ProductionGoal.java`, known-null after network crossing per the comment in
+  `ScanPacketHandlers.java`), so every clipboard reopen recomputes the whole traversal
+  (`ClipboardScreen.java` recompute-on-open). Either serialize the graph or cache it keyed by
+  plan inputs so big-graph opens are instant.
+- **Command path drops newer goal fields** — `/miforeman goal plan` and `/miforeman goal select`
+  rebuild the goal via the 5-arg constructor (`ForemanCommands.java`), silently wiping
+  `graphLayout`, `machineLinkHistory`, and `rejectedMachines`. Route them through the same
+  `withX` mutators the GUI uses.
+- **Tick-loop cost** — `ServerMonitoringManager.onServerTick` walks all levels x players x
+  hands every tick even with zero clipboards in play; short-circuit when none exist.
+  `energyEvents.removeIf` runs on every add (O(n)) — a deque head-trim would do.
+- **STREAM_CODEC drift guard** — `ProductionGoal.STREAM_CODEC` hand-rolls what `CODEC`
+  declares; a field added to one but not the other fails silently. A cheap parity game test
+  (round-trip both codecs, assert equality) guards this without rewriting the codec.
+- **Config cleanup** — template entries still live in `Config.java` (`LOG_DIRT_BLOCK`,
+  `MAGIC_NUMBER`, `ITEM_STRINGS`). Remove them and move monitoring window / poll interval /
+  default threshold next to `AUTOLINK_SCAN_RADIUS_CHUNKS`.
+
+## Feature ideas
+
+- **Alerts** — toast/chat notification when a machine sits RED > N seconds, or actual rate
+  falls below threshold x expected. Currently you have to watch the monitor screen.
+- **Bottleneck view** — rank machines by utilization (actual/expected) and feed it into
+  `GraphCanvas` node/edge coloring; combines with the status color-coding item above. The
+  data already exists in `MachineTracker.energyEvents`.
+- **Ambiguity resolution in DetailCard** — pick among alternative recipes per node in the GUI
+  instead of falling back to `/miforeman goal select`.
+- **Link-coverage indicator** — the plan says you need 12 assemblers; nothing shows "8 of 12
+  linked". Match linked machines to plan slots via their active recipe; show coverage bars in
+  the Monitor step.
+- **Raw-inputs shopping list** — copyable text/JSON export of raw materials + rates for use
+  outside the game.
+- **Trend sparklines** — hours-scale rate/energy history charts in the Monitor step;
+  server-side persistence across restarts is the optional stretch goal.
+- **EMI/JEI integration** — click a node ingredient to inspect its recipes; set the goal
+  target by dragging an item out of EMI.
+- **Scan upgrades** — per-scan radius override in the Review panel (planned in
+  `.scratch/machine-auto-detection/map.md`, never built), optional gentle force-load of
+  scanned chunks, particle ping on newly found candidates.
+- **Cross-dimension goals** — `linkedMachines` carries no dimension info; supporting real
+  multi-dimension factories means GlobalPos end-to-end (codec, link sync, server-side
+  validation, scanner, GUI lists). Pending market research on whether players actually build
+  these; the planned GlobalPos tracker keys keep the monitoring side compatible either way.
+
 ## Code health
 
 - **`RecipeGraphTraverser.java` complexity** — per Omen (`omen tdg`), this is
@@ -62,3 +110,9 @@ Not scheduled, just captured so they don't get lost. Mostly aimed at
   graph traversal branches, not just moving code around. Needs its own
   focused pass with test coverage before touching it, not an opportunistic
   cleanup.
+
+## Documentation debt
+
+- **README.md** is still MDK boilerplate — no actual description of what MI Foreman does.
+- **AGENTS.md is stale** — references `TreePanel` (replaced by `GraphCanvas`), says "3
+  packets" (now 6), and points at `plan.md`, which no longer exists.

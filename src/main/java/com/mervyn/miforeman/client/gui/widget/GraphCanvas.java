@@ -30,12 +30,17 @@ import java.util.function.Consumer;
  * research this was built against).
  */
 public class GraphCanvas extends AbstractWidget {
-    private static final int COLOR_BORDER = 0xFF6B5030;
+    private static final int COLOR_BORDER_LIGHT = 0xFF9C8058;
+    private static final int COLOR_BORDER_DARK = 0xFF4A3620;
     private static final int COLOR_TEXT = 0xFF3A2A18;
     private static final int COLOR_MUTED = 0xFF8A7A68;
     private static final int COLOR_SELECTED = 0x336B5030;
-    private static final int COLOR_NODE_FILL = 0xDDFFF8DC;
+    private static final int COLOR_HOVER = 0x22FFFFFF;
+    private static final int COLOR_NODE_FILL_TOP = 0xDDFFFBEF;
+    private static final int COLOR_NODE_FILL_BOTTOM = 0xDDEFE0BE;
     private static final int COLOR_EDGE = 0xFF8A7A68;
+    private static final int COLOR_EDGE_DIM = 0x558A7A68;
+    private static final int COLOR_EDGE_HIGHLIGHT = 0xFFD4A017;
 
     private static final int NODE_WIDTH = 96;
     private static final int NODE_HEIGHT = 26;
@@ -200,8 +205,12 @@ public class GraphCanvas extends AbstractWidget {
         guiGraphics.pose().translate(getX() + camera.panX(), getY() + camera.panY(), 0);
         guiGraphics.pose().scale(camera.zoom(), camera.zoom(), 1);
 
-        // Edges: simple elbow (horizontal-vertical-horizontal) connectors, one flat color.
-        // Plain edges only in this build -- rate-thickness/utilization styling is out of scope.
+        RecipeGraphNode hovered = isMouseOver(mouseX, mouseY) ? nodeAt(mouseX, mouseY) : null;
+        ResourceLocation hoveredNodeId = hovered != null ? hovered.getId() : null;
+
+        // Edges: simple elbow (horizontal-vertical-horizontal) connectors. When a node is
+        // selected, edges touching it pop in COLOR_EDGE_HIGHLIGHT and the rest dim, so
+        // dependencies are traceable without hunting through crossing lines.
         for (GraphEdge edge : visibleEdges) {
             RecipeGraphNode from = visibleNodes.get(edge.from());
             RecipeGraphNode to = visibleNodes.get(edge.to());
@@ -209,9 +218,14 @@ public class GraphCanvas extends AbstractWidget {
             NodePosition fromPos = positionOf(from);
             NodePosition toPos = positionOf(to);
             if (fromPos == null || toPos == null) continue;
+            int color = COLOR_EDGE;
+            if (selectedNodeId != null) {
+                boolean touchesSelected = edge.from().equals(selectedNodeId) || edge.to().equals(selectedNodeId);
+                color = touchesSelected ? COLOR_EDGE_HIGHLIGHT : COLOR_EDGE_DIM;
+            }
             drawElbowConnector(guiGraphics,
                     fromPos.x() + NODE_WIDTH, fromPos.y() + NODE_HEIGHT / 2,
-                    toPos.x(), toPos.y() + NODE_HEIGHT / 2);
+                    toPos.x(), toPos.y() + NODE_HEIGHT / 2, color);
         }
 
         Minecraft mc = Minecraft.getInstance();
@@ -219,11 +233,19 @@ public class GraphCanvas extends AbstractWidget {
             NodePosition pos = positionOf(node);
             if (pos == null) continue;
             boolean selected = node.getId().equals(selectedNodeId);
-            guiGraphics.fill(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOR_NODE_FILL);
+            boolean hoveredNode = node.getId().equals(hoveredNodeId);
+            guiGraphics.fillGradient(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOR_NODE_FILL_TOP, COLOR_NODE_FILL_BOTTOM);
             if (selected) {
                 guiGraphics.fill(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOR_SELECTED);
             }
-            guiGraphics.renderOutline(pos.x(), pos.y(), NODE_WIDTH, NODE_HEIGHT, COLOR_BORDER);
+            if (hoveredNode) {
+                guiGraphics.fill(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOR_HOVER);
+            }
+            // Raised-tile treatment: light top/left edge, dark bottom/right edge.
+            guiGraphics.fill(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + 1, COLOR_BORDER_LIGHT);
+            guiGraphics.fill(pos.x(), pos.y(), pos.x() + 1, pos.y() + NODE_HEIGHT, COLOR_BORDER_LIGHT);
+            guiGraphics.fill(pos.x(), pos.y() + NODE_HEIGHT - 1, pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOR_BORDER_DARK);
+            guiGraphics.fill(pos.x() + NODE_WIDTH - 1, pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOR_BORDER_DARK);
 
             String name = DisplayFormat.formatId(node.getId());
             boolean hasAmbiguity = !node.getAmbiguityOptions().isEmpty();
@@ -244,23 +266,23 @@ public class GraphCanvas extends AbstractWidget {
         guiGraphics.disableScissor();
     }
 
-    private void drawElbowConnector(GuiGraphics guiGraphics, int fromX, int fromY, int toX, int toY) {
+    private void drawElbowConnector(GuiGraphics guiGraphics, int fromX, int fromY, int toX, int toY, int color) {
         int midX = (fromX + toX) / 2;
-        drawLine(guiGraphics, fromX, fromY, midX, fromY);
-        drawLine(guiGraphics, midX, fromY, midX, toY);
-        drawLine(guiGraphics, midX, toY, toX, toY);
+        drawLine(guiGraphics, fromX, fromY, midX, fromY, color);
+        drawLine(guiGraphics, midX, fromY, midX, toY, color);
+        drawLine(guiGraphics, midX, toY, toX, toY, color);
     }
 
-    private void drawLine(GuiGraphics guiGraphics, int x1, int y1, int x2, int y2) {
+    private void drawLine(GuiGraphics guiGraphics, int x1, int y1, int x2, int y2, int color) {
         int thickness = 1;
         if (y1 == y2) {
             int minX = Math.min(x1, x2);
             int maxX = Math.max(x1, x2);
-            guiGraphics.fill(minX, y1 - thickness, maxX, y1 + thickness, COLOR_EDGE);
+            guiGraphics.fill(minX, y1 - thickness, maxX, y1 + thickness, color);
         } else {
             int minY = Math.min(y1, y2);
             int maxY = Math.max(y1, y2);
-            guiGraphics.fill(x1 - thickness, minY, x1 + thickness, maxY, COLOR_EDGE);
+            guiGraphics.fill(x1 - thickness, minY, x1 + thickness, maxY, color);
         }
     }
 

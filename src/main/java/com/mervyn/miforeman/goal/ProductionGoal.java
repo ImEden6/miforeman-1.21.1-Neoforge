@@ -51,6 +51,14 @@ public record ProductionGoal(
         return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines);
     }
 
+    public ProductionGoal withPlan(Optional<FactoryPlan> plan) {
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines);
+    }
+
+    public ProductionGoal withRecipeSelections(Map<ResourceLocation, ResourceLocation> recipeSelections) {
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines);
+    }
+
     public ProductionGoal withLinkedMachines(List<BlockPos> linkedMachines, MachineLinkHistory machineLinkHistory) {
         return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines);
     }
