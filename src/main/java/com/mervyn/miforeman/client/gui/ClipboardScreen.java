@@ -1,5 +1,6 @@
 package com.mervyn.miforeman.client.gui;
 
+import com.mervyn.miforeman.goal.ClipboardCloseSync;
 import com.mervyn.miforeman.goal.ClipboardUiState;
 import com.mervyn.miforeman.goal.ProductionGoal;
 import com.mervyn.miforeman.registry.ModComponents;
@@ -85,16 +86,24 @@ public class ClipboardScreen extends Screen {
     private boolean isMinimized;
     private Button toggleModeButton;
 
-    /** The goal as it existed on the item when this screen opened -- used by {@link #removed()}
-     *  as the base for persisting just the UI-state sliver on close, so unsaved edits made to the
-     *  rest of the goal (name/target/rate/plan) elsewhere in the screen never leak through. */
+    /** The goal as it existed on the item when this screen opened. Only used by {@link #init()}
+     *  to pick the initial step, and never updated after construction. */
     private final ProductionGoal openedGoal;
+
+    /** The last goal this screen pushed to the server, via {@link #syncGoal()} or {@link #save()}.
+     *  Starts as {@code openedGoal} if neither has fired yet. {@link #removed()} builds the
+     *  UI-state sliver on top of this, not {@code openedGoal}, so a session that included a real
+     *  save doesn't get overwritten back to the open-time snapshot. Draft edits to the rest of the
+     *  goal (name/target/rate/plan) elsewhere in the screen still don't leak through on close,
+     *  because this field only changes when a GoalUpdatePayload is actually sent. */
+    private ProductionGoal lastSyncedGoal;
 
     public ClipboardScreen(ItemStack stack) {
         super(Component.literal("Clipboard Goal Editor"));
 
         ProductionGoal goal = stack.get(ModComponents.PRODUCTION_GOAL.get());
         this.openedGoal = goal;
+        this.lastSyncedGoal = goal;
         this.hasExistingGoal = (goal != null);
         this.goalDraft = (goal != null) ? GoalDraft.fromGoal(goal) : GoalDraft.defaults();
         this.monitoringState = (goal != null) ? MonitoringState.fromGoal(goal) : MonitoringState.defaults();
@@ -112,8 +121,6 @@ public class ClipboardScreen extends Screen {
     @Override
     public void removed() {
         super.removed();
-        if (openedGoal == null) return; // fresh clipboard, nothing saved to attach ui state to
-
         ClipboardUiState snapshot = new ClipboardUiState(
                 currentStep, cameraX, cameraY, cameraZoom,
                 showMachineNodes, graphDragEnabled, detailCardCollapsed, isMinimized
@@ -121,11 +128,8 @@ public class ClipboardScreen extends Screen {
         // goalDraft.graphLayout tracks node drags live (see the onLayoutChange callback in
         // buildStepReviewPlan) but is otherwise only sent to the server via an explicit save
         // action -- layer it on here too so a drag survives a plain close, same as the ui state.
-        boolean layoutChanged = !goalDraft.graphLayout.equals(openedGoal.graphLayout());
-        if (snapshot.equals(openedGoal.uiState()) && !layoutChanged) return; // nothing changed, skip the packet
-
-        ProductionGoal toPersist = openedGoal.withUiState(snapshot).withGraphLayout(goalDraft.graphLayout);
-        new GoalUpdatePayload(toPersist).sendToServer();
+        ClipboardCloseSync.computeCloseSyncGoal(lastSyncedGoal, snapshot, goalDraft.graphLayout)
+                .ifPresent(toPersist -> new GoalUpdatePayload(toPersist).sendToServer());
     }
 
     private int guiWidth() {
@@ -435,7 +439,8 @@ public class ClipboardScreen extends Screen {
 
     private void syncGoal() {
         if (!goalDraft.isReadyToSave()) return;
-        new GoalUpdatePayload(buildCurrentGoal()).sendToServer();
+        lastSyncedGoal = buildCurrentGoal();
+        new GoalUpdatePayload(lastSyncedGoal).sendToServer();
     }
 
     private void computePlan() {
@@ -596,7 +601,8 @@ public class ClipboardScreen extends Screen {
 
     private void save() {
         if (!goalDraft.isReadyToSave()) return;
-        new GoalUpdatePayload(buildCurrentGoal()).sendToServer();
+        lastSyncedGoal = buildCurrentGoal();
+        new GoalUpdatePayload(lastSyncedGoal).sendToServer();
     }
 
     @Override

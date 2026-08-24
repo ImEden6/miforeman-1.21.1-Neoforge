@@ -71,6 +71,11 @@ public class GoalUpdateHandler {
      * in {@code oldLinked} was already accepted on a prior sync and passes through unconditionally;
      * a newly-added position is kept only if it's loaded, within the same scan-radius bound
      * {@link MachineScanner#scan} enforces, and actually a machine.
+     * <p>
+     * The rest of {@code newGoal} (rejectedMachines, recipeSelections, name, rate, etc.) stays
+     * fully client-trusted. {@code linkedMachines} is the only field that gates a later read:
+     * {@link MonitoringPacketHandlers} reports live machine data for whatever positions are linked,
+     * so it's the only field where a spoofed value would actually do anything.
      */
     private static List<BlockPos> validateLinkedMachines(
             ServerLevel level, BlockPos playerPos, int radiusChunks,
