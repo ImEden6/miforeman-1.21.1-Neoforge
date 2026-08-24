@@ -4,23 +4,6 @@ Not scheduled, just captured so they don't get lost. Started as UI/UX polish
 for `GraphCanvas` (recipe graph) and `DetailCard`; now also collects
 correctness fixes, feature ideas, and docs debt.
 
-## Visual polish
-
-- **Node depth/border treatment** — a 2-3px darker bottom/right edge (or
-  lighter top-left highlight) so nodes read as raised tiles instead of flat
-  debug rectangles.
-- **Status color-coding** — key node fill color to state (ambiguous, rate
-  satisfied/deficit, raw vs intermediate vs target), the way MineColonies
-  keys research-tile texture to `ResearchButtonState`. Probably the single
-  highest-value visual change since the graph's whole point is surfacing
-  production status at a glance.
-- **Edge weight/direction styling** — thickness or color scaled to
-  `requiredRate`/utilization ratio, turning the graph into an actual
-  production-flow diagram instead of boxes with lines. (Already flagged as
-  out-of-scope in a `GraphCanvas` comment.)
-- **Gradient node fill** instead of flat `COLOR_NODE_FILL` — cheap via
-  `guiGraphics.fillGradient`, reads less like a placeholder.
-
 ## Interaction / UX
 
 - **Hover state** — no visual feedback right now for the node under the
@@ -40,6 +23,13 @@ correctness fixes, feature ideas, and docs debt.
 - **Collision feedback for manual drags** — dropping a dragged node on top of
   another currently gives no feedback; a "snap away" or warning outline on
   overlap would help.
+- **Reset layout button** — no way to snap all manually-dragged nodes back to
+  the auto-layout short of undoing every drag one at a time. `ClipboardScreen`
+  already has an undo/redo layout button row (`undoLayoutButton`/
+  `redoLayoutButton`, next to `graphCanvas.canUndo()`/`canRedo()`); a third
+  "Reset Layout" button there could just clear `goalDraft.graphLayout` back to
+  `GraphLayoutState.EMPTY` so every node falls back to `GraphCanvas`'s
+  `computeAutoLayout()` positions.
 
 ## Native-clipboard theming follow-ups
 
@@ -98,8 +88,17 @@ correctness fixes, feature ideas, and docs debt.
 - **Alerts** — toast/chat notification when a machine sits RED > N seconds, or actual rate
   falls below threshold x expected. Currently you have to watch the monitor screen.
 - **Bottleneck view** — rank machines by utilization (actual/expected) and feed it into
-  `GraphCanvas` node/edge coloring; combines with the status color-coding item above. The
-  data already exists in `MachineTracker.energyEvents`.
+  `GraphCanvas` node/edge coloring, keying fill color to state (ambiguous, rate
+  satisfied/deficit, raw vs intermediate vs target). The data already exists in
+  `MachineTracker.energyEvents`.
+- **Color picker / theme customization** — every `COLOR_*` value (`DetailCard`, `ClipboardScreen`,
+  `GraphCanvas`, `MonitoringScreen`, `ReviewMachinesScreen`, `DefineGoalWindow`, and the list-panel
+  widgets — 9 files' worth) is a hardcoded `private static final int`. Once anything above actually
+  starts keying color to meaning (status color-coding, bottleneck view, ambiguity highlighting),
+  players with different accessibility needs or just different taste have no way to adjust it
+  short of editing source. Worth a config-backed palette (even just the status/semantic colors, not
+  every border/text shade) with an in-game color-picker widget to edit it, rather than a
+  config-file-only approach.
 - **Ambiguity resolution in DetailCard** — pick among alternative recipes per node in the GUI
   instead of falling back to `/miforeman goal select`.
 - **Link-coverage indicator** — the plan says you need 12 assemblers; nothing shows "8 of 12
@@ -118,6 +117,26 @@ correctness fixes, feature ideas, and docs debt.
   multi-dimension factories means GlobalPos end-to-end (codec, link sync, server-side
   validation, scanner, GUI lists). Pending market research on whether players actually build
   these; the planned GlobalPos tracker keys keep the monitoring side compatible either way.
+- **Show a recipe's full input/output list in DetailCard** — a MACHINE node's undemanded
+  byproducts (or any input/output the chosen recipe has that the graph doesn't otherwise track)
+  are invisible right now; the graph only shows edges that were actually built for demanded
+  resources. Surfacing the raw recipe (`RecipeGraphNode.getRecipe()` already carries the
+  `MachineRecipe`) would at least let players see what else a machine produces, even if the tool
+  doesn't route/plan around it.
+- **Hull tier / overclocker-aware machine-count and power calculation** — `RecipeGraphTraverser`
+  computes `machineCount` straight from `chosenRecipe.duration` (see `getSubPlan()` and
+  `resolveStructure()`, both `(runsPerSecond * chosenRecipe.duration) / 20.0`), and doesn't
+  surface EU/t consumption at all. Neither accounts for MI's hull tier speed bonus or overclocker
+  upgrades, and overclocking specifically has two compounding effects worth modeling separately:
+  each overclock tier roughly halves recipe duration *and* doubles EU/t draw ("perfect
+  overclocking"), so it changes both numbers the tool cares about — fewer machines needed to hit
+  a target rate, but proportionally higher power draw per machine. Real linked machines can be
+  running well past base speed, so today's "you need N machines" is a significant overestimate
+  once players start upgrading, and there's no power-budget number at all to check an overclocked
+  setup against. Would need reading actual hull tier + installed overclocker/upgrade modules off
+  `linkedMachines`' `MachineBlockEntity`s (where available) and feeding both an effective-speed
+  multiplier and an effective-EU/t multiplier into the machineCount/plan math, with a sane
+  fallback (base duration/EU) for unlinked/planned-but-not-yet-built machines.
 
 ## Code health
 
@@ -130,9 +149,3 @@ correctness fixes, feature ideas, and docs debt.
   graph traversal branches, not just moving code around. Needs its own
   focused pass with test coverage before touching it, not an opportunistic
   cleanup.
-
-## Documentation debt
-
-- **README.md** is still MDK boilerplate — no actual description of what MI Foreman does.
-- **AGENTS.md is stale** — references `TreePanel` (replaced by `GraphCanvas`), says "3
-  packets" (now 6), and points at `plan.md`, which no longer exists.
