@@ -26,11 +26,6 @@ correctness fixes, feature ideas, and docs debt.
 
 ## Native-clipboard theming follow-ups
 
-- `clipboard_button.png` exists (regenerated, matches the parchment/leather
-  style) but nothing in the code actually blits it — buttons are still
-  vanilla `Button.builder(...)`. Could wire a custom 3-slice button texture
-  (normal/hover/disabled) if the vanilla button look ever feels out of place
-  against the reskinned panels.
 - Re-check aspect ratio (`MIN_GUI_WIDTH`/`MIN_GUI_HEIGHT` in
   `ClipboardScreen.java`) after living with the landscape layout for a bit —
   440x230 was a first guess, not a measured choice.
@@ -42,19 +37,10 @@ correctness fixes, feature ideas, and docs debt.
   `ScanPacketHandlers.java`), so every clipboard reopen recomputes the whole traversal
   (`ClipboardScreen.java` recompute-on-open). Either serialize the graph or cache it keyed by
   plan inputs so big-graph opens are instant.
-- **Command path drops newer goal fields** — `/miforeman goal plan` and `/miforeman goal select`
-  rebuild the goal via the 5-arg constructor (`ForemanCommands.java`), silently wiping
-  `graphLayout`, `machineLinkHistory`, and `rejectedMachines`. Route them through the same
-  `withX` mutators the GUI uses.
-- **Tick-loop cost** — `ServerMonitoringManager.onServerTick` walks all levels x players x
-  hands every tick even with zero clipboards in play; short-circuit when none exist.
-  `energyEvents.removeIf` runs on every add (O(n)) — a deque head-trim would do.
-- **STREAM_CODEC drift guard** — `ProductionGoal.STREAM_CODEC` hand-rolls what `CODEC`
-  declares; a field added to one but not the other fails silently. A cheap parity game test
-  (round-trip both codecs, assert equality) guards this without rewriting the codec.
-- **Config cleanup** — template entries still live in `Config.java` (`LOG_DIRT_BLOCK`,
-  `MAGIC_NUMBER`, `ITEM_STRINGS`). Remove them and move monitoring window / poll interval /
-  default threshold next to `AUTOLINK_SCAN_RADIUS_CHUNKS`.
+- **Move monitoring constants next to `AUTOLINK_SCAN_RADIUS_CHUNKS`** — the demo config entries
+  (`LOG_DIRT_BLOCK`, `MAGIC_NUMBER`, `ITEM_STRINGS`) are gone, but the monitoring window
+  (72000 ticks), prune interval (200 ticks), and default threshold (0.8) are still hardcoded
+  in `ServerMonitoringManager.java`/`ProductionGoal.java` rather than living in `Config.java`.
 - **`getSubPlan()` vs `resolveStructure()` rate divergence** — `RecipeGraphTraverser.java` has
   two independent implementations of the same "resolve chosen recipe, propagate demand rate"
   algorithm: `getSubPlan()` (recursive per-unit `SubPlan`, scaled/summed via `mergeScaled()`,
