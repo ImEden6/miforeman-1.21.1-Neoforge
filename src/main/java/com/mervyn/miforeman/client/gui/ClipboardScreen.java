@@ -241,9 +241,21 @@ public class ClipboardScreen extends Screen {
                 RecipeGraphNode selectedNode = selectedNodeId != null ? this.goalDraft.currentPlan.graph().node(selectedNodeId) : null;
                 detailCard = new DetailCard(contentX + canvasWidth + 6, canvasY, detailWidth, contentH, selectedNode, this.goalDraft.currentPlan, this.goalDraft.perHour, (resId, choiceRecipeId) -> {
                     this.goalDraft.recipeSelections.put(resId, choiceRecipeId);
+                    // A MACHINE node's own id IS its recipe id, so cycling the recipe of the
+                    // currently-selected machine node makes that id vanish from the rebuilt graph.
+                    // Look the node up live by selectedNodeId (not a captured local -- GraphCanvas's
+                    // onSelect only calls detailCard.setNode(), it doesn't rebuild this step, so a
+                    // closed-over node reference here can be stale) and follow the selection onto
+                    // the newly-chosen recipe's node instead of losing it.
+                    RecipeGraphNode cyclingNode = selectedNodeId != null && this.goalDraft.currentPlan != null && this.goalDraft.currentPlan.graph() != null
+                            ? this.goalDraft.currentPlan.graph().node(selectedNodeId)
+                            : null;
+                    boolean cyclingSelectedMachine = cyclingNode != null && cyclingNode.getType() == NodeType.MACHINE;
                     computePlan();
                     if (this.goalDraft.currentPlan != null && selectedNodeId != null && this.goalDraft.currentPlan.graph().node(selectedNodeId) == null) {
-                        selectedNodeId = null;
+                        selectedNodeId = cyclingSelectedMachine && this.goalDraft.currentPlan.graph().node(choiceRecipeId) != null
+                                ? choiceRecipeId
+                                : null;
                     }
                     rebuildStep(STEP_REVIEW_PLAN);
                 }, detailScrollOffset, v -> this.detailScrollOffset = v);
