@@ -2,7 +2,7 @@
   "required": true,
   "package": "com.mervyn.miforeman.mixin",
   "compatibilityLevel": "JAVA_21",
-  "mixins": [],
+  "mixins": ["CrafterComponentAccessor"],
   "injectors": {
     "defaultRequire": 1
   },

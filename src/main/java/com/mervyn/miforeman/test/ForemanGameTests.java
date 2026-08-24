@@ -20,6 +20,10 @@ import aztech.modern_industrialization.machines.MachineBlockEntity;
 import aztech.modern_industrialization.machines.components.CrafterComponent;
 import com.mervyn.miforeman.goal.ServerMonitoringManager;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.GlobalPos;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
 @GameTestHolder(MIForeman.MODID)
@@ -54,6 +58,43 @@ public class ForemanGameTests {
         }
         if (retrievedGoal.rate() != rate) {
             helper.fail("Expected rate: " + rate + ", but got: " + retrievedGoal.rate());
+        }
+
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testProductionGoalStreamCodecParity(GameTestHelper helper) {
+        var level = helper.getLevel();
+
+        ProductionGoal goal = new ProductionGoal(
+                "parity_goal",
+                ProductionGoal.TargetType.FLUID,
+                ResourceLocation.parse("minecraft:water"),
+                12.5,
+                Map.of(ResourceLocation.parse("minecraft:stone"), ResourceLocation.parse("minecraft:cobblestone")),
+                java.util.Optional.of(new ProductionGoal.FactoryPlan(
+                        List.of(new ProductionGoal.MachineRequirement(ResourceLocation.parse("modern_industrialization:assembler"), 3.0)),
+                        List.of(new ProductionGoal.MaterialFlow(ProductionGoal.TargetType.ITEM, ResourceLocation.parse("minecraft:iron_ingot"), 4.0)),
+                        List.of(),
+                        List.of(new ProductionGoal.Ambiguity(ResourceLocation.parse("minecraft:dye"), List.of(ResourceLocation.parse("minecraft:red_dye"))))
+                )),
+                true,
+                0.6,
+                List.of(new BlockPos(1, 2, 3)),
+                com.mervyn.miforeman.goal.GraphLayoutState.EMPTY,
+                com.mervyn.miforeman.goal.MachineLinkHistory.EMPTY,
+                List.of(new BlockPos(4, 5, 6))
+        );
+
+        var buf = new net.minecraft.network.RegistryFriendlyByteBuf(io.netty.buffer.Unpooled.buffer(), level.registryAccess());
+        ProductionGoal.STREAM_CODEC.encode(buf, goal);
+        ProductionGoal decoded = ProductionGoal.STREAM_CODEC.decode(buf);
+
+        if (!decoded.equals(goal)) {
+            helper.fail("STREAM_CODEC round-trip does not match original ProductionGoal -- a field was likely "
+                    + "added to CODEC without updating STREAM_CODEC (or vice versa). Original: " + goal + ", decoded: " + decoded);
+            return;
         }
 
         helper.succeed();
@@ -315,6 +356,46 @@ public class ForemanGameTests {
                 helper.fail("Recipe index is missing MACHINE node id: " + node.getId());
                 return;
             }
+        }
+
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testDimensionKeyedTrackers(GameTestHelper helper) {
+        var level = helper.getLevel();
+        ServerLevel nether = level.getServer().getLevel(Level.NETHER);
+        if (nether == null) {
+            helper.fail("Nether level missing from test server");
+            return;
+        }
+
+        // Start from a clean slate; trackers are global static state.
+        ServerMonitoringManager.TRACKERS.clear();
+
+        BlockPos pos = helper.absolutePos(new BlockPos(1, 2, 1));
+        GlobalPos overworldKey = ServerMonitoringManager.key(level, pos);
+        GlobalPos netherKey = ServerMonitoringManager.key(nether, pos);
+
+        if (overworldKey.equals(netherKey)) {
+            helper.fail("Same BlockPos in different dimensions produced identical tracker keys");
+            return;
+        }
+
+        ServerMonitoringManager.TRACKERS.put(overworldKey, new ServerMonitoringManager.MachineTracker(pos));
+        ServerMonitoringManager.TRACKERS.put(netherKey, new ServerMonitoringManager.MachineTracker(pos));
+        if (ServerMonitoringManager.TRACKERS.size() != 2) {
+            helper.fail("Expected 2 independent trackers for same coords in 2 dimensions, got: "
+                    + ServerMonitoringManager.TRACKERS.size());
+            return;
+        }
+
+        // Pruning against an empty active-set must evict everything unlinked.
+        ServerMonitoringManager.pruneTrackers(java.util.Set.of());
+        if (!ServerMonitoringManager.TRACKERS.isEmpty()) {
+            helper.fail("pruneTrackers left " + ServerMonitoringManager.TRACKERS.size()
+                    + " stale tracker(s) behind");
+            return;
         }
 
         helper.succeed();

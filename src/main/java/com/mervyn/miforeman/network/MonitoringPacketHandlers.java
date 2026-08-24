@@ -52,7 +52,7 @@ public class MonitoringPacketHandlers {
                 }
                 BlockEntity be = level.getBlockEntity(pos);
                 if (be instanceof MachineBlockEntity) {
-                    MachineTracker tracker = ServerMonitoringManager.TRACKERS.computeIfAbsent(pos, MachineTracker::new);
+                    MachineTracker tracker = ServerMonitoringManager.trackerFor(level, pos);
                     Map<ResourceLocation, Double> rates = ServerMonitoringManager.getActualRates(tracker, level, currentTick, windowTicks);
                     machineRates.put(pos, rates);
                     for (var entry : rates.entrySet()) {
@@ -68,7 +68,7 @@ public class MonitoringPacketHandlers {
                 }
                 BlockEntity be = level.getBlockEntity(pos);
                 if (be instanceof MachineBlockEntity machine) {
-                    MachineTracker tracker = ServerMonitoringManager.TRACKERS.computeIfAbsent(pos, MachineTracker::new);
+                    MachineTracker tracker = ServerMonitoringManager.trackerFor(level, pos);
                     String status = tracker.status;
 
                     Map<ResourceLocation, Double> rates = machineRates.getOrDefault(pos, Map.of());

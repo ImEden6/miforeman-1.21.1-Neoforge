@@ -6,7 +6,9 @@ import aztech.modern_industrialization.machines.MachineBlockEntity;
 import aztech.modern_industrialization.machines.components.CrafterComponent;
 import aztech.modern_industrialization.machines.recipe.MachineRecipe;
 import com.mervyn.miforeman.MIForeman;
+import com.mervyn.miforeman.mixin.CrafterComponentAccessor;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.GlobalPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -16,6 +18,7 @@ import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import org.jetbrains.annotations.Nullable;
 
@@ -47,40 +50,47 @@ public class ServerMonitoringManager {
         public ResourceLocation saturatedRecipeId = null;
         public long lastUsedEnergy = 0;
         public long lastRecipeEnergy = 0;
-        public final List<EnergyEvent> energyEvents = new ArrayList<>();
+        public final Deque<EnergyEvent> energyEvents = new ArrayDeque<>();
 
         public MachineTracker(BlockPos pos) {
             this.pos = pos;
         }
 
         public void addEnergy(long tick, ResourceLocation recipeId, double energy, double totalEnergy) {
-            energyEvents.add(new EnergyEvent(tick, recipeId, energy, totalEnergy));
-            energyEvents.removeIf(e -> tick - e.tick > 72000); // Keep max 1 hour (72000 ticks)
+            energyEvents.addLast(new EnergyEvent(tick, recipeId, energy, totalEnergy));
+            // Events arrive in non-decreasing tick order, so trimming stale ones off the head is
+            // amortized O(1) -- a full removeIf() scan on every add is unnecessary.
+            while (!energyEvents.isEmpty() && tick - energyEvents.peekFirst().tick > 72000) {
+                energyEvents.pollFirst();
+            }
         }
     }
 
-    public static final Map<BlockPos, MachineTracker> TRACKERS = new ConcurrentHashMap<>();
+    public static final Map<GlobalPos, MachineTracker> TRACKERS = new ConcurrentHashMap<>();
 
-    private static final java.lang.reflect.Field ACTIVE_RECIPE_FIELD;
-    static {
-        java.lang.reflect.Field f = null;
-        try {
-            f = CrafterComponent.class.getDeclaredField("activeRecipe");
-            f.setAccessible(true);
-        } catch (Exception e) {
-            MIForeman.LOGGER.error("Failed to bind CrafterComponent activeRecipe field", e);
-        }
-        ACTIVE_RECIPE_FIELD = f;
+    /** Stale-tracker eviction cadence: 200 ticks (10s) between prunes. */
+    private static final int PRUNE_INTERVAL_TICKS = 200;
+    private static long lastPruneTick = Long.MIN_VALUE;
+
+    /** Dimension-safe map key -- bare BlockPos collides across dimensions. */
+    public static GlobalPos key(ServerLevel level, BlockPos pos) {
+        return GlobalPos.of(level.dimension(), pos);
     }
 
-    @SuppressWarnings("unchecked")
+    public static MachineTracker trackerFor(ServerLevel level, BlockPos pos) {
+        return TRACKERS.computeIfAbsent(key(level, pos), k -> new MachineTracker(pos));
+    }
+
+    /**
+     * Removes trackers no longer backed by any held clipboard's linked-machines set. Unlink ->
+     * relink therefore resets that machine's energy history (fresh window) -- accepted semantics.
+     */
+    public static void pruneTrackers(Set<GlobalPos> activeKeys) {
+        TRACKERS.keySet().removeIf(key -> !activeKeys.contains(key));
+    }
+
     public static RecipeHolder<MachineRecipe> getActiveRecipeHolder(CrafterComponent crafter) {
-        if (ACTIVE_RECIPE_FIELD == null) return null;
-        try {
-            return (RecipeHolder<MachineRecipe>) ACTIVE_RECIPE_FIELD.get(crafter);
-        } catch (Exception e) {
-            return null;
-        }
+        return ((CrafterComponentAccessor) crafter).miforeman$getActiveRecipe();
     }
 
     public static CrafterComponent getCrafter(MachineBlockEntity machine) {
@@ -94,22 +104,40 @@ public class ServerMonitoringManager {
 
     @SubscribeEvent
     public static void onServerTick(ServerTickEvent.Post event) {
+        if (event.getServer().getPlayerList().getPlayerCount() == 0) {
+            return;
+        }
+
+        // Pass 1: collect this tick's monitored set across ALL levels x players x hands. Keys are
+        // GlobalPos so same-coordinate machines in different dimensions never share tracker state.
+        Map<ServerLevel, Set<BlockPos>> activeByLevel = new HashMap<>();
+        Set<GlobalPos> activeKeys = new HashSet<>();
         for (ServerLevel level : event.getServer().getAllLevels()) {
-            long tick = level.getGameTime();
-            Set<BlockPos> activePositions = new HashSet<>();
+            Set<BlockPos> positions = new HashSet<>();
             for (ServerPlayer player : level.players()) {
                 for (var hand : net.minecraft.world.InteractionHand.values()) {
                     ItemStack stack = player.getItemInHand(hand);
                     if (stack.is(com.mervyn.miforeman.registry.ModItems.FOREMAN_CLIPBOARD_ITEM.get())) {
                         ProductionGoal goal = stack.get(com.mervyn.miforeman.registry.ModComponents.PRODUCTION_GOAL.get());
                         if (goal != null) {
-                            activePositions.addAll(goal.linkedMachines());
+                            positions.addAll(goal.linkedMachines());
                         }
                     }
                 }
             }
+            if (!positions.isEmpty()) {
+                activeByLevel.put(level, positions);
+                for (BlockPos pos : positions) {
+                    activeKeys.add(key(level, pos));
+                }
+            }
+        }
 
-            for (BlockPos pos : activePositions) {
+        // Pass 2: update trackers for active machines.
+        for (Map.Entry<ServerLevel, Set<BlockPos>> levelEntry : activeByLevel.entrySet()) {
+            ServerLevel level = levelEntry.getKey();
+            long tick = level.getGameTime();
+            for (BlockPos pos : levelEntry.getValue()) {
                 if (!level.isLoaded(pos)) {
                     continue;
                 }
@@ -118,7 +146,7 @@ public class ServerMonitoringManager {
                     CrafterComponent crafter = getCrafter(machine);
                     if (crafter == null) continue;
 
-                    MachineTracker tracker = TRACKERS.computeIfAbsent(pos, MachineTracker::new);
+                    MachineTracker tracker = trackerFor(level, pos);
                     boolean hasActive = crafter.hasActiveRecipe();
 
                     if (hasActive) {
@@ -160,6 +188,20 @@ public class ServerMonitoringManager {
                 }
             }
         }
+
+        // Pass 3: periodically evict trackers nothing links anymore.
+        long pruneTick = event.getServer().overworld().getGameTime();
+        if (lastPruneTick == Long.MIN_VALUE || pruneTick - lastPruneTick >= PRUNE_INTERVAL_TICKS) {
+            lastPruneTick = pruneTick;
+            pruneTrackers(activeKeys);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onServerStopped(ServerStoppedEvent event) {
+        // Static state must not leak across world switches (singleplayer starts a new server per world).
+        TRACKERS.clear();
+        lastPruneTick = Long.MIN_VALUE;
     }
 
     public record PassiveStatus(String status, @Nullable ResourceLocation matchedRecipeId) {}
@@ -249,7 +291,7 @@ public class ServerMonitoringManager {
 
         long activeTicks = windowTicks;
         if (!tracker.energyEvents.isEmpty()) {
-            long firstTick = tracker.energyEvents.get(0).tick;
+            long firstTick = tracker.energyEvents.peekFirst().tick;
             activeTicks = Math.min(windowTicks, Math.max(1, currentTick - firstTick));
         }
 
