@@ -1,5 +1,6 @@
 package com.mervyn.miforeman.client.gui;
 
+import com.mervyn.miforeman.goal.ClipboardUiState;
 import com.mervyn.miforeman.goal.ProductionGoal;
 import com.mervyn.miforeman.registry.ModComponents;
 import com.mervyn.miforeman.network.GoalUpdatePayload;
@@ -67,11 +68,11 @@ public class ClipboardScreen extends Screen {
     private GraphCanvas graphCanvas;
     private DetailCard detailCard;
     private double cameraX, cameraY;
-    private float cameraZoom = 1.0f;
+    private float cameraZoom;
     private int detailScrollOffset = 0;
-    private boolean detailCardCollapsed = false;
-    private boolean showMachineNodes = true;
-    private boolean graphDragEnabled = true;
+    private boolean detailCardCollapsed;
+    private boolean showMachineNodes;
+    private boolean graphDragEnabled;
     private Button toggleDetailButton;
     private Button toggleMachineViewButton;
     private Button toggleDragModeButton;
@@ -80,16 +81,50 @@ public class ClipboardScreen extends Screen {
     private Button nextButton;
     private Button backButton;
 
-    private boolean isMinimized = false;
+    private boolean isMinimized;
     private Button toggleModeButton;
+
+    /** The goal as it existed on the item when this screen opened -- used by {@link #removed()}
+     *  as the base for persisting just the UI-state sliver on close, so unsaved edits made to the
+     *  rest of the goal (name/target/rate/plan) elsewhere in the screen never leak through. */
+    private final ProductionGoal openedGoal;
 
     public ClipboardScreen(ItemStack stack) {
         super(Component.literal("Clipboard Goal Editor"));
 
         ProductionGoal goal = stack.get(ModComponents.PRODUCTION_GOAL.get());
+        this.openedGoal = goal;
         this.hasExistingGoal = (goal != null);
         this.goalDraft = (goal != null) ? GoalDraft.fromGoal(goal) : GoalDraft.defaults();
         this.monitoringState = (goal != null) ? MonitoringState.fromGoal(goal) : MonitoringState.defaults();
+
+        ClipboardUiState ui = (goal != null) ? goal.uiState() : ClipboardUiState.EMPTY;
+        this.cameraX = ui.cameraX();
+        this.cameraY = ui.cameraY();
+        this.cameraZoom = ui.cameraZoom();
+        this.showMachineNodes = ui.showMachineNodes();
+        this.graphDragEnabled = ui.graphDragEnabled();
+        this.detailCardCollapsed = ui.detailCardCollapsed();
+        this.isMinimized = ui.isMinimized();
+    }
+
+    @Override
+    public void removed() {
+        super.removed();
+        if (openedGoal == null) return; // fresh clipboard, nothing saved to attach ui state to
+
+        ClipboardUiState snapshot = new ClipboardUiState(
+                currentStep, cameraX, cameraY, cameraZoom,
+                showMachineNodes, graphDragEnabled, detailCardCollapsed, isMinimized
+        );
+        // goalDraft.graphLayout tracks node drags live (see the onLayoutChange callback in
+        // buildStepReviewPlan) but is otherwise only sent to the server via an explicit save
+        // action -- layer it on here too so a drag survives a plain close, same as the ui state.
+        boolean layoutChanged = !goalDraft.graphLayout.equals(openedGoal.graphLayout());
+        if (snapshot.equals(openedGoal.uiState()) && !layoutChanged) return; // nothing changed, skip the packet
+
+        ProductionGoal toPersist = openedGoal.withUiState(snapshot).withGraphLayout(goalDraft.graphLayout);
+        new GoalUpdatePayload(toPersist).sendToServer();
     }
 
     private int guiWidth() {
@@ -104,7 +139,9 @@ public class ClipboardScreen extends Screen {
     protected void init() {
         super.init();
         if (!stepInitialized) {
-            this.currentStep = hasExistingGoal ? STEP_MONITOR : STEP_DEFINE_GOAL;
+            this.currentStep = hasExistingGoal
+                    ? Math.max(STEP_DEFINE_GOAL, Math.min(STEP_MONITOR, openedGoal.uiState().lastStep()))
+                    : STEP_DEFINE_GOAL;
             // FactoryPlan.graph is deliberately excluded from FactoryPlan.CODEC/STREAM_CODEC
             // (see ProductionGoal.java), so a plan loaded from a saved goal always decodes
             // with graph == null even though currentPlan itself is non-null. Recompute

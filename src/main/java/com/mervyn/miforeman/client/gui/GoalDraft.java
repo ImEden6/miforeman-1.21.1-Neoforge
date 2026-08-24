@@ -1,5 +1,6 @@
 package com.mervyn.miforeman.client.gui;
 
+import com.mervyn.miforeman.goal.ClipboardUiState;
 import com.mervyn.miforeman.goal.GraphLayoutState;
 import com.mervyn.miforeman.goal.MachineLinkHistory;
 import com.mervyn.miforeman.goal.ProductionGoal;
@@ -33,6 +34,7 @@ class GoalDraft {
     FactoryPlan currentPlan;
     String errorMessage;
     GraphLayoutState graphLayout = GraphLayoutState.EMPTY;
+    ClipboardUiState uiState = ClipboardUiState.EMPTY;
 
     private GoalDraft() {
     }
@@ -48,6 +50,7 @@ class GoalDraft {
         draft.perHour = goal.perHour();
         draft.threshold = goal.threshold();
         draft.graphLayout = goal.graphLayout();
+        draft.uiState = goal.uiState();
 
         // Adjust rate back to per hour for display if perHour is enabled
         if (draft.perHour) {
@@ -119,7 +122,7 @@ class GoalDraft {
                 this.goalName, this.targetType, targetRes, adjustedRatePerMinute(), this.recipeSelections,
                 this.currentPlan != null ? Optional.of(this.currentPlan) : Optional.empty(),
                 this.perHour, this.threshold, linkedMachines, this.graphLayout,
-                machineLinkHistory, rejectedMachines
+                machineLinkHistory, rejectedMachines, this.uiState
         );
     }
 

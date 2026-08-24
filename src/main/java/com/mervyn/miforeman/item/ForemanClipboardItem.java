@@ -72,7 +72,8 @@ public class ForemanClipboardItem extends Item {
                         linked,
                         goal.graphLayout(),
                         history,
-                        rejected
+                        rejected,
+                        goal.uiState()
                 );
                 stack.set(ModComponents.PRODUCTION_GOAL.get(), updatedGoal);
 

@@ -67,7 +67,8 @@ public class GoalUpdateHandler {
                         validatedLinked,
                         newGoal.graphLayout(),
                         newGoal.machineLinkHistory(),
-                        newGoal.rejectedMachines()
+                        newGoal.rejectedMachines(),
+                        newGoal.uiState()
                 );
                 stack.set(ModComponents.PRODUCTION_GOAL.get(), updatedGoal);
             }

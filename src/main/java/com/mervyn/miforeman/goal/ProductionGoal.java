@@ -25,7 +25,8 @@ public record ProductionGoal(
         List<BlockPos> linkedMachines,
         GraphLayoutState graphLayout,
         MachineLinkHistory machineLinkHistory,
-        List<BlockPos> rejectedMachines
+        List<BlockPos> rejectedMachines,
+        ClipboardUiState uiState
 ) {
     public ProductionGoal(String name, TargetType type, ResourceLocation targetId, double rate) {
         this(name, type, targetId, rate, Map.of(), Optional.empty(), false, 0.8, List.of(), GraphLayoutState.EMPTY, MachineLinkHistory.EMPTY, List.of());
@@ -47,20 +48,28 @@ public record ProductionGoal(
         this(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, List.of());
     }
 
+    public ProductionGoal(String name, TargetType type, ResourceLocation targetId, double rate, Map<ResourceLocation, ResourceLocation> recipeSelections, Optional<FactoryPlan> plan, boolean perHour, double threshold, List<BlockPos> linkedMachines, GraphLayoutState graphLayout, MachineLinkHistory machineLinkHistory, List<BlockPos> rejectedMachines) {
+        this(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, ClipboardUiState.EMPTY);
+    }
+
     public ProductionGoal withGraphLayout(GraphLayoutState graphLayout) {
-        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines);
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState);
     }
 
     public ProductionGoal withPlan(Optional<FactoryPlan> plan) {
-        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines);
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState);
     }
 
     public ProductionGoal withRecipeSelections(Map<ResourceLocation, ResourceLocation> recipeSelections) {
-        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines);
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState);
     }
 
     public ProductionGoal withLinkedMachines(List<BlockPos> linkedMachines, MachineLinkHistory machineLinkHistory) {
-        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines);
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState);
+    }
+
+    public ProductionGoal withUiState(ClipboardUiState uiState) {
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState);
     }
 
     /** Adds a machine to the rejected set (no-op if already present — rejectedMachines is used as a set despite the List representation, matching linkedMachines' existing convention). */
@@ -70,7 +79,7 @@ public record ProductionGoal(
         }
         List<BlockPos> updated = new java.util.ArrayList<>(rejectedMachines);
         updated.add(pos);
-        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, updated);
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, updated, uiState);
     }
 
     /** Removes a machine from the rejected set (un-reject). No-op if not present. */
@@ -80,7 +89,7 @@ public record ProductionGoal(
         }
         List<BlockPos> updated = new java.util.ArrayList<>(rejectedMachines);
         updated.remove(pos);
-        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, updated);
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, updated, uiState);
     }
 
     public enum TargetType implements StringRepresentable {
@@ -204,7 +213,8 @@ public record ProductionGoal(
             BlockPos.CODEC.listOf().optionalFieldOf("linked_machines", List.of()).forGetter(ProductionGoal::linkedMachines),
             GraphLayoutState.CODEC.optionalFieldOf("graph_layout", GraphLayoutState.EMPTY).forGetter(ProductionGoal::graphLayout),
             MachineLinkHistory.CODEC.optionalFieldOf("machine_link_history", MachineLinkHistory.EMPTY).forGetter(ProductionGoal::machineLinkHistory),
-            BlockPos.CODEC.listOf().optionalFieldOf("rejected_machines", List.of()).forGetter(ProductionGoal::rejectedMachines)
+            BlockPos.CODEC.listOf().optionalFieldOf("rejected_machines", List.of()).forGetter(ProductionGoal::rejectedMachines),
+            ClipboardUiState.CODEC.optionalFieldOf("ui_state", ClipboardUiState.EMPTY).forGetter(ProductionGoal::uiState)
     ).apply(instance, ProductionGoal::new));
 
     public static final StreamCodec<RegistryFriendlyByteBuf, ProductionGoal> STREAM_CODEC = new StreamCodec<RegistryFriendlyByteBuf, ProductionGoal>() {
@@ -222,7 +232,8 @@ public record ProductionGoal(
             GraphLayoutState graphLayout = GraphLayoutState.STREAM_CODEC.decode(buf);
             MachineLinkHistory machineLinkHistory = MachineLinkHistory.STREAM_CODEC.decode(buf);
             List<BlockPos> rejectedMachines = ByteBufCodecs.fromCodec(BlockPos.CODEC).apply(ByteBufCodecs.list()).decode(buf);
-            return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines);
+            ClipboardUiState uiState = ClipboardUiState.STREAM_CODEC.decode(buf);
+            return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState);
         }
 
         @Override
@@ -239,6 +250,7 @@ public record ProductionGoal(
             GraphLayoutState.STREAM_CODEC.encode(buf, goal.graphLayout());
             MachineLinkHistory.STREAM_CODEC.encode(buf, goal.machineLinkHistory());
             ByteBufCodecs.fromCodec(BlockPos.CODEC).apply(ByteBufCodecs.list()).encode(buf, goal.rejectedMachines());
+            ClipboardUiState.STREAM_CODEC.encode(buf, goal.uiState());
         }
     };
 }

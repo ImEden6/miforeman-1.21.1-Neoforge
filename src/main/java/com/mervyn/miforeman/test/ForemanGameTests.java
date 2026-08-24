@@ -84,7 +84,8 @@ public class ForemanGameTests {
                 List.of(new BlockPos(1, 2, 3)),
                 com.mervyn.miforeman.goal.GraphLayoutState.EMPTY,
                 com.mervyn.miforeman.goal.MachineLinkHistory.EMPTY,
-                List.of(new BlockPos(4, 5, 6))
+                List.of(new BlockPos(4, 5, 6)),
+                new com.mervyn.miforeman.goal.ClipboardUiState(1, 12.5, -3.0, 2.0f, false, false, true, true)
         );
 
         var buf = new net.minecraft.network.RegistryFriendlyByteBuf(io.netty.buffer.Unpooled.buffer(), level.registryAccess());
