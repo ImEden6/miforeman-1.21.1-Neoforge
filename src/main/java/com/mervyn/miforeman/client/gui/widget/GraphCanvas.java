@@ -44,6 +44,10 @@ public class GraphCanvas extends AbstractWidget {
 
     private static final int NODE_WIDTH = 96;
     private static final int NODE_HEIGHT = 26;
+    // MACHINE nodes render as a chamfered octagon instead of a plain rectangle, so the two
+    // alternating node kinds in the graph (see computeFilteredView's javadoc) read apart at a
+    // glance without relying on color alone.
+    private static final int MACHINE_CHAMFER = 6;
     private static final int COLUMN_SPACING = 140;
     private static final int ROW_SPACING = 40;
     private static final float MIN_ZOOM = 0.25f;
@@ -234,36 +238,92 @@ public class GraphCanvas extends AbstractWidget {
             if (pos == null) continue;
             boolean selected = node.getId().equals(selectedNodeId);
             boolean hoveredNode = node.getId().equals(hoveredNodeId);
-            guiGraphics.fillGradient(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOR_NODE_FILL_TOP, COLOR_NODE_FILL_BOTTOM);
-            if (selected) {
-                guiGraphics.fill(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOR_SELECTED);
+
+            if (node.getType() == NodeType.MACHINE) {
+                fillChamfered(guiGraphics, pos.x(), pos.y(), NODE_WIDTH, NODE_HEIGHT, MACHINE_CHAMFER, COLOR_BORDER_LIGHT);
+                fillChamferedGradient(guiGraphics, pos.x() + 1, pos.y() + 1, NODE_WIDTH - 2, NODE_HEIGHT - 2,
+                        Math.max(0, MACHINE_CHAMFER - 1), COLOR_NODE_FILL_TOP, COLOR_NODE_FILL_BOTTOM);
+                if (selected) {
+                    fillChamfered(guiGraphics, pos.x(), pos.y(), NODE_WIDTH, NODE_HEIGHT, MACHINE_CHAMFER, COLOR_SELECTED);
+                }
+                if (hoveredNode) {
+                    fillChamfered(guiGraphics, pos.x(), pos.y(), NODE_WIDTH, NODE_HEIGHT, MACHINE_CHAMFER, COLOR_HOVER);
+                }
+            } else {
+                guiGraphics.fillGradient(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOR_NODE_FILL_TOP, COLOR_NODE_FILL_BOTTOM);
+                if (selected) {
+                    guiGraphics.fill(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOR_SELECTED);
+                }
+                if (hoveredNode) {
+                    guiGraphics.fill(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOR_HOVER);
+                }
+                // Raised-tile treatment: light top/left edge, dark bottom/right edge.
+                guiGraphics.fill(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + 1, COLOR_BORDER_LIGHT);
+                guiGraphics.fill(pos.x(), pos.y(), pos.x() + 1, pos.y() + NODE_HEIGHT, COLOR_BORDER_LIGHT);
+                guiGraphics.fill(pos.x(), pos.y() + NODE_HEIGHT - 1, pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOR_BORDER_DARK);
+                guiGraphics.fill(pos.x() + NODE_WIDTH - 1, pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOR_BORDER_DARK);
             }
-            if (hoveredNode) {
-                guiGraphics.fill(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOR_HOVER);
-            }
-            // Raised-tile treatment: light top/left edge, dark bottom/right edge.
-            guiGraphics.fill(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + 1, COLOR_BORDER_LIGHT);
-            guiGraphics.fill(pos.x(), pos.y(), pos.x() + 1, pos.y() + NODE_HEIGHT, COLOR_BORDER_LIGHT);
-            guiGraphics.fill(pos.x(), pos.y() + NODE_HEIGHT - 1, pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOR_BORDER_DARK);
-            guiGraphics.fill(pos.x() + NODE_WIDTH - 1, pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOR_BORDER_DARK);
+
+            // Nudged clear of the chamfered top-left corner on MACHINE nodes so the first glyph
+            // doesn't render partly over the cut-off area.
+            int textInset = node.getType() == NodeType.MACHINE ? 3 + MACHINE_CHAMFER / 2 : 3;
 
             String name = DisplayFormat.formatId(node.getId());
             boolean hasAmbiguity = !node.getAmbiguityOptions().isEmpty();
             if (hasAmbiguity) {
                 name = "⚠ " + name;
             }
-            int maxTextWidth = NODE_WIDTH - 6;
+            int maxTextWidth = NODE_WIDTH - textInset - 3;
             if (mc.font.width(name) > maxTextWidth) {
                 name = mc.font.plainSubstrByWidth(name, maxTextWidth - 8) + "..";
             }
-            guiGraphics.drawString(mc.font, name, pos.x() + 3, pos.y() + 3, COLOR_TEXT, false);
+            guiGraphics.drawString(mc.font, name, pos.x() + textInset, pos.y() + 3, COLOR_TEXT, false);
 
             String rateText = String.format("%.1f", node.getRequiredRate());
-            guiGraphics.drawString(mc.font, rateText, pos.x() + 3, pos.y() + 14, COLOR_MUTED, false);
+            guiGraphics.drawString(mc.font, rateText, pos.x() + textInset, pos.y() + 14, COLOR_MUTED, false);
         }
 
         guiGraphics.pose().popPose();
         guiGraphics.disableScissor();
+    }
+
+    /** Flat-color chamfered-octagon fill: a full-width middle band plus corner rows that shrink
+     *  inward by one pixel per row, cutting the four corners at 45 degrees. */
+    private void fillChamfered(GuiGraphics guiGraphics, int x, int y, int w, int h, int chamfer, int color) {
+        int c = Math.min(chamfer, h / 2);
+        guiGraphics.fill(x, y + c, x + w, y + h - c, color);
+        for (int i = 0; i < c; i++) {
+            int inset = c - i;
+            guiGraphics.fill(x + inset, y + i, x + w - inset, y + i + 1, color);
+            guiGraphics.fill(x + inset, y + h - i - 1, x + w - inset, y + h - i, color);
+        }
+    }
+
+    /** Same chamfered-octagon shape as {@link #fillChamfered}, but with a per-row lerped color
+     *  instead of one flat color, approximating a vertical gradient across the whole shape. */
+    private void fillChamferedGradient(GuiGraphics guiGraphics, int x, int y, int w, int h, int chamfer, int colorTop, int colorBottom) {
+        int c = Math.min(chamfer, h / 2);
+        for (int row = 0; row < h; row++) {
+            float t = h <= 1 ? 0 : (float) row / (h - 1);
+            int color = lerpColor(colorTop, colorBottom, t);
+            int inset = 0;
+            if (row < c) {
+                inset = c - row;
+            } else if (row >= h - c) {
+                inset = c - (h - 1 - row);
+            }
+            guiGraphics.fill(x + inset, y + row, x + w - inset, y + row + 1, color);
+        }
+    }
+
+    private static int lerpColor(int from, int to, float t) {
+        int fa = (from >>> 24) & 0xFF, fr = (from >>> 16) & 0xFF, fg = (from >>> 8) & 0xFF, fb = from & 0xFF;
+        int ta = (to >>> 24) & 0xFF, tr = (to >>> 16) & 0xFF, tg = (to >>> 8) & 0xFF, tb = to & 0xFF;
+        int a = fa + Math.round((ta - fa) * t);
+        int r = fr + Math.round((tr - fr) * t);
+        int g = fg + Math.round((tg - fg) * t);
+        int b = fb + Math.round((tb - fb) * t);
+        return (a << 24) | (r << 16) | (g << 8) | b;
     }
 
     private void drawElbowConnector(GuiGraphics guiGraphics, int fromX, int fromY, int toX, int toY, int color) {
