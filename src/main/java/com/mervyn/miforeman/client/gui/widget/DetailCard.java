@@ -22,16 +22,16 @@ import java.util.function.BiConsumer;
 import java.util.function.IntConsumer;
 
 public class DetailCard extends AbstractWidget {
-    private static final int COLOR_BORDER = 0xFF6B5030;
-    private static final int COLOR_TITLE = 0xFF4A2E0A;
-    private static final int COLOR_LABEL = 0xFF6B5030;
-    private static final int COLOR_TEXT = 0xFF3A2A18;
-    private static final int COLOR_MUTED = 0xFF8A7A68;
-    private static final int COLOR_GREEN = 0xFF2E7D32;
-    private static final int COLOR_CYAN = 0xFF006080;
-    private static final int COLOR_AMBER = 0xFF9A6C00;
-    private static final int COLOR_CYCLE_BOX = 0xFFD8C3A5;
-    private static final int COLOR_CYCLE_HOVER = 0xFFEAE7D9;
+    private static final int COLOUR_BORDER = 0xFF6B5030;
+    private static final int COLOUR_TITLE = 0xFF4A2E0A;
+    private static final int COLOUR_LABEL = 0xFF6B5030;
+    private static final int COLOUR_TEXT = 0xFF3A2A18;
+    private static final int COLOUR_MUTED = 0xFF8A7A68;
+    private static final int COLOUR_GREEN = 0xFF2E7D32;
+    private static final int COLOUR_CYAN = 0xFF006080;
+    private static final int COLOUR_AMBER = 0xFF9A6C00;
+    private static final int COLOUR_CYCLE_BOX = 0xFFD8C3A5;
+    private static final int COLOUR_CYCLE_HOVER = 0xFFEAE7D9;
 
     private @Nullable RecipeGraphNode node;
     private final FactoryPlan plan;
@@ -74,7 +74,7 @@ public class DetailCard extends AbstractWidget {
         // read as a nested "clipboard within the clipboard" rather than one continuous surface.
         // Just a thin divider on the shared edge with GraphCanvas, hinting at the boundary
         // between the two content areas without drawing a second frame.
-        guiGraphics.fill(getX(), getY(), getX() + 1, getY() + getHeight(), COLOR_BORDER);
+        guiGraphics.fill(getX(), getY(), getX() + 1, getY() + getHeight(), COLOUR_BORDER);
 
         int maxScroll = Math.max(0, totalContentHeight - getHeight() + 8);
         // totalContentHeight is only known after a render pass has measured it (set at the end of
@@ -94,47 +94,47 @@ public class DetailCard extends AbstractWidget {
 
         if (node == null) {
             // Summary Mode
-            guiGraphics.drawString(fontSource.font, "Factory Summary", getX() + 6, currentY, COLOR_TITLE, false);
+            guiGraphics.drawString(fontSource.font, "Factory Summary", getX() + 6, currentY, COLOUR_TITLE, false);
             currentY += 15;
 
             // Goal Output
-            guiGraphics.drawString(fontSource.font, "Target Goal:", getX() + 6, currentY, COLOR_LABEL, false);
+            guiGraphics.drawString(fontSource.font, "Target Goal:", getX() + 6, currentY, COLOUR_LABEL, false);
             currentY += 10;
             String targetText = String.format(" - %.2f/%s %s",
                     plan.graph() != null ? plan.graph().targetRate() * (perHour ? 60.0 : 1.0) : 1.0,
                     perHour ? "h" : "m",
                     plan.graph() != null ? DisplayFormat.formatId(plan.graph().target()) : "Goal");
-            guiGraphics.drawString(fontSource.font, targetText, getX() + 10, currentY, COLOR_TEXT, false);
+            guiGraphics.drawString(fontSource.font, targetText, getX() + 10, currentY, COLOUR_TEXT, false);
             currentY += 15;
 
             // Machines Needed
-            guiGraphics.drawString(fontSource.font, "Machines Needed:", getX() + 6, currentY, COLOR_GREEN, false);
+            guiGraphics.drawString(fontSource.font, "Machines Needed:", getX() + 6, currentY, COLOUR_GREEN, false);
             currentY += 10;
             List<MachineRequirement> machines = plan.machines();
             if (machines.isEmpty()) {
-                guiGraphics.drawString(fontSource.font, " - None", getX() + 10, currentY, COLOR_MUTED, false);
+                guiGraphics.drawString(fontSource.font, " - None", getX() + 10, currentY, COLOUR_MUTED, false);
                 currentY += 10;
             } else {
                 for (MachineRequirement req : machines) {
                     String machLine = String.format(" - %.1f x %s", req.count(), DisplayFormat.formatId(req.machineId()));
-                    guiGraphics.drawString(fontSource.font, machLine, getX() + 10, currentY, COLOR_TEXT, false);
+                    guiGraphics.drawString(fontSource.font, machLine, getX() + 10, currentY, COLOUR_TEXT, false);
                     currentY += 10;
                 }
             }
             currentY += 5;
 
             // Raw Inputs Needed
-            guiGraphics.drawString(fontSource.font, "Raw Inputs:", getX() + 6, currentY, COLOR_CYAN, false);
+            guiGraphics.drawString(fontSource.font, "Raw Inputs:", getX() + 6, currentY, COLOUR_CYAN, false);
             currentY += 10;
             List<MaterialFlow> rawInputs = plan.rawInputs();
             if (rawInputs.isEmpty()) {
-                guiGraphics.drawString(fontSource.font, " - None", getX() + 10, currentY, COLOR_MUTED, false);
+                guiGraphics.drawString(fontSource.font, " - None", getX() + 10, currentY, COLOUR_MUTED, false);
                 currentY += 10;
             } else {
                 for (MaterialFlow flow : rawInputs) {
                     double rateVal = flow.rate() * (perHour ? 60.0 : 1.0);
                     String flowLine = String.format(" - %.1f/%s %s", rateVal, perHour ? "h" : "m", DisplayFormat.formatId(flow.resourceId()));
-                    guiGraphics.drawString(fontSource.font, flowLine, getX() + 10, currentY, COLOR_TEXT, false);
+                    guiGraphics.drawString(fontSource.font, flowLine, getX() + 10, currentY, COLOUR_TEXT, false);
                     currentY += 10;
                 }
             }
@@ -144,87 +144,87 @@ public class DetailCard extends AbstractWidget {
             if (node.getType() == NodeType.MACHINE) {
                 title = "Recipe: " + title;
             }
-            guiGraphics.drawString(fontSource.font, title, getX() + 6, currentY, COLOR_TITLE, false);
+            guiGraphics.drawString(fontSource.font, title, getX() + 6, currentY, COLOUR_TITLE, false);
             currentY += 15;
 
             if (node.getType() == NodeType.MACHINE) {
                 // Machine Node Details
-                guiGraphics.drawString(fontSource.font, "Machine Count:", getX() + 6, currentY, COLOR_LABEL, false);
+                guiGraphics.drawString(fontSource.font, "Machine Count:", getX() + 6, currentY, COLOUR_LABEL, false);
                 String countLine = String.format(" %.2f x %s", node.getMachineCount(), DisplayFormat.formatId(node.getMachineType()));
-                guiGraphics.drawString(fontSource.font, countLine, getX() + 10, currentY + 10, COLOR_TEXT, false);
+                guiGraphics.drawString(fontSource.font, countLine, getX() + 10, currentY + 10, COLOUR_TEXT, false);
                 currentY += 24;
 
                 // Energy / Duration if recipe details exist
                 MachineRecipe recipe = node.getRecipe();
                 if (recipe != null) {
-                    guiGraphics.drawString(fontSource.font, "Recipe Info:", getX() + 6, currentY, COLOR_LABEL, false);
+                    guiGraphics.drawString(fontSource.font, "Recipe Info:", getX() + 6, currentY, COLOUR_LABEL, false);
                     String infoLine = String.format(" Duration: %.1fs | Eu: %d", recipe.duration / 20.0, recipe.eu);
-                    guiGraphics.drawString(fontSource.font, infoLine, getX() + 10, currentY + 10, COLOR_MUTED, false);
+                    guiGraphics.drawString(fontSource.font, infoLine, getX() + 10, currentY + 10, COLOUR_MUTED, false);
                     currentY += 24;
                 }
 
                 // Inputs
-                guiGraphics.drawString(fontSource.font, "Recipe Inputs:", getX() + 6, currentY, COLOR_CYAN, false);
+                guiGraphics.drawString(fontSource.font, "Recipe Inputs:", getX() + 6, currentY, COLOUR_CYAN, false);
                 currentY += 10;
                 if (node.getInputs().isEmpty()) {
-                    guiGraphics.drawString(fontSource.font, " - None", getX() + 10, currentY, COLOR_MUTED, false);
+                    guiGraphics.drawString(fontSource.font, " - None", getX() + 10, currentY, COLOUR_MUTED, false);
                     currentY += 10;
                 } else {
                     for (GraphEdge edge : node.getInputs()) {
                         double rateVal = edge.rate() * (perHour ? 60.0 : 1.0);
                         String inputLine = String.format(" - %.1f/%s %s", rateVal, perHour ? "h" : "m", DisplayFormat.formatId(edge.from()));
-                        guiGraphics.drawString(fontSource.font, inputLine, getX() + 10, currentY, COLOR_TEXT, false);
+                        guiGraphics.drawString(fontSource.font, inputLine, getX() + 10, currentY, COLOUR_TEXT, false);
                         currentY += 10;
                     }
                 }
                 currentY += 5;
 
                 // Outputs
-                guiGraphics.drawString(fontSource.font, "Recipe Outputs:", getX() + 6, currentY, COLOR_GREEN, false);
+                guiGraphics.drawString(fontSource.font, "Recipe Outputs:", getX() + 6, currentY, COLOUR_GREEN, false);
                 currentY += 10;
                 if (node.getOutputs().isEmpty()) {
-                    guiGraphics.drawString(fontSource.font, " - None", getX() + 10, currentY, COLOR_MUTED, false);
+                    guiGraphics.drawString(fontSource.font, " - None", getX() + 10, currentY, COLOUR_MUTED, false);
                     currentY += 10;
                 } else {
                     for (GraphEdge edge : node.getOutputs()) {
                         double rateVal = edge.rate() * (perHour ? 60.0 : 1.0);
                         String outputLine = String.format(" - %.1f/%s %s", rateVal, perHour ? "h" : "m", DisplayFormat.formatId(edge.to()));
-                        guiGraphics.drawString(fontSource.font, outputLine, getX() + 10, currentY, COLOR_TEXT, false);
+                        guiGraphics.drawString(fontSource.font, outputLine, getX() + 10, currentY, COLOUR_TEXT, false);
                         currentY += 10;
                     }
                 }
 
             } else {
                 // Resource Node Details
-                guiGraphics.drawString(fontSource.font, "Required Flow Rate:", getX() + 6, currentY, COLOR_LABEL, false);
+                guiGraphics.drawString(fontSource.font, "Required Flow Rate:", getX() + 6, currentY, COLOUR_LABEL, false);
                 double rateVal = node.getRequiredRate() * (perHour ? 60.0 : 1.0);
                 String rateText = String.format(" %.2f units / %s", rateVal, perHour ? "hour" : "min");
-                guiGraphics.drawString(fontSource.font, rateText, getX() + 10, currentY + 10, COLOR_TEXT, false);
+                guiGraphics.drawString(fontSource.font, rateText, getX() + 10, currentY + 10, COLOUR_TEXT, false);
                 currentY += 24;
 
                 // Produced by machine recipe
-                guiGraphics.drawString(fontSource.font, "Produced By:", getX() + 6, currentY, COLOR_GREEN, false);
+                guiGraphics.drawString(fontSource.font, "Produced By:", getX() + 6, currentY, COLOUR_GREEN, false);
                 currentY += 10;
                 if (node.getInputs().isEmpty()) {
-                    guiGraphics.drawString(fontSource.font, " - Raw Material Input", getX() + 10, currentY, COLOR_MUTED, false);
+                    guiGraphics.drawString(fontSource.font, " - Raw Material Input", getX() + 10, currentY, COLOUR_MUTED, false);
                     currentY += 10;
                 } else {
                     for (GraphEdge edge : node.getInputs()) {
-                        guiGraphics.drawString(fontSource.font, " - " + DisplayFormat.formatId(edge.from()), getX() + 10, currentY, COLOR_TEXT, false);
+                        guiGraphics.drawString(fontSource.font, " - " + DisplayFormat.formatId(edge.from()), getX() + 10, currentY, COLOUR_TEXT, false);
                         currentY += 10;
                     }
                 }
                 currentY += 5;
 
                 // Consumed by recipe
-                guiGraphics.drawString(fontSource.font, "Consumed By:", getX() + 6, currentY, COLOR_CYAN, false);
+                guiGraphics.drawString(fontSource.font, "Consumed By:", getX() + 6, currentY, COLOUR_CYAN, false);
                 currentY += 10;
                 if (node.getOutputs().isEmpty()) {
-                    guiGraphics.drawString(fontSource.font, " - Final Target Product", getX() + 10, currentY, COLOR_MUTED, false);
+                    guiGraphics.drawString(fontSource.font, " - Final Target Product", getX() + 10, currentY, COLOUR_MUTED, false);
                     currentY += 10;
                 } else {
                     for (GraphEdge edge : node.getOutputs()) {
-                        guiGraphics.drawString(fontSource.font, " - " + DisplayFormat.formatId(edge.to()), getX() + 10, currentY, COLOR_TEXT, false);
+                        guiGraphics.drawString(fontSource.font, " - " + DisplayFormat.formatId(edge.to()), getX() + 10, currentY, COLOUR_TEXT, false);
                         currentY += 10;
                     }
                 }
@@ -233,7 +233,7 @@ public class DetailCard extends AbstractWidget {
             // Recipe Ambiguity Cycle Button (Rendered for any node having ambiguity options)
             if (!node.getAmbiguityOptions().isEmpty()) {
                 currentY += 8;
-                guiGraphics.drawString(fontSource.font, "Alternative Recipes:", getX() + 6, currentY, COLOR_AMBER, false);
+                guiGraphics.drawString(fontSource.font, "Alternative Recipes:", getX() + 6, currentY, COLOUR_AMBER, false);
                 currentY += 12;
 
                 cycleBoxX = getX() + 10;
@@ -244,15 +244,15 @@ public class DetailCard extends AbstractWidget {
                 isCycleBoxHovered = mouseX >= cycleBoxX && mouseX < cycleBoxX + cycleBoxW &&
                                     mouseY >= cycleBoxY && mouseY < cycleBoxY + cycleBoxH;
 
-                int boxColor = isCycleBoxHovered ? COLOR_CYCLE_HOVER : COLOR_CYCLE_BOX;
-                guiGraphics.fill(cycleBoxX, cycleBoxY, cycleBoxX + cycleBoxW, cycleBoxY + cycleBoxH, boxColor);
-                guiGraphics.renderOutline(cycleBoxX, cycleBoxY, cycleBoxW, cycleBoxH, COLOR_BORDER);
+                int boxColour = isCycleBoxHovered ? COLOUR_CYCLE_HOVER : COLOUR_CYCLE_BOX;
+                guiGraphics.fill(cycleBoxX, cycleBoxY, cycleBoxX + cycleBoxW, cycleBoxY + cycleBoxH, boxColour);
+                guiGraphics.renderOutline(cycleBoxX, cycleBoxY, cycleBoxW, cycleBoxH, COLOUR_BORDER);
 
                 String cycleText = "Cycle Recipe (" + (node.getAmbiguityOptions().indexOf(node.getSelectedAmbiguity()) + 1)
                         + "/" + node.getAmbiguityOptions().size() + ")";
                 int textWidth = fontSource.font.width(cycleText);
                 int textX = cycleBoxX + (cycleBoxW - textWidth) / 2;
-                guiGraphics.drawString(fontSource.font, cycleText, textX, cycleBoxY + 3, COLOR_TEXT, false);
+                guiGraphics.drawString(fontSource.font, cycleText, textX, cycleBoxY + 3, COLOUR_TEXT, false);
                 currentY += 18;
             }
         }
@@ -268,7 +268,7 @@ public class DetailCard extends AbstractWidget {
             int scrollbarX = getX() + getWidth() - scrollbarWidth - 2;
             int scrollbarY = getY() + 2 + (int) (((double) scrollOffset / maxScroll) * (getHeight() - scrollbarHeight - 4));
 
-            guiGraphics.fill(scrollbarX, scrollbarY, scrollbarX + scrollbarWidth, scrollbarY + scrollbarHeight, COLOR_BORDER);
+            guiGraphics.fill(scrollbarX, scrollbarY, scrollbarX + scrollbarWidth, scrollbarY + scrollbarHeight, COLOUR_BORDER);
         }
     }
 

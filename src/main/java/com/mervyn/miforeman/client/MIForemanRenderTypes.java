@@ -13,7 +13,7 @@ import java.util.OptionalDouble;
  * each shape is drawn twice, once into the *_OUTSIDE_BLOCKS type (normal depth test -- only
  * visible where actually unobstructed) and once into the *_INSIDE_BLOCKS type (depth test flipped
  * to GL_GREATER -- draws only the currently-occluded portion, meant to be used at reduced
- * color/alpha). This is the same dual-pass technique used by Minecolonies for its own see-through
+ * colour/alpha). This is the same dual-pass technique used by Minecolonies for its own see-through
  * overlays (references/minecolonies-1.21.1/.../worldevent/RenderTypes.java), confirmed against
  * the decompiled vanilla RenderType.LINES/DEBUG_FILLED_BOX composite states. Unlike Minecolonies'
  * version (which draws its "lines" as extruded quads via an external library), LINES_* here keep

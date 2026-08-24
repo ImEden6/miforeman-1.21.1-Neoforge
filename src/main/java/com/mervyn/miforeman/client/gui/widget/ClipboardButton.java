@@ -19,8 +19,8 @@ public class ClipboardButton extends Button {
     private static final ResourceLocation TEX_DISABLED = ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "textures/gui/clipboard_button_disabled.png");
     private static final int BORDER = 4;
     private static final int TEX_SIZE = 32;
-    private static final int COLOR_TEXT = 0xFFFFFFFF;
-    private static final int COLOR_TEXT_DISABLED = 0xFFA0A0A0;
+    private static final int COLOUR_TEXT = 0xFFFFFFFF;
+    private static final int COLOUR_TEXT_DISABLED = 0xFFA0A0A0;
 
     public ClipboardButton(int x, int y, int width, int height, Component message, OnPress onPress) {
         super(x, y, width, height, message, onPress, DEFAULT_NARRATION);
@@ -31,8 +31,8 @@ public class ClipboardButton extends Button {
         ResourceLocation tex = !active ? TEX_DISABLED : (isHoveredOrFocused() ? TEX_HOVER : TEX_NORMAL);
         NineSliceTexture.blit(guiGraphics, tex, getX(), getY(), getWidth(), getHeight(), BORDER, TEX_SIZE);
 
-        int color = active ? COLOR_TEXT : COLOR_TEXT_DISABLED;
+        int colour = active ? COLOUR_TEXT : COLOUR_TEXT_DISABLED;
         guiGraphics.drawCenteredString(Minecraft.getInstance().font, getMessage(),
-                getX() + getWidth() / 2, getY() + (getHeight() - 8) / 2, color);
+                getX() + getWidth() / 2, getY() + (getHeight() - 8) / 2, colour);
     }
 }

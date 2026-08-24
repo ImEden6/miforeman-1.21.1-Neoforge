@@ -37,9 +37,9 @@ import java.util.function.Consumer;
 public class DefineGoalWindow extends BOWindow {
     private static final int PADDING = 8;
     private static final int FIELD_HEIGHT = 14;
-    private static final int COLOR_TITLE = 0xFFDAA520;
-    private static final int COLOR_LABEL = 0xFF8B7355;
-    private static final int COLOR_ERROR = 0xFFCC3333;
+    private static final int COLOUR_TITLE = 0xFFDAA520;
+    private static final int COLOUR_LABEL = 0xFF8B7355;
+    private static final int COLOUR_ERROR = 0xFFCC3333;
 
     private final Consumer<GoalFormResult> onSubmit;
     private final Runnable onCancel;
@@ -130,7 +130,7 @@ public class DefineGoalWindow extends BOWindow {
         title.setPosition(contentX, contentY);
         title.setSize(getWidth() - contentX - PADDING, 12);
         title.setText(Component.literal("Define Goal"));
-        title.setColors(COLOR_TITLE);
+        title.setColors(COLOUR_TITLE);
         addChild(title);
 
         int y = contentY + 24;
@@ -220,7 +220,7 @@ public class DefineGoalWindow extends BOWindow {
         errorText = new Text();
         errorText.setPosition(contentX, y);
         errorText.setSize(contentW, 14);
-        errorText.setColors(COLOR_ERROR);
+        errorText.setColors(COLOUR_ERROR);
         addChild(errorText);
 
         int btnY = getHeight() - PADDING - ClipboardChrome.MAIN_BORDER - 22;
@@ -274,7 +274,7 @@ public class DefineGoalWindow extends BOWindow {
         t.setPosition(x, y);
         t.setSize(w, 10);
         t.setText(Component.literal(text));
-        t.setColors(COLOR_LABEL);
+        t.setColors(COLOUR_LABEL);
         t.setTextScale(0.85f);
         return t;
     }

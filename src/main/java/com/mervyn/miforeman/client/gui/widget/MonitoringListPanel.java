@@ -1,6 +1,8 @@
 package com.mervyn.miforeman.client.gui.widget;
 
 import com.mervyn.miforeman.client.DisplayFormat;
+import com.mervyn.miforeman.client.gui.ColourPalette;
+import com.mervyn.miforeman.client.gui.ColourPalette.ColourKey;
 import com.mervyn.miforeman.network.LiveMonitoringPayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -24,17 +26,15 @@ public class MonitoringListPanel extends AbstractWidget {
     public record MonitoringRow(LiveMonitoringPayload.MachineStatusData machine, @Nullable String productLabel) {}
 
     private static final int ROW_HEIGHT = 24;
-    private static final int COLOR_BORDER = 0xFF6B5030;
-    private static final int COLOR_TEXT = 0xFF3A2A18;
-    private static final int COLOR_MUTED = 0xFF8A7A68;
-    private static final int COLOR_GREEN = 0xFF2E7D32;
-    private static final int COLOR_AMBER = 0xFF9A6C00;
-    private static final int COLOR_RED = 0xFFCC3333;
-    private static final int COLOR_ORANGE = 0xFFE67700;
-    private static final int COLOR_HOVER = 0x156B5030;
-    private static final int COLOR_SELECTED_ROW = 0x2000E5FF;
-    private static final int COLOR_LOCATE_BUTTON = 0xFFD8C3A5;
-    private static final int COLOR_LOCATED_BUTTON = 0xFF9FE8EE;
+    private static final int COLOUR_BORDER = 0xFF6B5030;
+    private static final int COLOUR_TEXT = 0xFF3A2A18;
+    private static final int COLOUR_MUTED = 0xFF8A7A68;
+    private static final int COLOUR_GREEN = 0xFF2E7D32;
+    private static final int COLOUR_AMBER = 0xFF9A6C00;
+    private static final int COLOUR_RED = 0xFFCC3333;
+    private static final int COLOUR_ORANGE = 0xFFE67700;
+    private static final int COLOUR_HOVER = 0x156B5030;
+    private static final int COLOUR_SELECTED_ROW = 0x2000E5FF;
     private static final int ACTION_BUTTON_WIDTH = 46;
     private static final int ACTION_BUTTON_HEIGHT = 14;
 
@@ -67,7 +67,7 @@ public class MonitoringListPanel extends AbstractWidget {
     @Override
     protected void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         guiGraphics.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(), 0x113A2A18);
-        guiGraphics.renderOutline(getX(), getY(), getWidth(), getHeight(), COLOR_BORDER);
+        guiGraphics.renderOutline(getX(), getY(), getWidth(), getHeight(), COLOUR_BORDER);
 
         scroll.clampForRender(rows.size(), getHeight());
 
@@ -81,16 +81,16 @@ public class MonitoringListPanel extends AbstractWidget {
             boolean isSelected = machine.pos().equals(selectedPos);
             if (currentY + ROW_HEIGHT > getY() && currentY < getY() + getHeight()) {
                 if (isSelected) {
-                    guiGraphics.fill(getX() + 2, currentY, getX() + getWidth() - 2, currentY + ROW_HEIGHT, COLOR_SELECTED_ROW);
+                    guiGraphics.fill(getX() + 2, currentY, getX() + getWidth() - 2, currentY + ROW_HEIGHT, COLOUR_SELECTED_ROW);
                 }
                 boolean isHovered = mouseX >= getX() + 1 && mouseX < getX() + getWidth() - 1 &&
                         mouseY >= currentY && mouseY < currentY + ROW_HEIGHT;
                 if (isHovered) {
-                    guiGraphics.fill(getX() + 2, currentY, getX() + getWidth() - 2, currentY + ROW_HEIGHT, COLOR_HOVER);
+                    guiGraphics.fill(getX() + 2, currentY, getX() + getWidth() - 2, currentY + ROW_HEIGHT, COLOUR_HOVER);
                 }
 
-                int color = statusColor(machine.status());
-                guiGraphics.fill(getX() + 4, currentY + 4, getX() + 8, currentY + 8, color);
+                int colour = statusColour(machine.status());
+                guiGraphics.fill(getX() + 4, currentY + 4, getX() + 8, currentY + 8, colour);
 
                 double rateVal = machine.actualRate() * (perHour ? 60.0 : 1.0);
                 String text = String.format("%s: %.2f/%s (%s)", DisplayFormat.formatId(machine.machineId()), rateVal, perHour ? "hr" : "min", machine.status());
@@ -98,25 +98,25 @@ public class MonitoringListPanel extends AbstractWidget {
                 if (mc.font.width(text) > maxTextWidth && maxTextWidth > 0) {
                     text = mc.font.plainSubstrByWidth(text, Math.max(0, maxTextWidth - 8)) + "..";
                 }
-                guiGraphics.drawString(mc.font, text, getX() + 12, currentY + 3, color, false);
+                guiGraphics.drawString(mc.font, text, getX() + 12, currentY + 3, colour, false);
 
                 if (row.productLabel() != null) {
-                    guiGraphics.drawString(mc.font, row.productLabel(), getX() + 12, currentY + 13, COLOR_MUTED, false);
+                    guiGraphics.drawString(mc.font, row.productLabel(), getX() + 12, currentY + 13, COLOUR_MUTED, false);
                 }
 
                 int btnX = actionButtonX();
                 int btnY = actionButtonY(currentY);
                 guiGraphics.fill(btnX, btnY, btnX + ACTION_BUTTON_WIDTH, btnY + ACTION_BUTTON_HEIGHT,
-                        isSelected ? COLOR_LOCATED_BUTTON : COLOR_LOCATE_BUTTON);
-                guiGraphics.renderOutline(btnX, btnY, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT, COLOR_BORDER);
-                guiGraphics.drawString(mc.font, isSelected ? "Located" : "Locate", btnX + 3, btnY + 3, COLOR_TEXT, false);
+                        ColourPalette.get(isSelected ? ColourKey.LOCATED_BUTTON : ColourKey.LOCATE_BUTTON));
+                guiGraphics.renderOutline(btnX, btnY, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT, COLOUR_BORDER);
+                guiGraphics.drawString(mc.font, isSelected ? "Located" : "Locate", btnX + 3, btnY + 3, COLOUR_TEXT, false);
             }
             currentY += ROW_HEIGHT;
         }
 
         guiGraphics.disableScissor();
 
-        scroll.drawScrollbar(guiGraphics, getX(), getY(), getWidth(), getHeight(), rows.size(), COLOR_BORDER);
+        scroll.drawScrollbar(guiGraphics, getX(), getY(), getWidth(), getHeight(), rows.size(), COLOUR_BORDER);
     }
 
     @Override
@@ -151,13 +151,13 @@ public class MonitoringListPanel extends AbstractWidget {
         return scroll.onWheel(scrollY, rows.size(), getHeight());
     }
 
-    private int statusColor(String status) {
+    private int statusColour(String status) {
         return switch (status) {
-            case "RED" -> COLOR_RED;
-            case "ORANGE" -> COLOR_ORANGE;
-            case "YELLOW" -> COLOR_AMBER;
-            case "GREEN" -> COLOR_GREEN;
-            default -> COLOR_MUTED;
+            case "RED" -> COLOUR_RED;
+            case "ORANGE" -> COLOUR_ORANGE;
+            case "YELLOW" -> COLOUR_AMBER;
+            case "GREEN" -> COLOUR_GREEN;
+            default -> COLOUR_MUTED;
         };
     }
 

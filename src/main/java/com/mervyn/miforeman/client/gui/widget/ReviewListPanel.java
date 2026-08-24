@@ -24,13 +24,13 @@ public class ReviewListPanel extends AbstractWidget {
                              boolean isNewCandidate, @Nullable String productLabel) {}
 
     private static final int ROW_HEIGHT = 34;
-    private static final int COLOR_BORDER = 0xFF6B5030;
-    private static final int COLOR_TEXT = 0xFF3A2A18;
-    private static final int COLOR_MUTED = 0xFF8A7A68;
-    private static final int COLOR_LINKED = 0xFF2E7D32;
-    private static final int COLOR_CANDIDATE = 0xFF9A6C00;
-    private static final int COLOR_REJECTED = 0xFF8A7A68;
-    private static final int COLOR_HOVER = 0x156B5030;
+    private static final int COLOUR_BORDER = 0xFF6B5030;
+    private static final int COLOUR_TEXT = 0xFF3A2A18;
+    private static final int COLOUR_MUTED = 0xFF8A7A68;
+    private static final int COLOUR_LINKED = 0xFF2E7D32;
+    private static final int COLOUR_CANDIDATE = 0xFF9A6C00;
+    private static final int COLOUR_REJECTED = 0xFF8A7A68;
+    private static final int COLOUR_HOVER = 0x156B5030;
     private static final int CHECKBOX_SIZE = 10;
     private static final int ACTION_BUTTON_WIDTH = 46;
     private static final int ACTION_BUTTON_HEIGHT = 14;
@@ -66,7 +66,7 @@ public class ReviewListPanel extends AbstractWidget {
     @Override
     protected void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         guiGraphics.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(), 0x113A2A18);
-        guiGraphics.renderOutline(getX(), getY(), getWidth(), getHeight(), COLOR_BORDER);
+        guiGraphics.renderOutline(getX(), getY(), getWidth(), getHeight(), COLOUR_BORDER);
 
         scroll.clampForRender(rows.size(), getHeight());
 
@@ -80,7 +80,7 @@ public class ReviewListPanel extends AbstractWidget {
                 boolean isHovered = mouseX >= getX() + 1 && mouseX < getX() + getWidth() - 1 &&
                         mouseY >= currentY && mouseY < currentY + ROW_HEIGHT;
                 if (isHovered) {
-                    guiGraphics.fill(getX() + 2, currentY, getX() + getWidth() - 2, currentY + ROW_HEIGHT, COLOR_HOVER);
+                    guiGraphics.fill(getX() + 2, currentY, getX() + getWidth() - 2, currentY + ROW_HEIGHT, COLOUR_HOVER);
                 }
 
                 boolean showUnreject = row.rejected() && !row.linked();
@@ -88,15 +88,15 @@ public class ReviewListPanel extends AbstractWidget {
                 int checkboxY = currentY + (ROW_HEIGHT - CHECKBOX_SIZE) / 2;
 
                 if (!showUnreject) {
-                    guiGraphics.renderOutline(checkboxX, checkboxY, CHECKBOX_SIZE, CHECKBOX_SIZE, COLOR_BORDER);
+                    guiGraphics.renderOutline(checkboxX, checkboxY, CHECKBOX_SIZE, CHECKBOX_SIZE, COLOUR_BORDER);
                     if (row.linked()) {
-                        guiGraphics.fill(checkboxX + 2, checkboxY + 2, checkboxX + CHECKBOX_SIZE - 2, checkboxY + CHECKBOX_SIZE - 2, COLOR_LINKED);
+                        guiGraphics.fill(checkboxX + 2, checkboxY + 2, checkboxX + CHECKBOX_SIZE - 2, checkboxY + CHECKBOX_SIZE - 2, COLOUR_LINKED);
                     }
                 }
 
                 int textX = checkboxX + CHECKBOX_SIZE + 6;
                 String name = DisplayFormat.formatId(row.machineId());
-                int color = row.rejected() ? COLOR_REJECTED : (row.linked() ? COLOR_LINKED : COLOR_CANDIDATE);
+                int colour = row.rejected() ? COLOUR_REJECTED : (row.linked() ? COLOUR_LINKED : COLOUR_CANDIDATE);
                 if (row.rejected()) {
                     name = "[rejected] " + name;
                 } else if (row.isNewCandidate()) {
@@ -106,27 +106,27 @@ public class ReviewListPanel extends AbstractWidget {
                 if (mc.font.width(name) > maxTextWidth && maxTextWidth > 0) {
                     name = mc.font.plainSubstrByWidth(name, Math.max(0, maxTextWidth - 8)) + "..";
                 }
-                guiGraphics.drawString(mc.font, name, textX, currentY + 4, color, false);
+                guiGraphics.drawString(mc.font, name, textX, currentY + 4, colour, false);
 
                 String posText = row.pos().toShortString();
-                guiGraphics.drawString(mc.font, posText, textX, currentY + 4 + 9, COLOR_MUTED, false);
+                guiGraphics.drawString(mc.font, posText, textX, currentY + 4 + 9, COLOUR_MUTED, false);
 
                 if (row.productLabel() != null) {
-                    guiGraphics.drawString(mc.font, row.productLabel(), textX, currentY + 4 + 18, COLOR_MUTED, false);
+                    guiGraphics.drawString(mc.font, row.productLabel(), textX, currentY + 4 + 18, COLOUR_MUTED, false);
                 }
 
                 if (showUnreject) {
                     int btnX = actionButtonX();
                     int btnY = actionButtonY(currentY);
                     guiGraphics.fill(btnX, btnY, btnX + ACTION_BUTTON_WIDTH, btnY + ACTION_BUTTON_HEIGHT, 0xFFD8C3A5);
-                    guiGraphics.renderOutline(btnX, btnY, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT, COLOR_BORDER);
-                    guiGraphics.drawString(mc.font, "Unreject", btnX + 3, btnY + 3, COLOR_TEXT, false);
+                    guiGraphics.renderOutline(btnX, btnY, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT, COLOUR_BORDER);
+                    guiGraphics.drawString(mc.font, "Unreject", btnX + 3, btnY + 3, COLOUR_TEXT, false);
                 } else if (row.isNewCandidate() && !row.linked()) {
                     int btnX = actionButtonX();
                     int btnY = actionButtonY(currentY);
                     guiGraphics.fill(btnX, btnY, btnX + ACTION_BUTTON_WIDTH, btnY + ACTION_BUTTON_HEIGHT, 0xFFD8C3A5);
-                    guiGraphics.renderOutline(btnX, btnY, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT, COLOR_BORDER);
-                    guiGraphics.drawString(mc.font, "Reject", btnX + 8, btnY + 3, COLOR_TEXT, false);
+                    guiGraphics.renderOutline(btnX, btnY, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT, COLOUR_BORDER);
+                    guiGraphics.drawString(mc.font, "Reject", btnX + 8, btnY + 3, COLOUR_TEXT, false);
                 }
             }
             currentY += ROW_HEIGHT;
@@ -134,7 +134,7 @@ public class ReviewListPanel extends AbstractWidget {
 
         guiGraphics.disableScissor();
 
-        scroll.drawScrollbar(guiGraphics, getX(), getY(), getWidth(), getHeight(), rows.size(), COLOR_BORDER);
+        scroll.drawScrollbar(guiGraphics, getX(), getY(), getWidth(), getHeight(), rows.size(), COLOUR_BORDER);
     }
 
     @Override

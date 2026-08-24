@@ -23,13 +23,6 @@ correctness fixes, feature ideas, and docs debt.
 - **Collision feedback for manual drags** — dropping a dragged node on top of
   another currently gives no feedback; a "snap away" or warning outline on
   overlap would help.
-- **Reset layout button** — no way to snap all manually-dragged nodes back to
-  the auto-layout short of undoing every drag one at a time. `ClipboardScreen`
-  already has an undo/redo layout button row (`undoLayoutButton`/
-  `redoLayoutButton`, next to `graphCanvas.canUndo()`/`canRedo()`); a third
-  "Reset Layout" button there could just clear `goalDraft.graphLayout` back to
-  `GraphLayoutState.EMPTY` so every node falls back to `GraphCanvas`'s
-  `computeAutoLayout()` positions.
 
 ## Native-clipboard theming follow-ups
 
@@ -91,14 +84,15 @@ correctness fixes, feature ideas, and docs debt.
   `GraphCanvas` node/edge coloring, keying fill color to state (ambiguous, rate
   satisfied/deficit, raw vs intermediate vs target). The data already exists in
   `MachineTracker.energyEvents`.
-- **Color picker / theme customization** — every `COLOR_*` value (`DetailCard`, `ClipboardScreen`,
+- **Colour picker / theme customization (partially done)** — `ColourPalette` +
+  `ColourPickerScreen` (opened via the "Colours" button on `ClipboardScreen`) now cover the two
+  colours that actually carry meaning today: the in-world highlight boxes
+  (`WorldHighlightRenderer`'s linked/candidate/located colours) and the Monitor list's
+  Locate/Located buttons. Every other `COLOUR_*` value (`DetailCard`, `ClipboardScreen`,
   `GraphCanvas`, `MonitoringScreen`, `ReviewMachinesScreen`, `DefineGoalWindow`, and the list-panel
-  widgets — 9 files' worth) is a hardcoded `private static final int`. Once anything above actually
-  starts keying color to meaning (status color-coding, bottleneck view, ambiguity highlighting),
-  players with different accessibility needs or just different taste have no way to adjust it
-  short of editing source. Worth a config-backed palette (even just the status/semantic colors, not
-  every border/text shade) with an in-game color-picker widget to edit it, rather than a
-  config-file-only approach.
+  widgets) is still a hardcoded `private static final int` — extend `ColourPalette.ColourKey` for
+  those once something above actually starts keying colour to meaning (status colour-coding,
+  bottleneck view, ambiguity highlighting).
 - **Ambiguity resolution in DetailCard** — pick among alternative recipes per node in the GUI
   instead of falling back to `/miforeman goal select`.
 - **Link-coverage indicator** — the plan says you need 12 assemblers; nothing shows "8 of 12

@@ -50,7 +50,7 @@ class ListScroll {
         return false;
     }
 
-    void drawScrollbar(GuiGraphics guiGraphics, int x, int y, int width, int height, int rowCount, int color) {
+    void drawScrollbar(GuiGraphics guiGraphics, int x, int y, int width, int height, int rowCount, int colour) {
         int maxScroll = maxScroll(rowCount, height);
         if (maxScroll <= 0) return;
         int totalHeight = rowCount * rowHeight;
@@ -58,6 +58,6 @@ class ListScroll {
         int scrollbarHeight = Math.max(10, (int) (((double) height / totalHeight) * height));
         int scrollbarX = x + width - scrollbarWidth - 2;
         int scrollbarY = y + 2 + (int) (((double) offset / maxScroll) * (height - scrollbarHeight - 4));
-        guiGraphics.fill(scrollbarX, scrollbarY, scrollbarX + scrollbarWidth, scrollbarY + scrollbarHeight, color);
+        guiGraphics.fill(scrollbarX, scrollbarY, scrollbarX + scrollbarWidth, scrollbarY + scrollbarHeight, colour);
     }
 }

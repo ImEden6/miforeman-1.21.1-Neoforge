@@ -39,15 +39,15 @@ public class ClipboardScreen extends Screen {
     private static final int MIN_GUI_HEIGHT = 230;
     private static final int PADDING = 8;
 
-    // --- Text Colors ---
-    private static final int COLOR_TITLE = 0xFFDAA520;
-    private static final int COLOR_LABEL = 0xFF8B7355;
-    private static final int COLOR_ERROR = 0xFFCC3333;
-    private static final int COLOR_GREEN = 0xFF2E7D32;
-    private static final int COLOR_CYAN = 0xFF006080;
-    private static final int COLOR_AMBER = 0xFF9A6C00;
-    private static final int COLOR_TEXT = 0xFF3A2A18;
-    private static final int COLOR_MUTED = 0xFF8A7A68;
+    // --- Text Colours ---
+    private static final int COLOUR_TITLE = 0xFFDAA520;
+    private static final int COLOUR_LABEL = 0xFF8B7355;
+    private static final int COLOUR_ERROR = 0xFFCC3333;
+    private static final int COLOUR_GREEN = 0xFF2E7D32;
+    private static final int COLOUR_CYAN = 0xFF006080;
+    private static final int COLOUR_AMBER = 0xFF9A6C00;
+    private static final int COLOUR_TEXT = 0xFF3A2A18;
+    private static final int COLOUR_MUTED = 0xFF8A7A68;
 
     // --- Step Constants ---
     private static final int STEP_DEFINE_GOAL = 0;
@@ -78,7 +78,7 @@ public class ClipboardScreen extends Screen {
     private Button toggleDetailButton;
     private Button toggleMachineViewButton;
     private Button toggleDragModeButton;
-    private Button undoLayoutButton, redoLayoutButton;
+    private Button undoLayoutButton, redoLayoutButton, resetLayoutButton;
 
     private Button nextButton;
     private Button backButton;
@@ -177,6 +177,10 @@ public class ClipboardScreen extends Screen {
             }
         );
         this.addRenderableWidget(toggleModeButton);
+
+        Button coloursButton = new ClipboardButton(left + guiWidth - 54 - 54, top + 8, 50, 14,
+                Component.literal("Colours"), b -> Minecraft.getInstance().setScreen(new ColourPickerScreen(this)));
+        this.addRenderableWidget(coloursButton);
 
         if (this.isMinimized) {
             return;
@@ -324,7 +328,11 @@ public class ClipboardScreen extends Screen {
             redoLayoutButton.active = graphCanvas.canRedo();
             this.addRenderableWidget(redoLayoutButton);
 
-            toggleMachineViewButton = new ClipboardButton(contentX + 88, topButtonRowY, 86, 12,
+            resetLayoutButton = new ClipboardButton(contentX + 88, topButtonRowY, 40, 12,
+                    Component.literal("Reset"), b -> graphCanvas.resetLayout());
+            this.addRenderableWidget(resetLayoutButton);
+
+            toggleMachineViewButton = new ClipboardButton(contentX + 132, topButtonRowY, 86, 12,
                     Component.literal(showMachineNodes ? "Items Only" : "Show Machines"),
                     b -> {
                         showMachineNodes = !showMachineNodes;
@@ -341,7 +349,7 @@ public class ClipboardScreen extends Screen {
             );
             this.addRenderableWidget(toggleMachineViewButton);
 
-            toggleDragModeButton = new ClipboardButton(contentX + 178, topButtonRowY, 86, 12,
+            toggleDragModeButton = new ClipboardButton(contentX + 222, topButtonRowY, 86, 12,
                     Component.literal(graphDragEnabled ? "Edit Mode" : "View Mode"),
                     b -> {
                         graphDragEnabled = !graphDragEnabled;
@@ -454,9 +462,9 @@ public class ClipboardScreen extends Screen {
 
         for (int i = 0; i < 3; i++) {
             int dx = startX + i * STEP_DOT_GAP;
-            int dotColor = (i == currentStep) ? COLOR_TITLE : COLOR_MUTED;
+            int dotColour = (i == currentStep) ? COLOUR_TITLE : COLOUR_MUTED;
             guiGraphics.fill(dx - STEP_DOT_RADIUS, dotY - STEP_DOT_RADIUS,
-                             dx + STEP_DOT_RADIUS, dotY + STEP_DOT_RADIUS, dotColor);
+                             dx + STEP_DOT_RADIUS, dotY + STEP_DOT_RADIUS, dotColour);
         }
     }
 
@@ -514,59 +522,59 @@ public class ClipboardScreen extends Screen {
         int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
         int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
 
-        guiGraphics.drawString(this.font, Component.literal("Production Goal Summary"), contentX, contentY, COLOR_TITLE);
+        guiGraphics.drawString(this.font, Component.literal("Production Goal Summary"), contentX, contentY, COLOUR_TITLE);
 
         int currentY = contentY + 20;
 
-        guiGraphics.drawString(this.font, Component.literal("Goal Name:"), contentX, currentY, COLOR_LABEL);
-        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.goalName), contentX + 80, currentY, COLOR_TEXT);
+        guiGraphics.drawString(this.font, Component.literal("Goal Name:"), contentX, currentY, COLOUR_LABEL);
+        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.goalName), contentX + 80, currentY, COLOUR_TEXT);
         currentY += 15;
 
-        guiGraphics.drawString(this.font, Component.literal("Target ID:"), contentX, currentY, COLOR_LABEL);
-        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.targetIdStr), contentX + 80, currentY, COLOR_TEXT);
+        guiGraphics.drawString(this.font, Component.literal("Target ID:"), contentX, currentY, COLOUR_LABEL);
+        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.targetIdStr), contentX + 80, currentY, COLOUR_TEXT);
         currentY += 15;
 
-        guiGraphics.drawString(this.font, Component.literal("Target Type:"), contentX, currentY, COLOR_LABEL);
-        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.targetType.name()), contentX + 80, currentY, COLOR_TEXT);
+        guiGraphics.drawString(this.font, Component.literal("Target Type:"), contentX, currentY, COLOUR_LABEL);
+        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.targetType.name()), contentX + 80, currentY, COLOUR_TEXT);
         currentY += 15;
 
         String rateStr = String.format("%.2f units/%s", this.goalDraft.rate, this.goalDraft.perHour ? "hour" : "min");
-        guiGraphics.drawString(this.font, Component.literal("Desired Rate:"), contentX, currentY, COLOR_LABEL);
-        guiGraphics.drawString(this.font, Component.literal(rateStr), contentX + 80, currentY, COLOR_TEXT);
+        guiGraphics.drawString(this.font, Component.literal("Desired Rate:"), contentX, currentY, COLOUR_LABEL);
+        guiGraphics.drawString(this.font, Component.literal(rateStr), contentX + 80, currentY, COLOUR_TEXT);
         currentY += 15;
 
         String thresholdStr = String.format("%d%%", (int) (this.goalDraft.threshold * 100));
-        guiGraphics.drawString(this.font, Component.literal("Threshold:"), contentX, currentY, COLOR_LABEL);
-        guiGraphics.drawString(this.font, Component.literal(thresholdStr), contentX + 80, currentY, COLOR_TEXT);
+        guiGraphics.drawString(this.font, Component.literal("Threshold:"), contentX, currentY, COLOUR_LABEL);
+        guiGraphics.drawString(this.font, Component.literal(thresholdStr), contentX + 80, currentY, COLOUR_TEXT);
         currentY += 20;
 
         String statusStr = "Status: Planning Complete";
-        int statusColor = COLOR_GREEN;
+        int statusColour = COLOUR_GREEN;
         if (currentStep == STEP_MONITOR) {
             statusStr = "Status: Live Monitoring Active (" + this.monitoringState.liveData.size() + " nodes)";
-            statusColor = COLOR_CYAN;
+            statusColour = COLOUR_CYAN;
         } else if (currentStep == STEP_DEFINE_GOAL) {
             statusStr = "Status: Goal Definition Draft";
-            statusColor = COLOR_AMBER;
+            statusColour = COLOUR_AMBER;
         }
-        guiGraphics.drawString(this.font, Component.literal(statusStr), contentX, currentY, statusColor);
+        guiGraphics.drawString(this.font, Component.literal(statusStr), contentX, currentY, statusColour);
     }
 
     private void renderStepReviewPlan(GuiGraphics guiGraphics, int left, int top) {
         int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
         int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
-        guiGraphics.drawString(this.font, Component.literal("Factory Plan"), contentX, contentY, COLOR_TITLE);
+        guiGraphics.drawString(this.font, Component.literal("Factory Plan"), contentX, contentY, COLOUR_TITLE);
     }
 
     private void renderStepMonitor(GuiGraphics guiGraphics, int left, int top) {
         int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
         int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
 
-        guiGraphics.drawString(this.font, Component.literal("Factory Monitoring"), contentX, contentY, COLOR_TITLE);
+        guiGraphics.drawString(this.font, Component.literal("Factory Monitoring"), contentX, contentY, COLOUR_TITLE);
 
         int currentY = contentY + 16;
         if (this.monitoringState.liveData.isEmpty()) {
-            guiGraphics.drawString(this.font, Component.literal(" - None linked yet"), contentX + 4, currentY, COLOR_MUTED);
+            guiGraphics.drawString(this.font, Component.literal(" - None linked yet"), contentX + 4, currentY, COLOUR_MUTED);
             return;
         }
 
@@ -583,19 +591,19 @@ public class ClipboardScreen extends Screen {
 
         // Counts lead with RED/ORANGE (what actually needs attention), not machine order.
         String prefix = this.monitoringState.liveData.size() + " machines: ";
-        guiGraphics.drawString(this.font, Component.literal(prefix), contentX + 4, currentY, COLOR_TEXT);
+        guiGraphics.drawString(this.font, Component.literal(prefix), contentX + 4, currentY, COLOUR_TEXT);
         int segX = contentX + 4 + this.font.width(prefix);
-        segX = drawStatusCount(guiGraphics, segX, currentY, red, "RED", COLOR_ERROR);
+        segX = drawStatusCount(guiGraphics, segX, currentY, red, "RED", COLOUR_ERROR);
         segX = drawStatusCount(guiGraphics, segX, currentY, orange, "ORANGE", 0xFFE67700);
-        segX = drawStatusCount(guiGraphics, segX, currentY, yellow, "YELLOW", COLOR_AMBER);
-        segX = drawStatusCount(guiGraphics, segX, currentY, green, "GREEN", COLOR_GREEN);
-        drawStatusCount(guiGraphics, segX, currentY, other, "OTHER", COLOR_MUTED);
+        segX = drawStatusCount(guiGraphics, segX, currentY, yellow, "YELLOW", COLOUR_AMBER);
+        segX = drawStatusCount(guiGraphics, segX, currentY, green, "GREEN", COLOUR_GREEN);
+        drawStatusCount(guiGraphics, segX, currentY, other, "OTHER", COLOUR_MUTED);
     }
 
-    private int drawStatusCount(GuiGraphics guiGraphics, int x, int y, int count, String label, int color) {
+    private int drawStatusCount(GuiGraphics guiGraphics, int x, int y, int count, String label, int colour) {
         if (count == 0) return x;
         String segment = count + " " + label + "  ";
-        guiGraphics.drawString(this.font, Component.literal(segment), x, y, color);
+        guiGraphics.drawString(this.font, Component.literal(segment), x, y, colour);
         return x + this.font.width(segment);
     }
 

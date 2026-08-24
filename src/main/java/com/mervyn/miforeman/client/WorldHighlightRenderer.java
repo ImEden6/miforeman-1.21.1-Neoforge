@@ -1,6 +1,8 @@
 package com.mervyn.miforeman.client;
 
 import com.mervyn.miforeman.MIForeman;
+import com.mervyn.miforeman.client.gui.ColourPalette;
+import com.mervyn.miforeman.client.gui.ColourPalette.ColourKey;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;
@@ -25,7 +27,7 @@ import java.util.List;
  *
  * <p>Each box is drawn as a translucent fill plus a crisp wireframe outline, each drawn
  * twice -- once into a normal depth-tested {@link MIForemanRenderTypes} (full brightness, only
- * where actually unobstructed) and once into a depth-test-flipped variant (half color/alpha,
+ * where actually unobstructed) and once into a depth-test-flipped variant (half colour/alpha,
  * draws only the portion currently hidden behind blocks) -- the same dual-pass "ghost through
  * walls" technique Minecolonies uses for its own overlays (see
  * references/minecolonies-1.21.1/.../worldevent/RenderTypes.java), so a highlighted machine
@@ -33,10 +35,6 @@ import java.util.List;
  */
 @EventBusSubscriber(modid = MIForeman.MODID, value = Dist.CLIENT)
 public class WorldHighlightRenderer {
-    private static final float LINKED_R = 0.25f, LINKED_G = 0.80f, LINKED_B = 0.32f;
-    private static final float CANDIDATE_R = 0.95f, CANDIDATE_G = 0.65f, CANDIDATE_B = 0.05f;
-    private static final float SELECTED_R = 0.20f, SELECTED_G = 0.90f, SELECTED_B = 0.95f;
-
     private static final float OUTLINE_ALPHA = 1.0f;
     private static final float FILL_ALPHA = 0.6f;
 
@@ -44,7 +42,7 @@ public class WorldHighlightRenderer {
     private static List<BlockPos> linkedPositions = List.of();
     private static List<BlockPos> candidatePositions = List.of();
     /** The one machine "located" from the Monitoring screen, if any -- independent of the
-     *  linked/candidate sets, drawn in its own color instead of that position's normal one. */
+     *  linked/candidate sets, drawn in its own colour instead of that position's normal one. */
     private static @Nullable BlockPos selectedPosition = null;
 
     public static void setEnabled(boolean value) {
@@ -107,25 +105,31 @@ public class WorldHighlightRenderer {
         MultiBufferSource.BufferSource bufferSource = Minecraft.getInstance().renderBuffers().bufferSource();
         float fillAlpha = FILL_ALPHA;
 
+        // Read once per frame rather than per box. These are config-backed (ColourPalette), not
+        // compile-time constants, but still cheap enough not to bother caching across frames.
+        float[] linkedRgb = ColourPalette.getRgbFloats(ColourKey.LINKED);
+        float[] candidateRgb = ColourPalette.getRgbFloats(ColourKey.CANDIDATE);
+        float[] selectedRgb = ColourPalette.getRgbFloats(ColourKey.SELECTED);
+
         // Fill first (soft glow base layer), then outline on top (crisp edges) -- drawing every
         // fill box across both lists before any outline keeps the wireframes from getting buried
-        // under a later box's glow. The selected position is skipped in its normal color and
+        // under a later box's glow. The selected position is skipped in its normal colour and
         // drawn separately afterward -- stacking two translucent fills on the same block would
-        // blend into a muddy color instead of the selected box cleanly overriding its normal one.
+        // blend into a muddy colour instead of the selected box cleanly overriding its normal one.
         VertexConsumer fillInside = bufferSource.getBuffer(MIForemanRenderTypes.FILL_INSIDE_BLOCKS);
         VertexConsumer fillOutside = bufferSource.getBuffer(MIForemanRenderTypes.FILL_OUTSIDE_BLOCKS);
         if (showGeneral) {
             for (BlockPos pos : linkedPositions) {
                 if (pos.equals(selectedPosition)) continue;
-                drawFilledBoxBoth(poseStack, fillInside, fillOutside, pos, camPos, LINKED_R, LINKED_G, LINKED_B, fillAlpha);
+                drawFilledBoxBoth(poseStack, fillInside, fillOutside, pos, camPos, linkedRgb[0], linkedRgb[1], linkedRgb[2], fillAlpha);
             }
             for (BlockPos pos : candidatePositions) {
                 if (pos.equals(selectedPosition)) continue;
-                drawFilledBoxBoth(poseStack, fillInside, fillOutside, pos, camPos, CANDIDATE_R, CANDIDATE_G, CANDIDATE_B, fillAlpha);
+                drawFilledBoxBoth(poseStack, fillInside, fillOutside, pos, camPos, candidateRgb[0], candidateRgb[1], candidateRgb[2], fillAlpha);
             }
         }
         if (showSelected) {
-            drawFilledBoxBoth(poseStack, fillInside, fillOutside, selectedPosition, camPos, SELECTED_R, SELECTED_G, SELECTED_B, fillAlpha);
+            drawFilledBoxBoth(poseStack, fillInside, fillOutside, selectedPosition, camPos, selectedRgb[0], selectedRgb[1], selectedRgb[2], fillAlpha);
         }
         bufferSource.endBatch(MIForemanRenderTypes.FILL_INSIDE_BLOCKS);
         bufferSource.endBatch(MIForemanRenderTypes.FILL_OUTSIDE_BLOCKS);
@@ -135,15 +139,15 @@ public class WorldHighlightRenderer {
         if (showGeneral) {
             for (BlockPos pos : linkedPositions) {
                 if (pos.equals(selectedPosition)) continue;
-                drawBoxOutlineBoth(poseStack, lineInside, lineOutside, pos, camPos, LINKED_R, LINKED_G, LINKED_B);
+                drawBoxOutlineBoth(poseStack, lineInside, lineOutside, pos, camPos, linkedRgb[0], linkedRgb[1], linkedRgb[2]);
             }
             for (BlockPos pos : candidatePositions) {
                 if (pos.equals(selectedPosition)) continue;
-                drawBoxOutlineBoth(poseStack, lineInside, lineOutside, pos, camPos, CANDIDATE_R, CANDIDATE_G, CANDIDATE_B);
+                drawBoxOutlineBoth(poseStack, lineInside, lineOutside, pos, camPos, candidateRgb[0], candidateRgb[1], candidateRgb[2]);
             }
         }
         if (showSelected) {
-            drawBoxOutlineBoth(poseStack, lineInside, lineOutside, selectedPosition, camPos, SELECTED_R, SELECTED_G, SELECTED_B);
+            drawBoxOutlineBoth(poseStack, lineInside, lineOutside, selectedPosition, camPos, selectedRgb[0], selectedRgb[1], selectedRgb[2]);
         }
         bufferSource.endBatch(MIForemanRenderTypes.LINES_INSIDE_BLOCKS);
         bufferSource.endBatch(MIForemanRenderTypes.LINES_OUTSIDE_BLOCKS);

@@ -30,23 +30,23 @@ import java.util.function.Consumer;
  * research this was built against).
  */
 public class GraphCanvas extends AbstractWidget {
-    private static final int COLOR_BORDER_LIGHT = 0xFF9C8058;
-    private static final int COLOR_BORDER_DARK = 0xFF4A3620;
-    private static final int COLOR_TEXT = 0xFF3A2A18;
-    private static final int COLOR_MUTED = 0xFF8A7A68;
-    private static final int COLOR_SELECTED = 0x336B5030;
-    private static final int COLOR_HOVER = 0x22FFFFFF;
-    private static final int COLOR_NODE_FILL_TOP = 0xDDFFFBEF;
-    private static final int COLOR_NODE_FILL_BOTTOM = 0xDDEFE0BE;
-    private static final int COLOR_EDGE = 0xFF8A7A68;
-    private static final int COLOR_EDGE_DIM = 0x558A7A68;
-    private static final int COLOR_EDGE_HIGHLIGHT = 0xFFD4A017;
+    private static final int COLOUR_BORDER_LIGHT = 0xFF9C8058;
+    private static final int COLOUR_BORDER_DARK = 0xFF4A3620;
+    private static final int COLOUR_TEXT = 0xFF3A2A18;
+    private static final int COLOUR_MUTED = 0xFF8A7A68;
+    private static final int COLOUR_SELECTED = 0x336B5030;
+    private static final int COLOUR_HOVER = 0x22FFFFFF;
+    private static final int COLOUR_NODE_FILL_TOP = 0xDDFFFBEF;
+    private static final int COLOUR_NODE_FILL_BOTTOM = 0xDDEFE0BE;
+    private static final int COLOUR_EDGE = 0xFF8A7A68;
+    private static final int COLOUR_EDGE_DIM = 0x558A7A68;
+    private static final int COLOUR_EDGE_HIGHLIGHT = 0xFFD4A017;
 
     private static final int NODE_WIDTH = 96;
     private static final int NODE_HEIGHT = 26;
     // MACHINE nodes render as a chamfered octagon instead of a plain rectangle, so the two
     // alternating node kinds in the graph (see computeFilteredView's javadoc) read apart at a
-    // glance without relying on color alone.
+    // glance without relying on colour alone.
     private static final int MACHINE_CHAMFER = 6;
     private static final int COLUMN_SPACING = 140;
     private static final int ROW_SPACING = 40;
@@ -189,6 +189,14 @@ public class GraphCanvas extends AbstractWidget {
         }
     }
 
+    /** Snaps every manually-dragged node back to the auto-layout in one action. */
+    public void resetLayout() {
+        if (!layoutState.equals(GraphLayoutState.EMPTY)) {
+            layoutState = GraphLayoutState.EMPTY;
+            onLayoutChange.accept(layoutState);
+        }
+    }
+
     public boolean canUndo() {
         return !layoutState.undoStack().isEmpty();
     }
@@ -213,7 +221,7 @@ public class GraphCanvas extends AbstractWidget {
         ResourceLocation hoveredNodeId = hovered != null ? hovered.getId() : null;
 
         // Edges: simple elbow (horizontal-vertical-horizontal) connectors. When a node is
-        // selected, edges touching it pop in COLOR_EDGE_HIGHLIGHT and the rest dim, so
+        // selected, edges touching it pop in COLOUR_EDGE_HIGHLIGHT and the rest dim, so
         // dependencies are traceable without hunting through crossing lines.
         for (GraphEdge edge : visibleEdges) {
             RecipeGraphNode from = visibleNodes.get(edge.from());
@@ -222,14 +230,14 @@ public class GraphCanvas extends AbstractWidget {
             NodePosition fromPos = positionOf(from);
             NodePosition toPos = positionOf(to);
             if (fromPos == null || toPos == null) continue;
-            int color = COLOR_EDGE;
+            int colour = COLOUR_EDGE;
             if (selectedNodeId != null) {
                 boolean touchesSelected = edge.from().equals(selectedNodeId) || edge.to().equals(selectedNodeId);
-                color = touchesSelected ? COLOR_EDGE_HIGHLIGHT : COLOR_EDGE_DIM;
+                colour = touchesSelected ? COLOUR_EDGE_HIGHLIGHT : COLOUR_EDGE_DIM;
             }
             drawElbowConnector(guiGraphics,
                     fromPos.x() + NODE_WIDTH, fromPos.y() + NODE_HEIGHT / 2,
-                    toPos.x(), toPos.y() + NODE_HEIGHT / 2, color);
+                    toPos.x(), toPos.y() + NODE_HEIGHT / 2, colour);
         }
 
         Minecraft mc = Minecraft.getInstance();
@@ -240,28 +248,28 @@ public class GraphCanvas extends AbstractWidget {
             boolean hoveredNode = node.getId().equals(hoveredNodeId);
 
             if (node.getType() == NodeType.MACHINE) {
-                fillChamfered(guiGraphics, pos.x(), pos.y(), NODE_WIDTH, NODE_HEIGHT, MACHINE_CHAMFER, COLOR_BORDER_LIGHT);
+                fillChamfered(guiGraphics, pos.x(), pos.y(), NODE_WIDTH, NODE_HEIGHT, MACHINE_CHAMFER, COLOUR_BORDER_LIGHT);
                 fillChamferedGradient(guiGraphics, pos.x() + 1, pos.y() + 1, NODE_WIDTH - 2, NODE_HEIGHT - 2,
-                        Math.max(0, MACHINE_CHAMFER - 1), COLOR_NODE_FILL_TOP, COLOR_NODE_FILL_BOTTOM);
+                        Math.max(0, MACHINE_CHAMFER - 1), COLOUR_NODE_FILL_TOP, COLOUR_NODE_FILL_BOTTOM);
                 if (selected) {
-                    fillChamfered(guiGraphics, pos.x(), pos.y(), NODE_WIDTH, NODE_HEIGHT, MACHINE_CHAMFER, COLOR_SELECTED);
+                    fillChamfered(guiGraphics, pos.x(), pos.y(), NODE_WIDTH, NODE_HEIGHT, MACHINE_CHAMFER, COLOUR_SELECTED);
                 }
                 if (hoveredNode) {
-                    fillChamfered(guiGraphics, pos.x(), pos.y(), NODE_WIDTH, NODE_HEIGHT, MACHINE_CHAMFER, COLOR_HOVER);
+                    fillChamfered(guiGraphics, pos.x(), pos.y(), NODE_WIDTH, NODE_HEIGHT, MACHINE_CHAMFER, COLOUR_HOVER);
                 }
             } else {
-                guiGraphics.fillGradient(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOR_NODE_FILL_TOP, COLOR_NODE_FILL_BOTTOM);
+                guiGraphics.fillGradient(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOUR_NODE_FILL_TOP, COLOUR_NODE_FILL_BOTTOM);
                 if (selected) {
-                    guiGraphics.fill(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOR_SELECTED);
+                    guiGraphics.fill(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOUR_SELECTED);
                 }
                 if (hoveredNode) {
-                    guiGraphics.fill(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOR_HOVER);
+                    guiGraphics.fill(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOUR_HOVER);
                 }
                 // Raised-tile treatment: light top/left edge, dark bottom/right edge.
-                guiGraphics.fill(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + 1, COLOR_BORDER_LIGHT);
-                guiGraphics.fill(pos.x(), pos.y(), pos.x() + 1, pos.y() + NODE_HEIGHT, COLOR_BORDER_LIGHT);
-                guiGraphics.fill(pos.x(), pos.y() + NODE_HEIGHT - 1, pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOR_BORDER_DARK);
-                guiGraphics.fill(pos.x() + NODE_WIDTH - 1, pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOR_BORDER_DARK);
+                guiGraphics.fill(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + 1, COLOUR_BORDER_LIGHT);
+                guiGraphics.fill(pos.x(), pos.y(), pos.x() + 1, pos.y() + NODE_HEIGHT, COLOUR_BORDER_LIGHT);
+                guiGraphics.fill(pos.x(), pos.y() + NODE_HEIGHT - 1, pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOUR_BORDER_DARK);
+                guiGraphics.fill(pos.x() + NODE_WIDTH - 1, pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOUR_BORDER_DARK);
             }
 
             // Nudged clear of the chamfered top-left corner on MACHINE nodes so the first glyph
@@ -277,46 +285,46 @@ public class GraphCanvas extends AbstractWidget {
             if (mc.font.width(name) > maxTextWidth) {
                 name = mc.font.plainSubstrByWidth(name, maxTextWidth - 8) + "..";
             }
-            guiGraphics.drawString(mc.font, name, pos.x() + textInset, pos.y() + 3, COLOR_TEXT, false);
+            guiGraphics.drawString(mc.font, name, pos.x() + textInset, pos.y() + 3, COLOUR_TEXT, false);
 
             String rateText = String.format("%.1f", node.getRequiredRate());
-            guiGraphics.drawString(mc.font, rateText, pos.x() + textInset, pos.y() + 14, COLOR_MUTED, false);
+            guiGraphics.drawString(mc.font, rateText, pos.x() + textInset, pos.y() + 14, COLOUR_MUTED, false);
         }
 
         guiGraphics.pose().popPose();
         guiGraphics.disableScissor();
     }
 
-    /** Flat-color chamfered-octagon fill: a full-width middle band plus corner rows that shrink
+    /** Flat-colour chamfered-octagon fill: a full-width middle band plus corner rows that shrink
      *  inward by one pixel per row, cutting the four corners at 45 degrees. */
-    private void fillChamfered(GuiGraphics guiGraphics, int x, int y, int w, int h, int chamfer, int color) {
+    private void fillChamfered(GuiGraphics guiGraphics, int x, int y, int w, int h, int chamfer, int colour) {
         int c = Math.min(chamfer, h / 2);
-        guiGraphics.fill(x, y + c, x + w, y + h - c, color);
+        guiGraphics.fill(x, y + c, x + w, y + h - c, colour);
         for (int i = 0; i < c; i++) {
             int inset = c - i;
-            guiGraphics.fill(x + inset, y + i, x + w - inset, y + i + 1, color);
-            guiGraphics.fill(x + inset, y + h - i - 1, x + w - inset, y + h - i, color);
+            guiGraphics.fill(x + inset, y + i, x + w - inset, y + i + 1, colour);
+            guiGraphics.fill(x + inset, y + h - i - 1, x + w - inset, y + h - i, colour);
         }
     }
 
-    /** Same chamfered-octagon shape as {@link #fillChamfered}, but with a per-row lerped color
-     *  instead of one flat color, approximating a vertical gradient across the whole shape. */
-    private void fillChamferedGradient(GuiGraphics guiGraphics, int x, int y, int w, int h, int chamfer, int colorTop, int colorBottom) {
+    /** Same chamfered-octagon shape as {@link #fillChamfered}, but with a per-row lerped colour
+     *  instead of one flat colour, approximating a vertical gradient across the whole shape. */
+    private void fillChamferedGradient(GuiGraphics guiGraphics, int x, int y, int w, int h, int chamfer, int colourTop, int colourBottom) {
         int c = Math.min(chamfer, h / 2);
         for (int row = 0; row < h; row++) {
             float t = h <= 1 ? 0 : (float) row / (h - 1);
-            int color = lerpColor(colorTop, colorBottom, t);
+            int colour = lerpColour(colourTop, colourBottom, t);
             int inset = 0;
             if (row < c) {
                 inset = c - row;
             } else if (row >= h - c) {
                 inset = c - (h - 1 - row);
             }
-            guiGraphics.fill(x + inset, y + row, x + w - inset, y + row + 1, color);
+            guiGraphics.fill(x + inset, y + row, x + w - inset, y + row + 1, colour);
         }
     }
 
-    private static int lerpColor(int from, int to, float t) {
+    private static int lerpColour(int from, int to, float t) {
         int fa = (from >>> 24) & 0xFF, fr = (from >>> 16) & 0xFF, fg = (from >>> 8) & 0xFF, fb = from & 0xFF;
         int ta = (to >>> 24) & 0xFF, tr = (to >>> 16) & 0xFF, tg = (to >>> 8) & 0xFF, tb = to & 0xFF;
         int a = fa + Math.round((ta - fa) * t);
@@ -326,23 +334,23 @@ public class GraphCanvas extends AbstractWidget {
         return (a << 24) | (r << 16) | (g << 8) | b;
     }
 
-    private void drawElbowConnector(GuiGraphics guiGraphics, int fromX, int fromY, int toX, int toY, int color) {
+    private void drawElbowConnector(GuiGraphics guiGraphics, int fromX, int fromY, int toX, int toY, int colour) {
         int midX = (fromX + toX) / 2;
-        drawLine(guiGraphics, fromX, fromY, midX, fromY, color);
-        drawLine(guiGraphics, midX, fromY, midX, toY, color);
-        drawLine(guiGraphics, midX, toY, toX, toY, color);
+        drawLine(guiGraphics, fromX, fromY, midX, fromY, colour);
+        drawLine(guiGraphics, midX, fromY, midX, toY, colour);
+        drawLine(guiGraphics, midX, toY, toX, toY, colour);
     }
 
-    private void drawLine(GuiGraphics guiGraphics, int x1, int y1, int x2, int y2, int color) {
+    private void drawLine(GuiGraphics guiGraphics, int x1, int y1, int x2, int y2, int colour) {
         int thickness = 1;
         if (y1 == y2) {
             int minX = Math.min(x1, x2);
             int maxX = Math.max(x1, x2);
-            guiGraphics.fill(minX, y1 - thickness, maxX, y1 + thickness, color);
+            guiGraphics.fill(minX, y1 - thickness, maxX, y1 + thickness, colour);
         } else {
             int minY = Math.min(y1, y2);
             int maxY = Math.max(y1, y2);
-            guiGraphics.fill(x1 - thickness, minY, x1 + thickness, maxY, color);
+            guiGraphics.fill(x1 - thickness, minY, x1 + thickness, maxY, colour);
         }
     }
 

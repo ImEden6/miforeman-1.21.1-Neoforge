@@ -3,6 +3,7 @@ package com.mervyn.miforeman;
 import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
+import com.mervyn.miforeman.client.ClientConfig;
 import com.mervyn.miforeman.command.ForemanCommands;
 import com.mervyn.miforeman.registry.ModComponents;
 import com.mervyn.miforeman.registry.ModItems;
@@ -59,6 +60,7 @@ public class MIForeman {
 
         // Register our mod's ModConfigSpec so that FML can create and load the config file for us
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+        modContainer.registerConfig(ModConfig.Type.CLIENT, ClientConfig.SPEC);
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {

@@ -29,7 +29,7 @@ public class MonitoringScreen extends Screen {
     private static final int MIN_GUI_WIDTH = 440;
     private static final int MIN_GUI_HEIGHT = 230;
     private static final int PADDING = 8;
-    private static final int COLOR_TITLE = 0xFFDAA520;
+    private static final int COLOUR_TITLE = 0xFFDAA520;
     private static final int POLL_INTERVAL_TICKS = 20;
     private static final List<String> STATUS_PRIORITY = List.of("RED", "ORANGE", "YELLOW", "GREEN");
 
@@ -144,7 +144,7 @@ public class MonitoringScreen extends Screen {
 
         int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
         int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 2;
-        guiGraphics.drawString(this.font, Component.literal("Live Monitoring"), contentX, contentY, COLOR_TITLE);
+        guiGraphics.drawString(this.font, Component.literal("Live Monitoring"), contentX, contentY, COLOUR_TITLE);
 
         super.render(guiGraphics, mouseX, mouseY, partialTick);
     }

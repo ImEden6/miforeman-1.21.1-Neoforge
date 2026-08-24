@@ -25,7 +25,7 @@ public class ReviewMachinesScreen extends Screen {
     private static final int MIN_GUI_WIDTH = 440;
     private static final int MIN_GUI_HEIGHT = 230;
     private static final int PADDING = 8;
-    private static final int COLOR_TITLE = 0xFFDAA520;
+    private static final int COLOUR_TITLE = 0xFFDAA520;
 
     private final MonitoringState state;
     private final Runnable onChange;
@@ -158,7 +158,7 @@ public class ReviewMachinesScreen extends Screen {
 
         int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
         int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 2;
-        guiGraphics.drawString(this.font, Component.literal("Review Machines"), contentX, contentY, COLOR_TITLE);
+        guiGraphics.drawString(this.font, Component.literal("Review Machines"), contentX, contentY, COLOUR_TITLE);
 
         super.render(guiGraphics, mouseX, mouseY, partialTick);
     }
