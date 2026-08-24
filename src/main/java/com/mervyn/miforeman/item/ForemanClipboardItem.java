@@ -47,34 +47,21 @@ public class ForemanClipboardItem extends Item {
                 }
 
                 List<BlockPos> linked = new ArrayList<>(goal.linkedMachines());
-                List<BlockPos> rejected = new ArrayList<>(goal.rejectedMachines());
                 boolean wasLinked = linked.contains(pos);
                 MachineLinkHistory history;
+                ProductionGoal updatedGoal;
                 if (wasLinked) {
                     linked.remove(pos);
                     history = goal.machineLinkHistory().withToggle(pos, true, false);
+                    updatedGoal = goal.withLinkedMachines(linked, history);
                     player.sendSystemMessage(Component.literal("Unlinked machine at " + pos.toShortString()).withStyle(ChatFormatting.YELLOW));
                 } else {
                     linked.add(pos);
-                    rejected.remove(pos); // manual link always clears a sticky rejection
                     history = goal.machineLinkHistory().withToggle(pos, false, true);
+                    // manual link always clears a sticky rejection
+                    updatedGoal = goal.withLinkedMachines(linked, history).withoutRejectedMachine(pos);
                     player.sendSystemMessage(Component.literal("Linked machine at " + pos.toShortString()).withStyle(ChatFormatting.GREEN));
                 }
-                ProductionGoal updatedGoal = new ProductionGoal(
-                        goal.name(),
-                        goal.type(),
-                        goal.targetId(),
-                        goal.rate(),
-                        goal.recipeSelections(),
-                        goal.plan(),
-                        goal.perHour(),
-                        goal.threshold(),
-                        linked,
-                        goal.graphLayout(),
-                        history,
-                        rejected,
-                        goal.uiState()
-                );
                 stack.set(ModComponents.PRODUCTION_GOAL.get(), updatedGoal);
 
                 if (player instanceof ServerPlayer serverPlayer) {

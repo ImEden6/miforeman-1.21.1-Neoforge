@@ -55,21 +55,9 @@ public class GoalUpdateHandler {
                         level, player.blockPosition(), Config.AUTOLINK_SCAN_RADIUS_CHUNKS.get(),
                         newGoal.linkedMachines(), oldGoal != null ? oldGoal.linkedMachines() : null);
 
-                ProductionGoal updatedGoal = new ProductionGoal(
-                        newGoal.name(),
-                        newGoal.type(),
-                        newGoal.targetId(),
-                        newGoal.rate(),
-                        newGoal.recipeSelections(),
-                        Optional.of(plan),
-                        newGoal.perHour(),
-                        newGoal.threshold(),
-                        validatedLinked,
-                        newGoal.graphLayout(),
-                        newGoal.machineLinkHistory(),
-                        newGoal.rejectedMachines(),
-                        newGoal.uiState()
-                );
+                ProductionGoal updatedGoal = newGoal
+                        .withPlan(Optional.of(plan))
+                        .withLinkedMachines(validatedLinked, newGoal.machineLinkHistory());
                 stack.set(ModComponents.PRODUCTION_GOAL.get(), updatedGoal);
             }
         });
