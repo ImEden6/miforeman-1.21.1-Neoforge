@@ -563,7 +563,7 @@ public final class RecipeGraphTraverser {
             nodes.put(resourceId, new RecipeGraphNode(
                     resourceId, NodeType.RAW, null, null,
                     rate, 0,
-                    List.of(), null, depth
+                    List.of(), null, null, depth
             ));
             return;
         }
@@ -572,13 +572,16 @@ public final class RecipeGraphTraverser {
         RecipeGraphNode resNode = new RecipeGraphNode(
                 resourceId, nodeType, null, null,
                 rate, 0,
-                structNode.ambiguityOptions(), structNode.selectedAmbiguity(), depth
+                structNode.ambiguityOptions(), structNode.selectedAmbiguity(), resourceId, depth
         );
         nodes.put(resourceId, resNode);
 
         // A multi-output recipe can be the chosen producer for more than one resourceId (e.g. a
         // Distillation Tower's two outputs, each independently demanded) -- accumulate onto the
         // existing machine node rather than overwriting it, exactly like the original merge branch.
+        // Whichever resourceId gets here first permanently owns the MACHINE node's ambiguity list
+        // (ambiguityOwnerId is set once at creation and never touched by this merge branch) -- the
+        // click handler must resolve the owner from that field rather than guessing an output edge.
         double machineCount = rate * structNode.machineCountPerUnit();
         RecipeGraphNode machNode = nodes.get(structNode.recipeId());
         if (machNode != null) {
@@ -589,7 +592,7 @@ public final class RecipeGraphTraverser {
             machNode = new RecipeGraphNode(
                     structNode.recipeId(), NodeType.MACHINE, structNode.machineTypeId(), structNode.recipe(),
                     rate, machineCount,
-                    structNode.ambiguityOptions(), structNode.selectedAmbiguity(),
+                    structNode.ambiguityOptions(), structNode.selectedAmbiguity(), resourceId,
                     depth + 1
             );
             nodes.put(structNode.recipeId(), machNode);
@@ -618,7 +621,7 @@ public final class RecipeGraphTraverser {
                 fluidNode = new RecipeGraphNode(
                         input.childId(), NodeType.RAW, null, null,
                         inputRate, 0,
-                        List.of(), null, depth + 2
+                        List.of(), null, null, depth + 2
                 );
                 nodes.put(input.childId(), fluidNode);
             }

@@ -72,6 +72,26 @@ correctness fixes, feature ideas, and docs debt.
 - **Config cleanup** — template entries still live in `Config.java` (`LOG_DIRT_BLOCK`,
   `MAGIC_NUMBER`, `ITEM_STRINGS`). Remove them and move monitoring window / poll interval /
   default threshold next to `AUTOLINK_SCAN_RADIUS_CHUNKS`.
+- **`getSubPlan()` vs `resolveStructure()` rate divergence** — `RecipeGraphTraverser.java` has
+  two independent implementations of the same "resolve chosen recipe, propagate demand rate"
+  algorithm: `getSubPlan()` (recursive per-unit `SubPlan`, scaled/summed via `mergeScaled()`,
+  feeds `computePlan()`'s numeric `FactoryPlan`) and `resolveStructure()` + `propagateRates()`
+  (two-phase structural DAG + Kahn's-algorithm rate propagation, feeds `computeRecipeGraph()`'s
+  visual graph). Both use identical candidate indexing/selection logic, so they *should* agree,
+  but attempting to consolidate them (deriving `computePlan()` from `computeRecipeGraph()`'s
+  resolved nodes) made `testGenerateRequirementsComplex` in `ForemanGameTests.java` fail: the
+  pinned `polyvinyl_chloride` raw-input rate (437500.0/s) came out as 28000.0/s from the
+  graph-derived path — a ~15.6x divergence, localized (the assembler-count and uu_matter-rate
+  assertions in the same test still passed). Ruled out: different chosen-recipe (selection logic
+  and candidate lists are byte-identical, goal has no `recipeSelections` overrides, so both must
+  pick the same default); PVC's own recipe ambiguity (it's a true raw leaf in both algorithms per
+  the test's existing comment). Unverified leads: a real cycle somewhere in the ~110 ambiguous
+  intermediates upstream of `quantum_upgrade` that the two cycle-guards handle differently; a
+  `memo`/`structMemo` key collision since both are keyed by bare `ResourceLocation` with no
+  `TargetType`, so an item/fluid id collision could cross-contaminate one algorithm but not the
+  other. Consolidating the two (there's a natural `planFromGraph()` shape for it) would remove
+  this whole class of future drift, but is blocked on root-causing this discrepancy first — don't
+  re-attempt the consolidation without figuring out which number is actually correct.
 
 ## Feature ideas
 

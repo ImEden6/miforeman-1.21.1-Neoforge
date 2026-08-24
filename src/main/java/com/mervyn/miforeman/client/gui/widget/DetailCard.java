@@ -288,8 +288,12 @@ public class DetailCard extends AbstractWidget {
                 int nextIdx = (idx + 1) % options.size();
                 ResourceLocation nextSel = options.get(nextIdx);
 
+                // A MACHINE node's ambiguityOptions/selectedAmbiguity describe whichever resourceId
+                // first finalized it (see RecipeGraphTraverser.finalizeResourceNode), not necessarily
+                // its first output edge -- for a multi-output recipe those two "firsts" can differ,
+                // so the click must target ambiguityOwnerId, not outputs.get(0).
                 ResourceLocation resourceId = node.getType() == NodeType.MACHINE
-                        ? (!node.getOutputs().isEmpty() ? node.getOutputs().get(0).to() : null)
+                        ? node.getAmbiguityOwnerId()
                         : node.getId();
 
                 if (resourceId != null) {

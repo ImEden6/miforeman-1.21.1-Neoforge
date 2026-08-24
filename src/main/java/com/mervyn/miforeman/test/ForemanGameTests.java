@@ -176,6 +176,14 @@ public class ForemanGameTests {
             return;
         }
 
+        // polyvinyl_chloride has no recipe of its own in this recipe set; it's a leaf raw input
+        // (confirmed via computeRecipeGraph, whose node for it has empty ambiguityOptions). So this
+        // 461500.0 -> 437500.0 shift isn't PVC's own default-recipe flip. indexMachineRecipes now
+        // sorts each resourceId's candidate list by recipe id (see its doc comment), instead of
+        // leaving it in RecipeManager's undefined order. One of the ~110 ambiguous intermediates
+        // upstream of quantum_upgrade picked a different default candidate under the new sort, and
+        // that candidate consumes PVC, directly or transitively, at a different rate. To find which
+        // one, diff plan.ambiguities() against a pre-sort build if this value ever needs re-pinning.
         ResourceLocation pvcId = ResourceLocation.parse("modern_industrialization:polyvinyl_chloride");
         double pvcRate = plan.rawInputs().stream()
                 .filter(flow -> flow.resourceId().equals(pvcId))
@@ -357,6 +365,154 @@ public class ForemanGameTests {
                 helper.fail("Recipe index is missing MACHINE node id: " + node.getId());
                 return;
             }
+        }
+
+        helper.succeed();
+    }
+
+    /**
+     * Checks that {@code RecipeGraphTraverser} never produces two edges for the same (from,to)
+     * pair. {@code Map<EdgeKey,GraphEdge>} guarantees this structurally now, fixing the old
+     * {@code List.contains}-based dedup, which compared full record equality including
+     * {@code rate}, so the same pair could appear twice with different partial rates (see the
+     * two-phase-rewrite comment on {@code computeRecipeGraph}). This test checks the real
+     * quantum_upgrade graph for duplicate pairs, then pins its node and edge counts as a
+     * regression snapshot. A reversion back to append-without-merge would inflate
+     * {@code edges.size()} the moment any resourceId is demanded via more than one path.
+     * <p>
+     * It doesn't exercise the multi-output-recipe-reuse case directly: a MACHINE node chosen as
+     * producer for two or more independently-demanded resourceIds, like a Distillation Tower's two
+     * outputs (see {@code finalizeResourceNode}'s doc comment). Quantum_upgrade's real recipe tree
+     * doesn't contain one. I confirmed this by grouping edges by a MACHINE-typed {@code from} and
+     * checking for more than one distinct {@code to} per machine, and found none. So the
+     * sum-not-overwrite behavior that case is meant to fix stays untested against real recipe data.
+     */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testRecipeGraphEdgesAreDeduped(GameTestHelper helper) {
+        var level = helper.getLevel();
+        ResourceLocation targetId = ResourceLocation.parse("modern_industrialization:quantum_upgrade");
+        ProductionGoal goal = new ProductionGoal("dedup_test", ProductionGoal.TargetType.ITEM, targetId, 1.0);
+        var graph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
+
+        java.util.Set<List<ResourceLocation>> seenPairs = new java.util.HashSet<>();
+        for (var edge : graph.edges()) {
+            List<ResourceLocation> pair = List.of(edge.from(), edge.to());
+            if (!seenPairs.add(pair)) {
+                helper.fail("Duplicate (from,to) edge found: " + edge.from() + " -> " + edge.to()
+                        + ". edges.merge() should make this structurally impossible.");
+                return;
+            }
+        }
+
+        if (graph.edges().size() != 150) {
+            helper.fail("Expected 150 edges in the quantum_upgrade graph, but got: " + graph.edges().size()
+                    + ". If this changed intentionally, e.g. an MI recipe update, update this snapshot.");
+            return;
+        }
+        if (graph.nodes().size() != 89) {
+            helper.fail("Expected 89 nodes in the quantum_upgrade graph, but got: " + graph.nodes().size()
+                    + ". If this changed intentionally, e.g. an MI recipe update, update this snapshot.");
+            return;
+        }
+
+        helper.succeed();
+    }
+
+    /**
+     * Checks {@code RecipeGraphNode.ambiguityOwnerId} -- the resourceId a node's
+     * {@code ambiguityOptions}/{@code selectedAmbiguity} actually describe, added so
+     * {@code DetailCard}'s cycle-button click handler can target the right resourceId instead of
+     * guessing one from {@code outputs.get(0)} (see {@code finalizeResourceNode}'s doc comment).
+     * For a resource node (RAW/INTERMEDIATE/TARGET) the owner is always its own id. For a MACHINE
+     * node it must be one of the resourceIds that node actually produces (one of its output edges'
+     * {@code to()}), never null when the node has ambiguity options, and never a resourceId the
+     * node doesn't produce at all.
+     * <p>
+     * Like {@code testRecipeGraphEdgesAreDeduped}, this can't exercise the multi-output-recipe
+     * case (a MACHINE node reused across more than one demanded resourceId) against real data --
+     * quantum_upgrade's tree doesn't contain one -- so it only pins the invariant that must hold
+     * regardless of how many resourceIds a MACHINE node ends up shared across.
+     */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testAmbiguityOwnerIdIsConsistent(GameTestHelper helper) {
+        var level = helper.getLevel();
+        ResourceLocation targetId = ResourceLocation.parse("modern_industrialization:quantum_upgrade");
+        ProductionGoal goal = new ProductionGoal("ambiguity_owner_test", ProductionGoal.TargetType.ITEM, targetId, 1.0);
+        var graph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
+
+        for (var node : graph.nodes().values()) {
+            if (node.getAmbiguityOptions().isEmpty()) {
+                // RAW nodes and any resource/machine with only one candidate producer carry no
+                // ambiguity data, so ambiguityOwnerId is null and there's nothing to check here.
+                continue;
+            }
+
+            if (node.getType() != com.mervyn.miforeman.goal.NodeType.MACHINE) {
+                if (!node.getId().equals(node.getAmbiguityOwnerId())) {
+                    helper.fail("Resource node " + node.getId() + " should own its own ambiguity data, but "
+                            + "ambiguityOwnerId was: " + node.getAmbiguityOwnerId());
+                    return;
+                }
+                continue;
+            }
+
+            ResourceLocation owner = node.getAmbiguityOwnerId();
+            if (owner == null) {
+                helper.fail("MACHINE node " + node.getId() + " has ambiguity options but no ambiguityOwnerId.");
+                return;
+            }
+
+            boolean ownerIsARealOutput = node.getOutputs().stream().anyMatch(edge -> edge.to().equals(owner));
+            if (!ownerIsARealOutput) {
+                helper.fail("MACHINE node " + node.getId() + "'s ambiguityOwnerId (" + owner
+                        + ") is not one of its actual output resourceIds: "
+                        + node.getOutputs().stream().map(e -> e.to().toString()).toList());
+                return;
+            }
+        }
+
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testCloseSyncGoalPreservesLastSynced(GameTestHelper helper) {
+        ResourceLocation targetId = ResourceLocation.parse("minecraft:iron_ingot");
+        ProductionGoal synced = new ProductionGoal("synced_goal", ProductionGoal.TargetType.ITEM, targetId, 5.0,
+                Map.of(), java.util.Optional.empty(), false, 0.8,
+                List.of(new BlockPos(1, 2, 3)), com.mervyn.miforeman.goal.GraphLayoutState.EMPTY,
+                com.mervyn.miforeman.goal.MachineLinkHistory.EMPTY, List.of());
+
+        // No change at all: nothing to persist.
+        if (com.mervyn.miforeman.goal.ClipboardCloseSync.computeCloseSyncGoal(
+                synced, synced.uiState(), synced.graphLayout()).isPresent()) {
+            helper.fail("Expected no goal to persist when neither ui state nor layout changed.");
+            return;
+        }
+
+        // UI state changed only. This is the actual regression case: the persisted goal should
+        // keep synced's other fields (linkedMachines survives) with just the new ui state on top.
+        var newUiState = new com.mervyn.miforeman.goal.ClipboardUiState(1, 9.0, 9.0, 2.0f, false, false, true, true);
+        var afterUiChange = com.mervyn.miforeman.goal.ClipboardCloseSync.computeCloseSyncGoal(
+                synced, newUiState, synced.graphLayout());
+        if (afterUiChange.isEmpty()) {
+            helper.fail("Expected a goal to persist when ui state changed.");
+            return;
+        }
+        if (!afterUiChange.get().linkedMachines().equals(synced.linkedMachines())) {
+            helper.fail("computeCloseSyncGoal dropped linkedMachines that were already synced. "
+                    + "Expected: " + synced.linkedMachines() + ", got: " + afterUiChange.get().linkedMachines());
+            return;
+        }
+        if (!afterUiChange.get().uiState().equals(newUiState)) {
+            helper.fail("computeCloseSyncGoal did not apply the new ui state snapshot.");
+            return;
+        }
+
+        // Nothing synced yet (fresh clipboard, never saved): nothing to persist.
+        if (com.mervyn.miforeman.goal.ClipboardCloseSync.computeCloseSyncGoal(
+                null, newUiState, synced.graphLayout()).isPresent()) {
+            helper.fail("Expected no goal to persist when base (lastSyncedGoal) is null.");
+            return;
         }
 
         helper.succeed();
