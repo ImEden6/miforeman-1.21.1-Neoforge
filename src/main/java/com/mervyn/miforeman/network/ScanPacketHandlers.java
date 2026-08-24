@@ -20,7 +20,9 @@ public class ScanPacketHandlers {
 
     public static void handleRequest(final ScanRequestPayload payload, final IPayloadContext context) {
         context.enqueueWork(() -> {
-            ServerPlayer player = (ServerPlayer) context.player();
+            if (!(context.player() instanceof ServerPlayer player)) {
+                return;
+            }
             ServerLevel level = player.serverLevel();
             if (!LIMITER.tryAcquire(player.getUUID(), level.getGameTime())) {
                 return;

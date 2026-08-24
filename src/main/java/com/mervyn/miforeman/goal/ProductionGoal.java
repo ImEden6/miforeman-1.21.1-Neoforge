@@ -228,10 +228,10 @@ public record ProductionGoal(
             Optional<FactoryPlan> plan = ByteBufCodecs.optional(FactoryPlan.STREAM_CODEC).decode(buf);
             boolean perHour = ByteBufCodecs.BOOL.decode(buf);
             double threshold = ByteBufCodecs.DOUBLE.decode(buf);
-            List<BlockPos> linkedMachines = ByteBufCodecs.fromCodec(BlockPos.CODEC).apply(ByteBufCodecs.list()).decode(buf);
+            List<BlockPos> linkedMachines = BlockPos.STREAM_CODEC.apply(ByteBufCodecs.list()).decode(buf);
             GraphLayoutState graphLayout = GraphLayoutState.STREAM_CODEC.decode(buf);
             MachineLinkHistory machineLinkHistory = MachineLinkHistory.STREAM_CODEC.decode(buf);
-            List<BlockPos> rejectedMachines = ByteBufCodecs.fromCodec(BlockPos.CODEC).apply(ByteBufCodecs.list()).decode(buf);
+            List<BlockPos> rejectedMachines = BlockPos.STREAM_CODEC.apply(ByteBufCodecs.list()).decode(buf);
             ClipboardUiState uiState = ClipboardUiState.STREAM_CODEC.decode(buf);
             return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState);
         }
@@ -246,10 +246,10 @@ public record ProductionGoal(
             ByteBufCodecs.optional(FactoryPlan.STREAM_CODEC).encode(buf, goal.plan());
             ByteBufCodecs.BOOL.encode(buf, goal.perHour());
             ByteBufCodecs.DOUBLE.encode(buf, goal.threshold());
-            ByteBufCodecs.fromCodec(BlockPos.CODEC).apply(ByteBufCodecs.list()).encode(buf, goal.linkedMachines());
+            BlockPos.STREAM_CODEC.apply(ByteBufCodecs.list()).encode(buf, goal.linkedMachines());
             GraphLayoutState.STREAM_CODEC.encode(buf, goal.graphLayout());
             MachineLinkHistory.STREAM_CODEC.encode(buf, goal.machineLinkHistory());
-            ByteBufCodecs.fromCodec(BlockPos.CODEC).apply(ByteBufCodecs.list()).encode(buf, goal.rejectedMachines());
+            BlockPos.STREAM_CODEC.apply(ByteBufCodecs.list()).encode(buf, goal.rejectedMachines());
             ClipboardUiState.STREAM_CODEC.encode(buf, goal.uiState());
         }
     };

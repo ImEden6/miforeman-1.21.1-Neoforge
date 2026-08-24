@@ -22,7 +22,9 @@ public class MonitoringPacketHandlers {
 
     public static void handleRequest(final RequestMonitoringUpdatePayload payload, final IPayloadContext context) {
         context.enqueueWork(() -> {
-            ServerPlayer player = (ServerPlayer) context.player();
+            if (!(context.player() instanceof ServerPlayer player)) {
+                return;
+            }
             ServerLevel level = player.serverLevel();
             ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
             if (stack.isEmpty() || !stack.is(ModItems.FOREMAN_CLIPBOARD_ITEM.get())) {

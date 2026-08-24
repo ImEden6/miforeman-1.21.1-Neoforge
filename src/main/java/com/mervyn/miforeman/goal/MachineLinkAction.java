@@ -16,7 +16,7 @@ public record MachineLinkAction(BlockPos pos, boolean from, boolean to) {
     ).apply(instance, MachineLinkAction::new));
 
     public static final StreamCodec<RegistryFriendlyByteBuf, MachineLinkAction> STREAM_CODEC = StreamCodec.composite(
-            ByteBufCodecs.fromCodec(BlockPos.CODEC), MachineLinkAction::pos,
+            BlockPos.STREAM_CODEC, MachineLinkAction::pos,
             ByteBufCodecs.BOOL, MachineLinkAction::from,
             ByteBufCodecs.BOOL, MachineLinkAction::to,
             MachineLinkAction::new
