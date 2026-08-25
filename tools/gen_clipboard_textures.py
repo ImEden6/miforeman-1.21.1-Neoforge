@@ -194,6 +194,28 @@ def leather_fill_disabled(w, h, seed):
     return paint_parchment(w, h, seed, light=LEATHER_LIGHT_DISABLED, dark=LEATHER_DARK_DISABLED)
 
 
+def make_emi_drop_hint(size=16):
+    """A small 'drop here' cue for the EMI drag-drop affordance: a downward chevron over a
+    baseline, in the same ink/highlight palette as the rest of the clipboard chrome. Deliberately
+    generic (not a copy of EMI's own logo) so it doesn't depend on EMI's branding across versions.
+    """
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    cx = size / 2
+    # Chevron (open downward "v"), two-pixel-thick strokes with a highlight offset for legibility
+    # against both light and dark backgrounds.
+    top_y, mid_y = size * 0.28, size * 0.62
+    left_x, right_x = size * 0.22, size * 0.78
+    d.line([(left_x, top_y), (cx, mid_y)], fill=(*BORDER_HILITE, 255), width=3)
+    d.line([(cx, mid_y), (right_x, top_y)], fill=(*BORDER_HILITE, 255), width=3)
+    d.line([(left_x, top_y - 1), (cx, mid_y - 1)], fill=(*BORDER_DARK, 255), width=2)
+    d.line([(cx, mid_y - 1), (right_x, top_y - 1)], fill=(*BORDER_DARK, 255), width=2)
+    # Baseline the chevron drops onto.
+    base_y = size * 0.82
+    d.line([(size * 0.18, base_y), (size * 0.82, base_y)], fill=(*BORDER_DARK, 230), width=2)
+    return img
+
+
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -227,7 +249,10 @@ def main():
     clip = make_clip(32, 16).transpose(Image.ROTATE_90)
     clip.save(OUT_DIR / "clipboard_clip.png")
 
-    print(f"Wrote 7 textures to {OUT_DIR}")
+    emi_drop_hint = make_emi_drop_hint(16)
+    emi_drop_hint.save(OUT_DIR / "emi_drop_hint.png")
+
+    print(f"Wrote 8 textures to {OUT_DIR}")
 
 
 if __name__ == "__main__":

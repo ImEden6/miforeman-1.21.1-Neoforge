@@ -1,5 +1,6 @@
 package com.mervyn.miforeman.client.gui;
 
+import com.mervyn.miforeman.compat.emi.EmiCompat;
 import com.mervyn.miforeman.goal.ClipboardCloseSync;
 import com.mervyn.miforeman.goal.ClipboardUiState;
 import com.mervyn.miforeman.goal.ProductionGoal;
@@ -39,6 +40,10 @@ public class ClipboardScreen extends Screen {
     private static final int MIN_GUI_HEIGHT = 230;
     private static final int PADDING = 8;
     private static final int FIELD_HEIGHT = 14;
+
+    // --- "From EMI" button, shown next to the target-ID field only when EmiCompat.isLoaded() ---
+    private static final int EMI_PICK_BUTTON_WIDTH = 70;
+    private static final int EMI_PICK_BUTTON_GAP = 4;
 
     // --- Text Colours ---
     private static final int COLOUR_TITLE = 0xFFDAA520;
@@ -217,7 +222,11 @@ public class ClipboardScreen extends Screen {
                 });
         this.addRenderableWidget(typeButton);
 
-        EditBox targetIdField = new EditBox(this.font, contentX + 60, y + 10, contentW - 60, FIELD_HEIGHT, Component.literal("Target ID"));
+        boolean emiLoaded = EmiCompat.isLoaded();
+        int emiButtonWidth = emiLoaded ? EMI_PICK_BUTTON_WIDTH + EMI_PICK_BUTTON_GAP : 0;
+
+        int targetIdWidth = contentW - 60 - emiButtonWidth;
+        EditBox targetIdField = new EditBox(this.font, contentX + 60, y + 10, targetIdWidth, FIELD_HEIGHT, Component.literal("Target ID"));
         targetIdField.setMaxLength(256);
         targetIdField.setValue(this.goalDraft.targetIdStr == null ? "" : this.goalDraft.targetIdStr);
         targetIdField.setResponder(val -> {
@@ -225,6 +234,13 @@ public class ClipboardScreen extends Screen {
             revalidateDefineGoal();
         });
         this.addRenderableWidget(targetIdField);
+
+        if (emiLoaded) {
+            Button pickFromEmiButton = new ClipboardButton(contentX + 60 + targetIdWidth + EMI_PICK_BUTTON_GAP, y + 10,
+                    EMI_PICK_BUTTON_WIDTH, FIELD_HEIGHT, Component.literal("From EMI"),
+                    b -> Minecraft.getInstance().setScreen(new EmiTargetPickerScreen(this)));
+            this.addRenderableWidget(pickFromEmiButton);
+        }
         y += 10 + FIELD_HEIGHT + 8;
 
         EditBox rateField = new EditBox(this.font, contentX, y + 10, contentW - 80, FIELD_HEIGHT, Component.literal("Rate"));
@@ -287,6 +303,18 @@ public class ClipboardScreen extends Screen {
         this.addRenderableWidget(defineNextButton);
 
         revalidateDefineGoal();
+    }
+
+    /**
+     * Applies a stack dragged onto {@link EmiTargetPickerScreen} as the goal target, the same as
+     * typing an ID by hand. Public so that screen (and, transitively, {@code
+     * com.mervyn.miforeman.compat.emi}) can call back into this one without it needing to import
+     * anything from {@code dev.emi} itself.
+     */
+    public void applyDroppedTarget(TargetType type, String idStr) {
+        this.goalDraft.targetType = type;
+        this.goalDraft.targetIdStr = idStr;
+        rebuildStep(STEP_DEFINE_GOAL);
     }
 
     /** Client-side revalidation of the Define Goal form, run on every field/toggle change. */

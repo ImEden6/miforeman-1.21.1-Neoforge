@@ -162,6 +162,12 @@ dependencies {
     implementation "curse.maven:modern-industrialization-405388:8439736"
     localRuntime "curse.maven:guideme-1173950:8129788"
 
+    // EMI (optional mod dependency, same shape as the JEI example below): the API-only jar is
+    // declared for compile time use, while the full jar is used at runtime only, so the mod
+    // builds and runs identically with EMI absent.
+    compileOnly "dev.emi:emi-neoforge:${emi_version}:api"
+    localRuntime "dev.emi:emi-neoforge:${emi_version}"
+
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
     // compileOnly "mezz.jei:jei-${mc_version}-common-api:${jei_version}"
