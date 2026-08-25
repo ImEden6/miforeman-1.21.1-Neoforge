@@ -198,21 +198,47 @@ def make_emi_drop_hint(size=16):
     """A small 'drop here' cue for the EMI drag-drop affordance: a downward chevron over a
     baseline, in the same ink/highlight palette as the rest of the clipboard chrome. Deliberately
     generic (not a copy of EMI's own logo) so it doesn't depend on EMI's branding across versions.
+
+    Hand-tuned pixel-for-pixel (this function reproduces that exact bitmap so re-running this
+    script doesn't lose the tweak): a 3px-thick dark-hilite-dark diagonal stroke on each side,
+    pinching through a short dark "waist" and into a 2px flat tip -- built from explicit mirrored
+    pixel placement rather than ImageDraw.line, since at an even size like 16 there's no single
+    center column for two converging diagonals to share (a geometric apex rasterizes as a lopsided
+    1px notch instead). Mirroring each pixel explicitly around the canvas center guarantees
+    left/right symmetry regardless of parity.
     """
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    cx = size / 2
-    # Chevron (open downward "v"), two-pixel-thick strokes with a highlight offset for legibility
-    # against both light and dark backgrounds.
-    top_y, mid_y = size * 0.28, size * 0.62
-    left_x, right_x = size * 0.22, size * 0.78
-    d.line([(left_x, top_y), (cx, mid_y)], fill=(*BORDER_HILITE, 255), width=3)
-    d.line([(cx, mid_y), (right_x, top_y)], fill=(*BORDER_HILITE, 255), width=3)
-    d.line([(left_x, top_y - 1), (cx, mid_y - 1)], fill=(*BORDER_DARK, 255), width=2)
-    d.line([(cx, mid_y - 1), (right_x, top_y - 1)], fill=(*BORDER_DARK, 255), width=2)
-    # Baseline the chevron drops onto.
-    base_y = size * 0.82
-    d.line([(size * 0.18, base_y), (size * 0.82, base_y)], fill=(*BORDER_DARK, 230), width=2)
+    px = img.load()
+
+    def set_mirrored(x, y, colour):
+        px[x, y] = colour
+        px[size - 1 - x, y] = colour
+
+    dark = (*BORDER_DARK, 255)
+    hilite = (*BORDER_HILITE, 255)
+    waist = (102, 71, 40, 255)  # darker inner edge where the two strokes pinch together
+    tip = (119, 84, 49, 255)  # the converging tip itself
+
+    for x, y, colour in [
+        (3, 2, dark),
+        (2, 3, dark), (3, 3, hilite), (4, 3, dark),
+        (3, 4, dark), (4, 4, hilite), (5, 4, dark),
+        (4, 5, dark), (5, 5, hilite), (6, 5, dark),
+        (5, 6, dark), (6, 6, hilite), (7, 6, dark),
+    ]:
+        set_mirrored(x, y, colour)
+
+    set_mirrored(6, 7, waist)
+    set_mirrored(7, 7, hilite)
+    set_mirrored(6, 8, tip)
+    set_mirrored(7, 8, hilite)
+    set_mirrored(7, 9, tip)
+
+    # Baseline the chevron drops onto -- already symmetric (cols 2..size-3 mirror onto themselves).
+    for x in range(2, size - 2):
+        px[x, 13] = (*BORDER_DARK, 230)
+        px[x, 14] = (*BORDER_DARK, 200)
+
     return img
 
 

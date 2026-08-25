@@ -24,10 +24,10 @@ import net.minecraft.world.item.ItemStack;
  * from EMI's sidebar onto the panel sets the parent's goal target and returns to it.
  *
  * <p>Backed by {@link HostMenu}, a trivial client-only zero-slot menu that's never opened via the
- * normal server round-trip -- it exists purely so this screen is an {@code AbstractContainerScreen}
- * (Mojang mappings' name for what EMI's own NeoForge code calls {@code HandledScreen}), which EMI's
- * render hooks require via an {@code instanceof} check before they'll draw anything at all. A plain
- * {@link net.minecraft.client.gui.screens.Screen} never clears that check, no matter what's
+ * normal server round-trip. It exists purely so this screen is an {@code AbstractContainerScreen}
+ * (Mojang mappings' name for what EMI's own NeoForge code calls {@code HandledScreen}), which
+ * EMI's render hooks require via an {@code instanceof} check before they'll draw anything at all.
+ * A plain {@link net.minecraft.client.gui.screens.Screen} never clears that check, no matter what's
  * registered through {@code EmiRegistry}.
  */
 public class EmiTargetPickerScreen extends AbstractContainerScreen<EmiTargetPickerScreen.HostMenu> {
@@ -98,7 +98,7 @@ public class EmiTargetPickerScreen extends AbstractContainerScreen<EmiTargetPick
 
     @Override
     public void onClose() {
-        // Bypass AbstractContainerScreen.onClose()'s minecraft.player.closeContainer() call --
+        // Bypass AbstractContainerScreen.onClose()'s minecraft.player.closeContainer() call.
         // this.menu was never assigned to the player's real containerMenu, so that would just
         // send a stray close packet for whatever container the player actually has open.
         Minecraft.getInstance().setScreen(parent);
@@ -107,9 +107,9 @@ public class EmiTargetPickerScreen extends AbstractContainerScreen<EmiTargetPick
     @Override
     public void renderBackground(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         // Unlike plain Screen, AbstractContainerScreen.renderBackground() is what actually calls
-        // renderBg() (see its vanilla implementation) -- so a blanket no-op override here, copied
-        // from ClipboardScreen/ColourPickerScreen's plain-Screen convention, silently killed our
-        // panel too. Skip only renderTransparentBackground()'s dimming/vignette, keep renderBg().
+        // renderBg() (see its vanilla implementation). A blanket no-op override here, copied from
+        // ClipboardScreen/ColourPickerScreen's plain-Screen convention, silently killed our panel
+        // too. Skip only renderTransparentBackground()'s dimming/vignette, keep renderBg().
         this.renderBg(guiGraphics, partialTick, mouseX, mouseY);
     }
 
@@ -117,12 +117,14 @@ public class EmiTargetPickerScreen extends AbstractContainerScreen<EmiTargetPick
     protected void renderBg(GuiGraphics guiGraphics, float partialTick, int mouseX, int mouseY) {
         ClipboardChrome.drawBackground(guiGraphics, leftPos, topPos, imageWidth, imageHeight);
 
-        int contentX = leftPos + PADDING + ClipboardChrome.MAIN_BORDER + 2;
-        int contentY = topPos + PADDING + ClipboardChrome.MAIN_BORDER + 2;
-        guiGraphics.drawString(this.font, Component.literal("Pick Target From EMI"), contentX, contentY, COLOUR_TITLE);
-
         int iconCenterX = leftPos + imageWidth / 2;
         int iconCenterY = topPos + imageHeight / 2 - 10;
+
+        // Centered above the icon rather than the usual top-left corner. This screen has no other
+        // header content to share that corner with, and top-left collides with other mods' own
+        // screen-corner icons (seen in testing), so centering avoids that entirely.
+        guiGraphics.drawCenteredString(this.font, Component.literal("Pick Target From EMI"), iconCenterX,
+                iconCenterY - ICON_SIZE / 2 - 16, COLOUR_TITLE);
 
         guiGraphics.pose().pushPose();
         guiGraphics.pose().translate(iconCenterX, iconCenterY, 0);
@@ -144,7 +146,7 @@ public class EmiTargetPickerScreen extends AbstractContainerScreen<EmiTargetPick
 
     @Override
     protected void renderLabels(GuiGraphics guiGraphics, int mouseX, int mouseY) {
-        // No-op: everything is already drawn in renderBg(), in absolute screen coordinates --
+        // No-op. Everything is already drawn in renderBg(), in absolute screen coordinates, so
         // skip vanilla's default title/"Inventory" label draw, which assumes local coordinates
         // and doesn't apply to this menu-less panel.
     }
@@ -157,7 +159,7 @@ public class EmiTargetPickerScreen extends AbstractContainerScreen<EmiTargetPick
     /**
      * Trivial client-only, zero-slot menu that exists purely to make this screen an
      * {@code AbstractContainerScreen} for EMI's benefit. Never opened via the normal server
-     * round-trip/{@code MenuType} registration -- just constructed directly.
+     * round-trip or {@code MenuType} registration, just constructed directly.
      */
     static class HostMenu extends AbstractContainerMenu {
         private HostMenu() {

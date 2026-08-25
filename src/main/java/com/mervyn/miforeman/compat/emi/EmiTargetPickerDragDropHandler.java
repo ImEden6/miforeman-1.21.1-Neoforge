@@ -10,7 +10,7 @@ import dev.emi.emi.api.stack.EmiIngredient;
 import dev.emi.emi.api.widget.Bounds;
 
 /**
- * The whole panel is the drop target: dropping an EMI item/fluid there sets the parent
+ * The whole panel is the drop target. Dropping an EMI item or fluid there sets the parent
  * ClipboardScreen's goal target (via {@link EmiTargetPickerScreen#acceptDrop}) and closes back
  * to it.
  */

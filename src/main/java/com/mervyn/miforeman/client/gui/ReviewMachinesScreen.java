@@ -101,6 +101,53 @@ public class ReviewMachinesScreen extends Screen {
                 b -> Minecraft.getInstance().setScreen(backTarget)
         );
         this.addRenderableWidget(backButton);
+
+        long addableCount = rows.stream().filter(r -> !r.linked() && !r.rejected()).count();
+        long linkedCount = rows.stream().filter(ReviewListPanel.ReviewRow::linked).count();
+
+        Button addAllButton = new ClipboardButton(contentX + contentW - 90, btnY, 90, 16,
+                Component.literal("Add All"), b -> handleAddAll());
+        addAllButton.active = addableCount > 0;
+        this.addRenderableWidget(addAllButton);
+
+        Button removeAllButton = new ClipboardButton(contentX + contentW - 90 - 90 - 6, btnY, 90, 16,
+                Component.literal("Remove All"), b -> handleRemoveAllRequest());
+        removeAllButton.active = linkedCount > 0;
+        this.addRenderableWidget(removeAllButton);
+    }
+
+    /** Links every unlinked, non-rejected candidate. Rejected candidates are skipped, since a
+     * rejection is a deliberate per-machine decision the player has to undo explicitly. */
+    private void handleAddAll() {
+        for (ReviewListPanel.ReviewRow row : state.buildReviewRows()) {
+            if (!row.linked() && !row.rejected()) {
+                state.applyLink(row.pos(), () -> {});
+            }
+        }
+        onChange.run();
+        rebuild();
+    }
+
+    /** Unlinks every currently-linked machine, the direct inverse of {@link #handleAddAll()}. */
+    private void handleRemoveAllRequest() {
+        List<ReviewListPanel.ReviewRow> linked = state.buildReviewRows().stream()
+                .filter(ReviewListPanel.ReviewRow::linked).toList();
+        if (linked.isEmpty()) return;
+
+        Minecraft.getInstance().setScreen(new ConfirmScreen(
+                confirmed -> {
+                    Minecraft.getInstance().setScreen(this);
+                    if (confirmed) {
+                        for (ReviewListPanel.ReviewRow row : linked) {
+                            state.applyUnlink(row.pos(), () -> {});
+                        }
+                        onChange.run();
+                        rebuild();
+                    }
+                },
+                Component.literal("Unlink all " + linked.size() + " machines?"),
+                Component.literal("They will become unlinked candidates again. Confirm?")
+        ));
     }
 
     private void handleReviewToggle(ReviewListPanel.ReviewRow row) {
