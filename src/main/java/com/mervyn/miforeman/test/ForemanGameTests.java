@@ -539,5 +539,398 @@ public class ForemanGameTests {
 
         helper.succeed();
     }
-}
 
+    /**
+     * Verifies {@code FactoryPlan.totalPowerDemandEu()} stays consistent with the sum of its own
+     * machine requirements, and that a machine shared by two demand paths accumulates EU from both
+     * (not just the larger/last one written) -- see the additive accumulation in
+     * {@code RecipeGraphTraverser}'s {@code MachineStats.totalEu}.
+     */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testPowerDemandMatchesRequirements(GameTestHelper helper) {
+        var level = helper.getLevel();
+        ResourceLocation targetId = ResourceLocation.parse("modern_industrialization:quantum_upgrade");
+        ProductionGoal goal = new ProductionGoal("power_demand_test", ProductionGoal.TargetType.ITEM, targetId, 1.0);
+
+        ProductionGoal.FactoryPlan plan = RecipeGraphTraverser.computePlan(level, goal);
+
+        if (plan.machines().isEmpty()) {
+            helper.fail("Expected quantum_upgrade plan to have at least one machine requirement.");
+            return;
+        }
+
+        long summedFromRequirements = plan.machines().stream()
+                .mapToLong(ProductionGoal.MachineRequirement::totalEuPerTick)
+                .sum();
+
+        if (plan.totalPowerDemandEu() != summedFromRequirements) {
+            helper.fail("FactoryPlan.totalPowerDemandEu() (" + plan.totalPowerDemandEu()
+                    + ") does not match sum of machines().totalEuPerTick() (" + summedFromRequirements + ")");
+            return;
+        }
+
+        // Every machine requirement's totalEuPerTick must be a positive multiple of its own
+        // presence in the plan -- NOT necessarily ceil(count * baseEuPerTick), since a single
+        // machineId can be fed by multiple recipes with different EU costs (baseEuPerTick here
+        // reflects only the last-recorded recipe for that machine type, while count/totalEuPerTick
+        // are independently accumulated sums across every recipe that uses this machine). See
+        // RecipeGraphTraverser.computePlan's MachineStats accumulation.
+        for (var req : plan.machines()) {
+            if (req.totalEuPerTick() <= 0) {
+                helper.fail("Machine " + req.machineId() + " has non-positive totalEuPerTick: " + req.totalEuPerTick());
+                return;
+            }
+            if (req.count() <= 0) {
+                helper.fail("Machine " + req.machineId() + " has non-positive count: " + req.count());
+                return;
+            }
+        }
+
+        helper.succeed();
+    }
+
+    /**
+     * Verifies a FLUID-target {@code ProductionGoal} produces a valid, non-empty plan and graph,
+     * exercising the traverser's fluid-recipe indexing path (not just the {@code ITEM} path every
+     * other test in this file uses).
+     */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testFluidTargetGoalTraversal(GameTestHelper helper) {
+        var level = helper.getLevel();
+        ResourceLocation targetId = ResourceLocation.parse("modern_industrialization:sulfuric_acid");
+        ProductionGoal goal = new ProductionGoal("fluid_target_test", ProductionGoal.TargetType.FLUID, targetId, 10.0);
+
+        ProductionGoal.FactoryPlan plan = RecipeGraphTraverser.computePlan(level, goal);
+        if (plan.machines().isEmpty()) {
+            helper.fail("Expected non-empty machine requirements for FLUID target " + targetId);
+            return;
+        }
+        if (plan.rawInputs().isEmpty()) {
+            helper.fail("Expected non-empty raw inputs for FLUID target " + targetId);
+            return;
+        }
+
+        boolean anyNonZeroRawInput = plan.rawInputs().stream()
+                .anyMatch(flow -> flow.rate() > 0);
+        if (!anyNonZeroRawInput) {
+            helper.fail("Expected at least one raw input with a non-zero rate for FLUID target " + targetId);
+            return;
+        }
+
+        com.mervyn.miforeman.goal.RecipeGraph graph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
+        if (graph.nodes().isEmpty()) {
+            helper.fail("Expected non-empty node set in the recipe graph for FLUID target " + targetId);
+            return;
+        }
+        if (graph.edges().isEmpty()) {
+            helper.fail("Expected non-empty edge set in the recipe graph for FLUID target " + targetId);
+            return;
+        }
+        if (!graph.nodes().containsKey(targetId)) {
+            helper.fail("Expected the recipe graph to contain a node for the FLUID target itself: " + targetId);
+            return;
+        }
+
+        helper.succeed();
+    }
+
+    /**
+     * Verifies {@code RecipeGraphTraverser.GRAPH_CACHE} returns the exact same {@code RecipeGraph}
+     * reference for identical goal queries, produces a fresh reference after
+     * {@code clearGraphCache()}, and keys entries independently by {@code recipeSelections}.
+     */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testGraphCacheHitAndInvalidation(GameTestHelper helper) {
+        var level = helper.getLevel();
+        ResourceLocation targetId = ResourceLocation.parse("modern_industrialization:quantum_upgrade");
+
+        // Isolate from any caching side effects other tests in this file may have left behind.
+        RecipeGraphTraverser.clearGraphCache();
+
+        ProductionGoal goal = new ProductionGoal("cache_test", ProductionGoal.TargetType.ITEM, targetId, 1.0);
+
+        var first = RecipeGraphTraverser.computeRecipeGraph(level, goal);
+        var second = RecipeGraphTraverser.computeRecipeGraph(level, goal);
+        if (first != second) {
+            helper.fail("Expected computeRecipeGraph to return the identical cached reference for an "
+                    + "unchanged goal query, but got two distinct instances.");
+            return;
+        }
+
+        RecipeGraphTraverser.clearGraphCache();
+        var afterClear = RecipeGraphTraverser.computeRecipeGraph(level, goal);
+        if (afterClear == first) {
+            helper.fail("Expected clearGraphCache() to force a fresh RecipeGraph instance, but the "
+                    + "same reference was returned.");
+            return;
+        }
+
+        // A different recipeSelections map must be an isolated cache entry, not a hit on the
+        // existing one, and must not evict/overwrite it.
+        var ambiguousNode = afterClear.nodes().values().stream()
+                .filter(node -> node.getType() != com.mervyn.miforeman.goal.NodeType.MACHINE && node.getAmbiguityOptions().size() > 1)
+                .findFirst()
+                .orElse(null);
+        if (ambiguousNode == null) {
+            helper.fail("Expected at least one ambiguous resource node in quantum_upgrade recipe graph.");
+            return;
+        }
+
+        ResourceLocation altRecipe = ambiguousNode.getAmbiguityOptions().get(1);
+        ProductionGoal altGoal = goal.withRecipeSelections(
+                Map.of(ambiguousNode.getAmbiguityOwnerId(), altRecipe));
+
+        var altGraph = RecipeGraphTraverser.computeRecipeGraph(level, altGoal);
+        if (altGraph == afterClear) {
+            helper.fail("Expected a goal with different recipeSelections to be a distinct cache "
+                    + "entry, but got the same reference as the default-selections goal.");
+            return;
+        }
+
+        var stillCachedDefault = RecipeGraphTraverser.computeRecipeGraph(level, goal);
+        if (stillCachedDefault != afterClear) {
+            helper.fail("Populating the cache for altGoal's recipeSelections evicted or replaced "
+                    + "the existing entry for the default-selections goal.");
+            return;
+        }
+
+        RecipeGraphTraverser.clearGraphCache();
+        helper.succeed();
+    }
+
+    /**
+     * Unit-style coverage for {@code PacketRateLimiter.tryAcquire}: throttling within
+     * {@code minIntervalTicks}, allowance once the interval elapses, and independent per-player
+     * tracking with no cross-contamination. No Level/network state is needed for this logic, so
+     * it's wrapped as a trivial GameTest purely to match this repo's existing test conventions.
+     */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testPacketRateLimiterThrottling(GameTestHelper helper) {
+        com.mervyn.miforeman.network.PacketRateLimiter limiter =
+                new com.mervyn.miforeman.network.PacketRateLimiter(10);
+
+        java.util.UUID playerA = java.util.UUID.randomUUID();
+        java.util.UUID playerB = java.util.UUID.randomUUID();
+
+        if (!limiter.tryAcquire(playerA, 0L)) {
+            helper.fail("Expected first tryAcquire for a fresh player to be allowed.");
+            return;
+        }
+        if (limiter.tryAcquire(playerA, 5L)) {
+            helper.fail("Expected tryAcquire within minIntervalTicks (5 < 10) of the last call to be rejected.");
+            return;
+        }
+        if (!limiter.tryAcquire(playerA, 10L)) {
+            helper.fail("Expected tryAcquire exactly minIntervalTicks after the last call to be allowed.");
+            return;
+        }
+
+        // A second player must not be throttled by the first player's usage, even at the same tick.
+        if (!limiter.tryAcquire(playerB, 10L)) {
+            helper.fail("Expected a different player's first tryAcquire to be allowed independently "
+                    + "of another player's throttling state.");
+            return;
+        }
+        if (limiter.tryAcquire(playerB, 15L)) {
+            helper.fail("Expected playerB's tryAcquire within its own minIntervalTicks to be rejected.");
+            return;
+        }
+
+        // playerA being ready again must not be affected by playerB's independent throttling.
+        if (!limiter.tryAcquire(playerA, 20L)) {
+            helper.fail("Expected playerA to be allowed again after its own interval elapsed, "
+                    + "independent of playerB's state.");
+            return;
+        }
+
+        helper.succeed();
+    }
+
+    /**
+     * Extends {@code testCycleRecipePlan}'s coverage to a resource with 3+ alternative recipes:
+     * cycling through every option and back to the start must leave the graph structurally
+     * identical to where it began, with no orphaned nodes or stale edges left behind.
+     */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testAmbiguityWrapAroundCycling(GameTestHelper helper) {
+        var level = helper.getLevel();
+        ResourceLocation targetId = ResourceLocation.parse("modern_industrialization:quantum_upgrade");
+        ProductionGoal goal = new ProductionGoal("wraparound_test", ProductionGoal.TargetType.ITEM, targetId, 1.0);
+
+        RecipeGraphTraverser.clearGraphCache();
+        var initialGraph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
+
+        var ambiguousNode = initialGraph.nodes().values().stream()
+                .filter(node -> node.getType() != com.mervyn.miforeman.goal.NodeType.MACHINE && node.getAmbiguityOptions().size() >= 3)
+                .findFirst()
+                .orElse(null);
+
+        if (ambiguousNode == null) {
+            helper.fail("Expected at least one ambiguous resource node with 3+ recipe options in "
+                    + "the quantum_upgrade recipe graph.");
+            return;
+        }
+
+        List<ResourceLocation> options = ambiguousNode.getAmbiguityOptions();
+        ResourceLocation ownerId = ambiguousNode.getAmbiguityOwnerId();
+
+        int initialNodeCount = initialGraph.nodes().size();
+        int initialEdgeCount = initialGraph.edges().size();
+
+        // Cycle forward through every option, ending back where we started.
+        for (int i = 1; i <= options.size(); i++) {
+            ResourceLocation nextRecipe = options.get(i % options.size());
+            ProductionGoal cycledGoal = goal.withRecipeSelections(Map.of(ownerId, nextRecipe));
+            var cycledGraph = RecipeGraphTraverser.computeRecipeGraph(level, cycledGoal);
+
+            var cycledNode = cycledGraph.nodes().get(ambiguousNode.getId());
+            if (cycledNode == null) {
+                helper.fail("Ambiguous resource node " + ambiguousNode.getId()
+                        + " disappeared from the graph after selecting option " + nextRecipe);
+                return;
+            }
+            if (!nextRecipe.equals(cycledNode.getSelectedAmbiguity())) {
+                helper.fail("Expected selected ambiguity " + nextRecipe + " after cycling, but got: "
+                        + cycledNode.getSelectedAmbiguity());
+                return;
+            }
+
+            // Every previously-cycled-through recipe option must not linger as an orphaned node
+            // once we've moved past it, except the one currently selected.
+            for (ResourceLocation option : options) {
+                boolean shouldBePresent = option.equals(nextRecipe);
+                boolean isPresent = cycledGraph.nodes().containsKey(option);
+                if (shouldBePresent != isPresent) {
+                    helper.fail("After selecting " + nextRecipe + ", recipe node " + option
+                            + " presence was " + isPresent + " but expected " + shouldBePresent);
+                    return;
+                }
+            }
+        }
+
+        // Back to the first option: graph should match the original structure exactly.
+        ProductionGoal backToStartGoal = goal.withRecipeSelections(Map.of(ownerId, options.get(0)));
+        var finalGraph = RecipeGraphTraverser.computeRecipeGraph(level, backToStartGoal);
+
+        if (finalGraph.nodes().size() != initialNodeCount) {
+            helper.fail("Expected node count to return to " + initialNodeCount
+                    + " after a full wrap-around cycle, but got: " + finalGraph.nodes().size());
+            return;
+        }
+        if (finalGraph.edges().size() != initialEdgeCount) {
+            helper.fail("Expected edge count to return to " + initialEdgeCount
+                    + " after a full wrap-around cycle, but got: " + finalGraph.edges().size());
+            return;
+        }
+
+        RecipeGraphTraverser.clearGraphCache();
+        helper.succeed();
+    }
+
+    /**
+     * Verifies a real machine's {@code MachineTracker.status} transitions across server ticks:
+     * empty inputs (RED) -> valid inputs + power actually crafting (GREEN) -> blocked output
+     * saturation (ORANGE). Unlike {@code testIdentifyBottlenecks} (which only calls the passive
+     * status check directly, never letting the machine actually craft), this drives the real
+     * {@code ServerMonitoringManager.onServerTick} path by linking a mock player's clipboard to
+     * the machine and letting the block entity's own ticker run.
+     */
+    @SuppressWarnings("removal") // GameTestHelper#makeMockServerPlayerInLevel is deprecated-for-removal
+                                 // upstream but remains the only vanilla API for a real ServerPlayer in a GameTest.
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID, timeoutTicks = 200)
+    public static void testMachineStatusDynamicTransitions(GameTestHelper helper) {
+        var level = helper.getLevel();
+
+        // Unlike testIdentifyBottlenecks's bronze_compressor (a steam machine with no EnergyComponent),
+        // this needs the electric-tier compressor so an EU buffer can actually be filled.
+        var compressorBlock = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+                ResourceLocation.parse("modern_industrialization:electric_compressor")
+        );
+        BlockPos relativePos = new BlockPos(1, 2, 1);
+        BlockPos absolutePos = helper.absolutePos(relativePos);
+        helper.setBlock(relativePos, compressorBlock);
+
+        BlockEntity be = level.getBlockEntity(absolutePos);
+        if (!(be instanceof MachineBlockEntity machine)) {
+            helper.fail("Placed block is not a MachineBlockEntity!");
+            return;
+        }
+
+        CrafterComponent crafter = ServerMonitoringManager.getCrafter(machine);
+        if (crafter == null) {
+            helper.fail("Placed Compressor does not have a CrafterComponent!");
+            return;
+        }
+
+        // Trackers are global static state; start clean so a leftover entry from another test
+        // can't be mistaken for one this test created.
+        ServerMonitoringManager.TRACKERS.clear();
+
+        // onServerTick only tracks positions reachable via a held clipboard's linkedMachines, so
+        // a real (mock) player holding a linked clipboard is required to exercise it at all.
+        net.minecraft.server.level.ServerPlayer mockPlayer = helper.makeMockServerPlayerInLevel();
+        ProductionGoal goal = new ProductionGoal(
+                "dynamic_status_test",
+                ProductionGoal.TargetType.ITEM,
+                ResourceLocation.parse("modern_industrialization:iron_plate"),
+                1.0
+        ).withLinkedMachines(List.of(absolutePos), com.mervyn.miforeman.goal.MachineLinkHistory.EMPTY);
+
+        ItemStack clipboard = new ItemStack(ModItems.FOREMAN_CLIPBOARD_ITEM.get());
+        clipboard.set(ModComponents.PRODUCTION_GOAL.get(), goal);
+        mockPlayer.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, clipboard);
+
+        GlobalPos key = ServerMonitoringManager.key(level, absolutePos);
+
+        // Phase 1: empty inputs -> RED, once onServerTick has had a chance to create the tracker.
+        helper.runAfterDelay(3, () -> {
+            var tracker = ServerMonitoringManager.TRACKERS.get(key);
+            if (tracker == null) {
+                helper.fail("Expected onServerTick to create a MachineTracker for the linked machine.");
+                return;
+            }
+            if (!"RED".equals(tracker.status)) {
+                helper.fail("Expected empty-input machine to read RED, but got: " + tracker.status);
+                return;
+            }
+
+            // Phase 2: supply a valid input item and fill the energy buffer directly (bypassing
+            // generator/cable infrastructure, same as MI's own EnergyComponent API allows) so the
+            // machine's own ticker actually starts crafting.
+            var inputSlot = crafter.getInventory().getItemInputs().get(0);
+            inputSlot.setKey(aztech.modern_industrialization.thirdparty.fabrictransfer.api.item.ItemVariant.of(net.minecraft.world.item.Items.IRON_INGOT));
+            inputSlot.setAmount(4);
+
+            var energyComponent = (aztech.modern_industrialization.machines.components.EnergyComponent)
+                    ((aztech.modern_industrialization.api.machine.holder.EnergyComponentHolder) machine).getEnergyComponent();
+            energyComponent.insertEu(Long.MAX_VALUE, aztech.modern_industrialization.util.Simulation.ACT);
+
+            helper.runAfterDelay(5, () -> {
+                var trackerAfterFeed = ServerMonitoringManager.TRACKERS.get(key);
+                if (trackerAfterFeed == null || !"GREEN".equals(trackerAfterFeed.status)) {
+                    helper.fail("Expected actively-crafting machine to read GREEN, but got: "
+                            + (trackerAfterFeed != null ? trackerAfterFeed.status : "null"));
+                    return;
+                }
+                if (!crafter.hasActiveRecipe()) {
+                    helper.fail("Tracker read GREEN but crafter.hasActiveRecipe() is false.");
+                    return;
+                }
+
+                // Phase 3: block the output with a mismatched item -> saturation (ORANGE) once the
+                // machine can no longer deposit its crafted output.
+                var outputSlot = crafter.getInventory().getItemOutputs().get(0);
+                outputSlot.setKey(aztech.modern_industrialization.thirdparty.fabrictransfer.api.item.ItemVariant.of(net.minecraft.world.item.Items.GLASS));
+                outputSlot.setAmount(64);
+
+                helper.succeedWhen(() -> {
+                    var finalTracker = ServerMonitoringManager.TRACKERS.get(key);
+                    if (finalTracker == null || !"ORANGE".equals(finalTracker.status)) {
+                        helper.fail("Expected saturated machine to read ORANGE, but got: "
+                                + (finalTracker != null ? finalTracker.status : "null"));
+                    }
+                });
+            });
+        });
+    }
+}
