@@ -5,11 +5,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.resources.ResourceLocation;
 
 /**
- * Shared parchment-panel background (9-slice main texture + rotated clip accent) and
- * window-sizing math for the clipboard's screens. Extracted from {@link ClipboardScreen} so
- * {@link ReviewMachinesScreen} can paint the same background and size itself the same way,
- * reading as "the same clipboard, one level deeper" rather than a different tool -- same
- * rationale {@link NineSliceTexture} was already pulled out for.
+ * Shared parchment panel background rendering and window sizing math.
  */
 public final class ClipboardChrome {
     public static final ResourceLocation TEX_MAIN = ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "textures/gui/clipboard_main.png");

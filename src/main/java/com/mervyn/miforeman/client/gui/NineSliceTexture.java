@@ -4,10 +4,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.resources.ResourceLocation;
 
 /**
- * Shared 9-slice blitter for the clipboard's parchment-panel textures (corners
- * fixed, edges/center stretched by tiling). Extracted from
- * {@link ClipboardScreen} so widgets like GraphCanvas and DetailCard can paint
- * the same beveled-parchment background instead of a flat colour fill.
+ * 9-slice texture renderer for parchment-style GUI panels.
  */
 public final class NineSliceTexture {
     private NineSliceTexture() {

@@ -16,12 +16,9 @@ public class RecipeGraphNode {
     private double machineCount;
     private final List<ResourceLocation> ambiguityOptions;
     private @Nullable ResourceLocation selectedAmbiguity;
-    /** The resourceId that {@link #ambiguityOptions}/{@link #selectedAmbiguity} actually describe.
-     *  For a resource node this is always its own {@link #id}. For a MACHINE node it's whichever
-     *  resourceId first finalized this node -- a multi-output recipe's MACHINE node is shared
-     *  across every resourceId it produces, but only one of them "owns" the displayed cycle list,
-     *  so callers (e.g. the cycle-button click handler) must target this id rather than guessing
-     *  one from edge order. */
+    /** The resource ID that {@link #ambiguityOptions} and {@link #selectedAmbiguity} describe.
+     *  For resource nodes, this equals {@link #id}. For MACHINE nodes, it is the resource ID
+     *  that finalized this node. */
     private final @Nullable ResourceLocation ambiguityOwnerId;
     private final List<GraphEdge> inputs = new ArrayList<>();
     private final List<GraphEdge> outputs = new ArrayList<>();
@@ -56,9 +53,7 @@ public class RecipeGraphNode {
     public @Nullable ResourceLocation getAmbiguityOwnerId() { return ambiguityOwnerId; }
     public List<GraphEdge> getInputs() { return inputs; }
     public List<GraphEdge> getOutputs() { return outputs; }
-    /** Replaces (rather than appends) any existing entry for the same {@code (from,to)} pair --
-     *  edges are keyed by endpoints only, so a rate-updated {@link GraphEdge} for a pair already
-     *  present must overwrite it instead of sitting alongside a stale duplicate. */
+    /** Replaces any existing entry for the same {@code (from,to)} pair. */
     public void putInput(GraphEdge edge) { replaceByFromTo(inputs, edge); }
     public void putOutput(GraphEdge edge) { replaceByFromTo(outputs, edge); }
     private static void replaceByFromTo(List<GraphEdge> list, GraphEdge edge) {

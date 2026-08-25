@@ -3,8 +3,7 @@ package com.mervyn.miforeman.client;
 import net.minecraft.resources.ResourceLocation;
 
 /**
- * Shared client-side display formatting -- pulled out after {@code formatId} ended up
- * copy-pasted into 5 different GUI classes (see .claude/plans/gleaming-mapping-waffle.md).
+ * Client-side text and resource ID formatting utilities.
  */
 public final class DisplayFormat {
     public static String formatId(ResourceLocation id) {

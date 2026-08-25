@@ -16,23 +16,7 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 /**
- * BlockUI trial for the "Define Goal" wizard step (see
- * .scratch/blockui-define-goal-trial/map.md). Built entirely in Java (no XML, per
- * issues/02-programmatic-pane-construction.md) and shown via {@link #openAsLayer()} on top of the
- * still-alive {@code ClipboardScreen} (per issues/01-boWindow-pane-embedding-architecture.md).
- * Hands its result back purely through the {@code onSubmit}/{@code onCancel} callbacks passed at
- * construction, mirroring {@code GraphCanvas}/{@code DetailCard}'s existing callback convention
- * rather than holding a reference to {@code ClipboardScreen} (per
- * issues/04-state-handoff-contract.md).
- *
- * <p>Draws its own copy of the clipboard's parchment background (same textures/constants as
- * {@code ClipboardScreen}) instead of relying on the backgrounded {@code ClipboardScreen} layer to
- * show through -- on at least one real client, that background layer rendered visibly darkened
- * while covered by this window (cause unconfirmed; several installed mods hook screen rendering).
- * Sized to the caller's current {@code guiWidth()}/{@code guiHeight()} and rendered at
- * {@link WindowRenderType#VANILLA} (1:1 with vanilla GUI scale, not BlockUI's default
- * {@code OVERSIZED_VANILLA}) so it lines up with -- and reads as -- the same panel, not a smaller
- * dialog floating on top of it.
+ * Window overlay for the goal definition step of the clipboard wizard.
  */
 public class DefineGoalWindow extends BOWindow {
     private static final int PADDING = 8;

@@ -9,9 +9,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 /**
- * Sends the whole ProductionGoal (not just a radius) because the server needs
- * goal.plan().graph() to build the recipe index for matching -- same whole-object convention
- * GoalUpdatePayload already uses.
+ * Client-to-server payload containing the current {@link ProductionGoal} to execute a machine scan.
  */
 public record ScanRequestPayload(ProductionGoal goal) implements CustomPacketPayload {
     public static final Type<ScanRequestPayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "scan_request"));

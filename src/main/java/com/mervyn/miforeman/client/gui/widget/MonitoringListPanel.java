@@ -17,10 +17,7 @@ import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 
 /**
- * Read-only scrollable list of every live-monitored machine, opened from ClipboardScreen's
- * Monitor step so the full list gets room instead of the old hardcoded top-3 summary. Rows are
- * expected to already be sorted (worst status first) by the caller -- this widget just renders
- * whatever order it's given, matching ReviewListPanel's "purely presentational" convention.
+ * Read-only scrollable list displaying live-monitored machines and their operational statuses.
  */
 public class MonitoringListPanel extends AbstractWidget {
     public record MonitoringRow(LiveMonitoringPayload.MachineStatusData machine, @Nullable String productLabel) {}

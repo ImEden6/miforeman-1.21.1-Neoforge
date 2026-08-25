@@ -9,14 +9,7 @@ import java.util.function.IntConsumer;
 import java.util.function.IntUnaryOperator;
 
 /**
- * A single RGB/HSV/HSL channel slider for {@code ColourPickerScreen}. Extends vanilla
- * {@link AbstractSliderButton}: drag and arrow-key handling and the abstract
- * updateMessage()/applyValue() hooks are inherited unchanged (see its {@code value} field, 0-1
- * normalized), but the sprite-based track is replaced with a horizontal colour gradient.
- * {@code colourAt} maps a candidate value for this slider's own channel to the resulting opaque
- * RGB colour, combined with the current values of the other two channels. Those are read at
- * paint time through a method reference into the owning screen rather than a captured snapshot,
- * so all three sliders' gradients stay in sync as any one of them is dragged.
+ * Color channel slider widget rendering a gradient track.
  */
 public class ChannelSlider extends AbstractSliderButton {
     public record Channel(String label, int min, int max) {
@@ -48,8 +41,7 @@ public class ChannelSlider extends AbstractSliderButton {
         return channel.min() + (int) Math.round(value * (channel.max() - channel.min()));
     }
 
-    /** Sets the slider's position to match an externally driven value, e.g. typed into the hex
-     *  box, without firing {@link #onChange} back out. Avoids a feedback loop. */
+    /** Sets slider position without triggering change callbacks. */
     public void setValueInt(int v) {
         this.value = normalize(channel, v);
         updateMessage();

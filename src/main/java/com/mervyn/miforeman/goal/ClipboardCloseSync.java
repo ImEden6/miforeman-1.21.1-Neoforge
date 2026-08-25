@@ -4,21 +4,15 @@ import java.util.Optional;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Decides what {@code ClipboardScreen.removed()} should persist on close, if anything. This used
- * to be a method on {@code ClipboardScreen} itself, but that class extends the client-only
- * {@code Screen}, and NeoForge's RuntimeDistCleaner refuses to load it on a dedicated server, even
- * just to call an unrelated static method. Moving the logic here, with no client dependency, lets
- * {@code ForemanGameTests} call it directly.
+ * Computes goal updates to persist when closing the clipboard UI.
  */
 public final class ClipboardCloseSync {
     private ClipboardCloseSync() {
     }
 
     /**
-     * Returns {@code base}, the last goal synced to the server, with the UI-state and graph-layout
-     * fields replaced and nothing else touched. That keeps draft edits to name/target/rate/plan
-     * elsewhere in the screen from leaking through on a plain close. Returns empty if {@code base}
-     * is null (nothing saved yet) or if neither field changed.
+     * Returns {@code base} updated with UI state and graph layout snapshots.
+     * Returns empty if {@code base} is null or if neither field changed.
      */
     public static Optional<ProductionGoal> computeCloseSyncGoal(
             @Nullable ProductionGoal base, ClipboardUiState uiSnapshot, GraphLayoutState layoutSnapshot) {

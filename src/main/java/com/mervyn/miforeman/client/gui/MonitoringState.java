@@ -23,10 +23,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Step-3 (Review Machines / Monitor) state -- split out of {@link ClipboardScreen} (see
- * .claude/plans/gleaming-mapping-waffle.md). This is exactly the state {@link ReviewMachinesScreen}
- * and {@link MonitoringScreen} already read through the parent screen today, so they now hold a
- * reference to this directly instead of the whole {@link ClipboardScreen}.
+ * State container for machine review and live monitoring operations.
  */
 class MonitoringState {
     final List<BlockPos> linkedMachines = new ArrayList<>();
@@ -103,8 +100,7 @@ class MonitoringState {
         this.liveData.addAll(data);
     }
 
-    /** Increments the poll counter and reports whether it's time to send another
-     *  RequestMonitoringUpdatePayload, resetting itself when it does. */
+    /** Increments poll counter and returns true every 20 ticks to trigger a monitoring payload request. */
     boolean tickAndShouldPoll() {
         tickCount++;
         if (tickCount >= 20) {
@@ -164,10 +160,7 @@ class MonitoringState {
         return ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "unknown");
     }
 
-    /** Resolves a recipe id to its output item/fluid name(s), or null if the recipe can no longer
-     *  be found (e.g. changed since the scan ran, or the machine isn't currently crafting anything)
-     *  or produces nothing named. Shared by Review Machines (candidates + linked rows) and
-     *  MonitoringScreen. */
+    /** Resolves a recipe ID to formatted product names, or null if the recipe cannot be found. */
     static @Nullable String resolveProductLabel(ResourceLocation recipeId) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return null;

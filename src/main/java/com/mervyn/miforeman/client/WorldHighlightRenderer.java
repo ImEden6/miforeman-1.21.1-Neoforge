@@ -20,18 +20,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Client-side in-world highlight overlay for linked/candidate machines during the auto-detect
- * review flow. Toggled explicitly by ClipboardScreen's "Highlights: On/Off" button -- not tied
- * to the review panel being open, so highlights persist even after the clipboard screen closes
- * until the player explicitly turns them off again.
- *
- * <p>Each box is drawn as a translucent fill plus a crisp wireframe outline, each drawn
- * twice -- once into a normal depth-tested {@link MIForemanRenderTypes} (full brightness, only
- * where actually unobstructed) and once into a depth-test-flipped variant (half colour/alpha,
- * draws only the portion currently hidden behind blocks) -- the same dual-pass "ghost through
- * walls" technique Minecolonies uses for its own overlays (see
- * references/minecolonies-1.21.1/.../worldevent/RenderTypes.java), so a highlighted machine
- * behind a wall is still visible, just dimmer than one in plain sight.
+ * Client-side in-world highlight overlay for linked and candidate machines.
+ * Renders depth-tested and see-through highlights for active machine positions.
  */
 @EventBusSubscriber(modid = MIForeman.MODID, value = Dist.CLIENT)
 public class WorldHighlightRenderer {
@@ -41,8 +31,7 @@ public class WorldHighlightRenderer {
     private static boolean enabled = false;
     private static List<BlockPos> linkedPositions = List.of();
     private static List<BlockPos> candidatePositions = List.of();
-    /** The one machine "located" from the Monitoring screen, if any -- independent of the
-     *  linked/candidate sets, drawn in its own colour instead of that position's normal one. */
+    /** The machine selected from the Monitoring screen, rendered in a distinct highlight color. */
     private static @Nullable BlockPos selectedPosition = null;
 
     public static void setEnabled(boolean value) {
@@ -59,9 +48,7 @@ public class WorldHighlightRenderer {
         clearSelectionIfUntracked();
     }
 
-    /** Adds or removes a single position from the linked set without touching candidates --
-     *  used by the in-world shift-right-click link/unlink path, which has no scan-candidate data
-     *  to also resend. */
+    /** Adds or removes a position from the linked set. */
     public static void setLinked(BlockPos pos, boolean linked) {
         List<BlockPos> updated = new ArrayList<>(linkedPositions);
         if (linked) {
@@ -73,9 +60,7 @@ public class WorldHighlightRenderer {
         clearSelectionIfUntracked();
     }
 
-    /** A located machine that's no longer linked or a candidate (unlinked, rejected, or scanned
-     *  away) has nothing left to locate -- drop the selection instead of leaving its box stuck on
-     *  screen forever. */
+    /** Clears selection if the position is no longer linked or a candidate. */
     private static void clearSelectionIfUntracked() {
         if (selectedPosition != null && !linkedPositions.contains(selectedPosition) && !candidatePositions.contains(selectedPosition)) {
             selectedPosition = null;
@@ -155,27 +140,33 @@ public class WorldHighlightRenderer {
 
     private static void drawBoxOutlineBoth(PoseStack poseStack, VertexConsumer inside, VertexConsumer outside,
                                             BlockPos pos, Vec3 camPos, float r, float g, float b) {
-        double minX = pos.getX() - camPos.x;
-        double minY = pos.getY() - camPos.y;
-        double minZ = pos.getZ() - camPos.z;
-        LevelRenderer.renderLineBox(poseStack, inside, minX, minY, minZ, minX + 1.0, minY + 1.0, minZ + 1.0,
+        double minX = pos.getX() - camPos.x - 0.001;
+        double minY = pos.getY() - camPos.y - 0.001;
+        double minZ = pos.getZ() - camPos.z - 0.001;
+        double maxX = pos.getX() + 1.001 - camPos.x;
+        double maxY = pos.getY() + 1.001 - camPos.y;
+        double maxZ = pos.getZ() + 1.001 - camPos.z;
+        LevelRenderer.renderLineBox(poseStack, inside, minX, minY, minZ, maxX, maxY, maxZ,
                 r / 2, g / 2, b / 2, OUTLINE_ALPHA / 2);
-        LevelRenderer.renderLineBox(poseStack, outside, minX, minY, minZ, minX + 1.0, minY + 1.0, minZ + 1.0,
+        LevelRenderer.renderLineBox(poseStack, outside, minX, minY, minZ, maxX, maxY, maxZ,
                 r, g, b, OUTLINE_ALPHA);
     }
 
     private static void drawFilledBoxBoth(PoseStack poseStack, VertexConsumer inside, VertexConsumer outside,
                                            BlockPos pos, Vec3 camPos, float r, float g, float b, float alpha) {
-        double minX = pos.getX() - camPos.x;
-        double minY = pos.getY() - camPos.y;
-        double minZ = pos.getZ() - camPos.z;
-        drawFilledBox(poseStack, inside, minX, minY, minZ, minX + 1.0, minY + 1.0, minZ + 1.0,
+        double minX = pos.getX() - camPos.x - 0.001;
+        double minY = pos.getY() - camPos.y - 0.001;
+        double minZ = pos.getZ() - camPos.z - 0.001;
+        double maxX = pos.getX() + 1.001 - camPos.x;
+        double maxY = pos.getY() + 1.001 - camPos.y;
+        double maxZ = pos.getZ() + 1.001 - camPos.z;
+        drawFilledBox(poseStack, inside, minX, minY, minZ, maxX, maxY, maxZ,
                 r / 2, g / 2, b / 2, alpha / 2);
-        drawFilledBox(poseStack, outside, minX, minY, minZ, minX + 1.0, minY + 1.0, minZ + 1.0,
+        drawFilledBox(poseStack, outside, minX, minY, minZ, maxX, maxY, maxZ,
                 r, g, b, alpha);
     }
 
-    /** No vanilla helper builds filled-box geometry (unlike renderLineBox), so this emits the 6 faces directly. */
+    /** Emits 6 quad faces for a filled box. */
     private static void drawFilledBox(PoseStack poseStack, VertexConsumer buffer,
                                        double minX, double minY, double minZ,
                                        double maxX, double maxY, double maxZ,

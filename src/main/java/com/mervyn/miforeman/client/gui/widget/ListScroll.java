@@ -6,10 +6,7 @@ import net.minecraft.util.Mth;
 import java.util.function.IntConsumer;
 
 /**
- * Scroll offset + clamp/scrollbar math shared by {@link ReviewListPanel} and
- * {@link MonitoringListPanel} -- both widgets had this copy-pasted three times over (render-time
- * clamp, wheel handling, scrollbar draw) before this extraction (see
- * .claude/plans/gleaming-mapping-waffle.md).
+ * Shared scroll offset and scrollbar logic for custom list widgets.
  */
 class ListScroll {
     private final int rowHeight;
@@ -30,8 +27,7 @@ class ListScroll {
         return Math.max(0, rowCount * rowHeight - viewHeight + 4);
     }
 
-    /** Clamps a scroll offset that may have gone stale (e.g. the row count shrank) -- called at
-     *  the top of renderWidget(), same as both panels did inline before. */
+    /** Clamps the scroll offset to fit within current view height and row count bounds. */
     void clampForRender(int rowCount, int viewHeight) {
         int clamped = Mth.clamp(offset, 0, maxScroll(rowCount, viewHeight));
         if (clamped != offset) {

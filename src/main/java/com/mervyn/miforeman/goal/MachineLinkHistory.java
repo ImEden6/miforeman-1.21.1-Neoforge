@@ -12,18 +12,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Persisted undo/redo history for the machine auto-detect review list's link/unlink toggles.
- * Lives on {@link ProductionGoal} so it survives save/load and syncs client<->server the same
- * way as the rest of the goal (whole-object sync via GoalUpdatePayload, not delta).
- *
- * Unlike {@link GraphLayoutState}, this history does not duplicate current state: the single
- * source of truth for which machines are linked stays {@link ProductionGoal#linkedMachines()}.
- * This is purely an action log; the caller applies {@link UndoResult#linked()} to that list.
- *
- * Deliberately a separate, bespoke record from GraphLayoutState rather than a shared generic
- * history type: this codebase's codecs are all bespoke per-record (see ProductionGoal, FactoryPlan,
- * etc.), and a generic capped-history wrapper would need its own Codec/StreamCodec plumbing per
- * element type anyway, buying no real reuse for just two call sites.
+ * Undo and redo history for machine link toggles.
+ * Saved on {@link ProductionGoal} and synchronized between client and server.
  */
 public record MachineLinkHistory(
         List<MachineLinkAction> undoStack,
@@ -45,12 +35,7 @@ public record MachineLinkHistory(
     /** The updated history plus which machine changed link state and what it changed to. */
     public record UndoResult(MachineLinkHistory history, BlockPos pos, boolean linked) {}
 
-    /**
-     * Reverts the most recent toggle. The restored link state is unconditional — it does not
-     * matter whether the machine is currently within scan range or still recipe-matches; linked
-     * status is independent of live detection (mirrors how linkedMachines already behaves
-     * elsewhere: a linked machine stays linked/monitored regardless of proximity).
-     */
+    /** Reverts the most recent toggle. */
     public @Nullable UndoResult undo() {
         if (undoStack.isEmpty()) {
             return null;

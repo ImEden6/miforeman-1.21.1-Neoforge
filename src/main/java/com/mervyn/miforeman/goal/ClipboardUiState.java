@@ -7,10 +7,8 @@ import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 
 /**
- * Which page of {@code ClipboardScreen} the player was last on, plus the graph camera and
- * view-toggle state -- persisted on {@link ProductionGoal} the same way {@link GraphLayoutState}
- * is, so closing and reopening the clipboard returns to where the player left off instead of
- * always landing back on the Monitor step.
+ * Persisted UI state for {@code ClipboardScreen}, including active tab, camera position, and view toggles.
+ * Saved on {@link ProductionGoal} to preserve UI state across screen reopens.
  */
 public record ClipboardUiState(
         int lastStep,

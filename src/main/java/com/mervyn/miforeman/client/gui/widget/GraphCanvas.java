@@ -24,10 +24,7 @@ import java.util.TreeMap;
 import java.util.function.Consumer;
 
 /**
- * Interactive draggable/pannable/zoomable node graph over a {@link RecipeGraph}. Replaces the
- * former TreePanel widget in Step 1 of the wizard. First widget in this codebase to use PoseStack
- * scale/translate for rendering (see branch research/graph-canvas-zoom-pan for the feasibility
- * research this was built against).
+ * Interactive canvas widget for rendering and manipulating a {@link RecipeGraph}.
  */
 public class GraphCanvas extends AbstractWidget {
     private static final int COLOUR_BORDER_LIGHT = 0xFF9C8058;
@@ -189,7 +186,7 @@ public class GraphCanvas extends AbstractWidget {
         }
     }
 
-    /** Snaps every manually-dragged node back to the auto-layout in one action. */
+    /** Resets all node positions to automatic layout defaults. */
     public void resetLayout() {
         if (!layoutState.equals(GraphLayoutState.EMPTY)) {
             layoutState = GraphLayoutState.EMPTY;
@@ -295,8 +292,7 @@ public class GraphCanvas extends AbstractWidget {
         guiGraphics.disableScissor();
     }
 
-    /** Flat-colour chamfered-octagon fill: a full-width middle band plus corner rows that shrink
-     *  inward by one pixel per row, cutting the four corners at 45 degrees. */
+    /** Renders a flat-color chamfered rectangle. */
     private void fillChamfered(GuiGraphics guiGraphics, int x, int y, int w, int h, int chamfer, int colour) {
         int c = Math.min(chamfer, h / 2);
         guiGraphics.fill(x, y + c, x + w, y + h - c, colour);
@@ -307,8 +303,7 @@ public class GraphCanvas extends AbstractWidget {
         }
     }
 
-    /** Same chamfered-octagon shape as {@link #fillChamfered}, but with a per-row lerped colour
-     *  instead of one flat colour, approximating a vertical gradient across the whole shape. */
+    /** Renders a vertical gradient chamfered rectangle. */
     private void fillChamferedGradient(GuiGraphics guiGraphics, int x, int y, int w, int h, int chamfer, int colourTop, int colourBottom) {
         int c = Math.min(chamfer, h / 2);
         for (int row = 0; row < h; row++) {

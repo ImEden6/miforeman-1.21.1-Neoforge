@@ -15,9 +15,7 @@ import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 
 /**
- * Unified toggle list of linked machines and newly-detected candidates for the auto-detect
- * review flow (Step 2). Purely presentational -- like TreePanel/DetailCard, it contains no
- * confirmation logic; ClipboardScreen owns that and decides what each callback actually does.
+ * Presentational scrollable list displaying linked machines and detected candidates for review.
  */
 public class ReviewListPanel extends AbstractWidget {
     public record ReviewRow(BlockPos pos, ResourceLocation machineId, boolean linked, boolean rejected,

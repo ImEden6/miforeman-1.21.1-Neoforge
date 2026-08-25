@@ -21,7 +21,6 @@ import aztech.modern_industrialization.machines.components.CrafterComponent;
 import com.mervyn.miforeman.goal.ServerMonitoringManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.GlobalPos;
-import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -88,6 +87,7 @@ public class ForemanGameTests {
                 new com.mervyn.miforeman.goal.ClipboardUiState(1, 12.5, -3.0, 2.0f, false, false, true, true)
         );
 
+        @SuppressWarnings("deprecation")
         var buf = new net.minecraft.network.RegistryFriendlyByteBuf(io.netty.buffer.Unpooled.buffer(), level.registryAccess());
         ProductionGoal.STREAM_CODEC.encode(buf, goal);
         ProductionGoal decoded = ProductionGoal.STREAM_CODEC.decode(buf);
@@ -371,21 +371,8 @@ public class ForemanGameTests {
     }
 
     /**
-     * Checks that {@code RecipeGraphTraverser} never produces two edges for the same (from,to)
-     * pair. {@code Map<EdgeKey,GraphEdge>} guarantees this structurally now, fixing the old
-     * {@code List.contains}-based dedup, which compared full record equality including
-     * {@code rate}, so the same pair could appear twice with different partial rates (see the
-     * two-phase-rewrite comment on {@code computeRecipeGraph}). This test checks the real
-     * quantum_upgrade graph for duplicate pairs, then pins its node and edge counts as a
-     * regression snapshot. A reversion back to append-without-merge would inflate
-     * {@code edges.size()} the moment any resourceId is demanded via more than one path.
-     * <p>
-     * It doesn't exercise the multi-output-recipe-reuse case directly: a MACHINE node chosen as
-     * producer for two or more independently-demanded resourceIds, like a Distillation Tower's two
-     * outputs (see {@code finalizeResourceNode}'s doc comment). Quantum_upgrade's real recipe tree
-     * doesn't contain one. I confirmed this by grouping edges by a MACHINE-typed {@code from} and
-     * checking for more than one distinct {@code to} per machine, and found none. So the
-     * sum-not-overwrite behavior that case is meant to fix stays untested against real recipe data.
+     * Verifies that {@code RecipeGraphTraverser} produces deduplicated edges per (from, to) pair.
+     * Validates node and edge counts against a regression snapshot of the quantum_upgrade graph.
      */
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testRecipeGraphEdgesAreDeduped(GameTestHelper helper) {
@@ -419,19 +406,8 @@ public class ForemanGameTests {
     }
 
     /**
-     * Checks {@code RecipeGraphNode.ambiguityOwnerId} -- the resourceId a node's
-     * {@code ambiguityOptions}/{@code selectedAmbiguity} actually describe, added so
-     * {@code DetailCard}'s cycle-button click handler can target the right resourceId instead of
-     * guessing one from {@code outputs.get(0)} (see {@code finalizeResourceNode}'s doc comment).
-     * For a resource node (RAW/INTERMEDIATE/TARGET) the owner is always its own id. For a MACHINE
-     * node it must be one of the resourceIds that node actually produces (one of its output edges'
-     * {@code to()}), never null when the node has ambiguity options, and never a resourceId the
-     * node doesn't produce at all.
-     * <p>
-     * Like {@code testRecipeGraphEdgesAreDeduped}, this can't exercise the multi-output-recipe
-     * case (a MACHINE node reused across more than one demanded resourceId) against real data --
-     * quantum_upgrade's tree doesn't contain one -- so it only pins the invariant that must hold
-     * regardless of how many resourceIds a MACHINE node ends up shared across.
+     * Verifies that {@code RecipeGraphNode.ambiguityOwnerId} consistently identifies the resource ID
+     * describing a node's ambiguity options.
      */
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testAmbiguityOwnerIdIsConsistent(GameTestHelper helper) {

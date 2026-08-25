@@ -9,9 +9,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 
 /**
- * A {@link Button} skinned with the clipboard's chamfered-leather texture instead of vanilla's
- * sprite background, via the same {@link NineSliceTexture} engine {@code ClipboardChrome} uses
- * for the main panel. clipboard_button.png was generated 9-slice-safe specifically for this.
+ * Custom styled {@link Button} rendered with a 9-slice clipboard texture.
  */
 public class ClipboardButton extends Button {
     private static final ResourceLocation TEX_NORMAL = ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "textures/gui/clipboard_button.png");

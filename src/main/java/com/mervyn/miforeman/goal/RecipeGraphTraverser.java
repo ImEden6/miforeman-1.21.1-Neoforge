@@ -212,21 +212,11 @@ public final class RecipeGraphTraverser {
     }
 
     /**
-     * Indexes every loaded {@link MachineRecipe} by its item/fluid outputs, regardless of which
-     * {@code RecipeType} it was registered under. This deliberately avoids MI's own
-     * {@code MIMachineRecipeTypes.getRecipeTypes()} list, since that list only contains MI's
-     * built-in types plus whatever addons manage to splice into it themselves (e.g. via reflection
-     * hacks); scanning every recipe the vanilla {@link RecipeManager} actually loaded picks up
-     * addon-defined machine recipe types too.
+     * Indexes loaded {@link MachineRecipe} instances by output item and fluid. Scans the vanilla
+     * {@link RecipeManager} directly to include addon-defined machine recipe types.
      * <p>
-     * Each output's candidate list is deduplicated by recipe id (the same {@link RecipeHolder} can
-     * otherwise appear twice -- MI registers some recipes, e.g. macerator "bonus" outputs, under more
-     * than one {@code RecipeType}) and sorted by id. Sorting matters beyond cosmetics: when a
-     * resourceId has more than one producing recipe and the player hasn't picked one,
-     * {@code candidates.get(0)} silently becomes the default -- leaving that order dependent on
-     * {@link RecipeManager}'s internal iteration would make the "default" recipe (and everything
-     * computed from it: machine counts, raw input rates) an accident of registration/iteration
-     * order, liable to change on an unrelated recipe-pack or Minecraft-version update.
+     * Output candidate lists are deduplicated by recipe ID and sorted by ID.
+     * Deterministic sorting ensures default recipe selection stays consistent across game loads.
      */
     private static void indexMachineRecipes(
             RecipeManager recipeManager,
@@ -271,10 +261,9 @@ public final class RecipeGraphTraverser {
     }
 
     /**
-     * Groups every loaded {@link MachineRecipe} by its {@code RecipeType}, again scanning the
-     * vanilla {@link RecipeManager} directly rather than MI's {@code MIMachineRecipeTypes} list so
-     * addon-defined machine recipe types (e.g. Extended Industrialization) are included too. Used
-     * by the recipe-dump command and its GameTest counterpart.
+     * Groups loaded {@link MachineRecipe} instances by {@code RecipeType}. Scans
+     * {@link RecipeManager} directly to include addon-defined machine recipe types. Used by the
+     * recipe-dump command and game tests.
      */
     public static Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> groupMachineRecipesByType(RecipeManager recipeManager) {
         Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> byType = new LinkedHashMap<>();
@@ -350,15 +339,13 @@ public final class RecipeGraphTraverser {
 
     private record EdgeKey(ResourceLocation from, ResourceLocation to) {}
 
-    /** One recipe input, normalized to "per 1.0 unit/s of the owning {@link StructuralNode}'s
-     *  resourceId" -- the same per-unit convention {@link #getSubPlan} already uses. */
+    /** One recipe input normalized per 1.0 unit/s of the owning {@link StructuralNode} resource ID. */
     private record StructInputEdge(ResourceLocation childId, double ratePerUnit) {}
 
     /**
-     * The rate-independent half of what {@code buildGraph} used to compute inline: which recipe
-     * (if any) is chosen to produce a resourceId, and its input list normalized per-unit. Resolved
-     * and memoized exactly once per resourceId in {@link #resolveStructure}, then reused by however
-     * many demand paths need it in {@link #propagateRates}.
+     * Rate-independent graph structure for a resource ID, including the chosen recipe and
+     * per-unit normalized inputs. Resolved and memoized in {@link #resolveStructure}, then
+     * reused across demand paths in {@link #propagateRates}.
      */
     private record StructuralNode(
             ResourceLocation resourceId,
@@ -499,10 +486,9 @@ public final class RecipeGraphTraverser {
         return new StructuralNode(resourceId, null, null, null, List.of(), null, 0.0, List.of(), List.of());
     }
 
-    /** Kahn's-algorithm rate propagation over the structural DAG {@link #resolveStructure} built --
-     *  a resourceId is only finalized (its {@link RecipeGraphNode}s and edges materialized) once
-     *  every structural parent that demands it has contributed, so its total rate/depth are correct
-     *  the first and only time it's touched. */
+    /** Propagates rates across the structural DAG built by {@link #resolveStructure} using Kahn's algorithm.
+     *  Nodes and edges materialize once all demanding parents contribute, computing rate and depth
+     *  in a single pass. */
     private static void propagateRates(
             ResourceLocation rootId, double rootRate, int rootDepth,
             Map<ResourceLocation, StructuralNode> structNodes,

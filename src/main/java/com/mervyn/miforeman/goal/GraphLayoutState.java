@@ -13,14 +13,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Persisted GraphCanvas node-arrangement state: dragged node positions plus a
- * capped undo/redo history of moves. Lives on {@link ProductionGoal} so it
- * survives save/load and syncs client<->server the same way as the rest of
- * the goal (whole-object sync via GoalUpdatePayload, not delta).
- *
- * The redo stack never needs its own cap: entries only move into it by being
- * popped off the undo stack (itself capped at MAX_HISTORY), so its size can
- * never exceed MAX_HISTORY either.
+ * Persisted layout state for graph nodes, including node positions and undo/redo move history.
+ * Saved on {@link ProductionGoal} and synchronized between client and server.
  */
 public record GraphLayoutState(
         Map<ResourceLocation, NodePosition> nodePositions,
@@ -30,7 +24,7 @@ public record GraphLayoutState(
     public static final int MAX_HISTORY = 20;
     public static final GraphLayoutState EMPTY = new GraphLayoutState(Map.of(), List.of(), List.of());
 
-    /** Records a drag: updates the position, pushes the move onto undo (capped), clears redo. */
+    /** Records a node drag operation, updating position and move history. */
     public GraphLayoutState withMove(ResourceLocation nodeId, NodePosition from, NodePosition to) {
         Map<ResourceLocation, NodePosition> positions = new HashMap<>(nodePositions);
         positions.put(nodeId, to);
@@ -78,13 +72,7 @@ public record GraphLayoutState(
         return new GraphLayoutState(positions, undo, redo);
     }
 
-    /**
-     * Prunes positions and history down to the given graph's current node set. Called every
-     * time {@code computeRecipeGraph()} runs so persisted state never accumulates entries for
-     * nodes a replan or ambiguity swap has since removed. An undo/redo entry referencing a
-     * vanished node is dropped outright rather than kept as a resurrectable orphan — once a
-     * node is gone, "undoing" its move has nothing left to restore it onto.
-     */
+    /** Prunes positions and move history to match nodes in the given graph. */
     public GraphLayoutState prunedTo(RecipeGraph graph) {
         if (graph == null) {
             return EMPTY;

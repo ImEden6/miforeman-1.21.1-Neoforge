@@ -15,16 +15,8 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
- * In-game editor for {@link ColourPalette}. Only the palette's 5 keys are editable here; see
- * ColourPalette's own javadoc for why the other ~45 COLOUR_* constants elsewhere aren't wired in.
- * Modeled on {@link ReviewMachinesScreen}: a plain vanilla Screen with a backTarget to return to,
- * the same clear-and-repopulate rebuild() idiom, the same ClipboardChrome background and sizing.
- *
- * <p>The editor column offers RGB/HSV/HSL slider modes, cycled via the mode button, on top of the
- * raw hex box. It's loosely modeled on references/color-picker (cloned locally, MIT, research
- * only; see its CLAUDE.md), scaled down to what a 5-key palette needs. No HWB, OKLCH, or
- * wide-gamut support, just three patterns worth keeping: per-mode slider config, gradient slider
- * backgrounds, and hue preservation (see {@link #cachedHue}).
+ * In-game color picker screen for customizing {@link ColourPalette} keys.
+ * Supports RGB, HSV, and HSL slider modes alongside raw hex color inputs.
  */
 public class ColourPickerScreen extends Screen {
     private static final int MIN_GUI_WIDTH = 440;
@@ -69,11 +61,7 @@ public class ColourPickerScreen extends Screen {
     private final Screen backTarget;
     private ColourKey selectedKey = ColourKey.values()[0];
     private ColourMode mode = ColourMode.RGB;
-    /** Last non-degenerate hue seen for the colour currently being edited. HSV/HSL math gives a
-     *  meaningless hue (usually 0) once saturation or value/lightness hits an extreme, which would
-     *  otherwise snap hue to red every time saturation gets dragged down and back up. Reset
-     *  explicitly on key select and on reset (see resetCachedHueForCurrentColour()) so it doesn't
-     *  leak between palette keys or survive past a reset. */
+    /** Cached hue value for HSV and HSL calculations to preserve hue when saturation or lightness is zero. */
     private float cachedHue;
     private int channelA, channelB, channelC;
     private ChannelSlider sliderA, sliderB, sliderC;
@@ -214,7 +202,7 @@ public class ColourPickerScreen extends Screen {
         this.addRenderableWidget(done);
     }
 
-    /** Combines the 3 current-mode channel values into an opaque (alpha ignored) packed RGB int. */
+    /** Combines channel values into a packed RGB integer. */
     private int rgbForChannels(int a, int b, int c) {
         int[] rgb = switch (mode) {
             case RGB -> new int[]{a, b, c};
@@ -224,9 +212,7 @@ public class ColourPickerScreen extends Screen {
         return (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
     }
 
-    /** Derives this mode's 3 channel ints from a stored ARGB colour, applying hue preservation
-     *  for HSV/HSL: falls back to {@link #cachedHue} when the source is achromatic, otherwise
-     *  updates it. See the field's own javadoc for why. */
+    /** Converts an ARGB color into channel values for the active mode. */
     private int[] channelsForMode(ColourMode m, int argb) {
         int[] rgb = ColourMath.rgbFromArgb(argb);
         return switch (m) {
@@ -253,9 +239,7 @@ public class ColourPickerScreen extends Screen {
         cachedHue = ColourMath.hsvFromRgb(rgb[0], rgb[1], rgb[2])[0];
     }
 
-    /** Called on every slider drag tick. Directly setting a hue slider (channel A in HSV/HSL)
-     *  always updates {@link #cachedHue}, even if the colour is currently achromatic: the user
-     *  just chose a hue, so it gets remembered regardless of what S/V happen to be. */
+    /** Commits channel values from active sliders to the selected palette key. */
     private void commitChannels() {
         int rgb = rgbForChannels(channelA, channelB, channelC);
         if (mode != ColourMode.RGB) {

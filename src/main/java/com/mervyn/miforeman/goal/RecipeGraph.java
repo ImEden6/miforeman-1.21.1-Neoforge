@@ -21,8 +21,7 @@ public record RecipeGraph(
     }
 
     /**
-     * Traverses the graph structure to build an ordered list of visible nodes
-     * based on their expanded state.
+     * Flattens visible nodes into an ordered list based on expanded state.
      */
     public List<RecipeGraphNode> flatten() {
         List<RecipeGraphNode> list = new ArrayList<>();

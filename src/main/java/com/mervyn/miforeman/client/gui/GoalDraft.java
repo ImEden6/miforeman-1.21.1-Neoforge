@@ -126,7 +126,7 @@ class GoalDraft {
         );
     }
 
-    /** Same emptiness/parse checks {@code save()} and {@code syncGoal()} both inlined before. */
+    /** Returns true if goal name and target ID inputs are non-empty and valid. */
     boolean isReadyToSave() {
         return this.errorMessage == null
                 && this.goalName != null && !this.goalName.isEmpty()

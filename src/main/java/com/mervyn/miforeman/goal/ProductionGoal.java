@@ -72,7 +72,7 @@ public record ProductionGoal(
         return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState);
     }
 
-    /** Adds a machine to the rejected set (no-op if already present — rejectedMachines is used as a set despite the List representation, matching linkedMachines' existing convention). */
+    /** Adds a machine to the rejected set. No-op if already present. */
     public ProductionGoal withRejectedMachine(BlockPos pos) {
         if (rejectedMachines.contains(pos)) {
             return this;
@@ -82,7 +82,7 @@ public record ProductionGoal(
         return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, updated, uiState);
     }
 
-    /** Removes a machine from the rejected set (un-reject). No-op if not present. */
+    /** Removes a machine from the rejected set. No-op if not present. */
     public ProductionGoal withoutRejectedMachine(BlockPos pos) {
         if (!rejectedMachines.contains(pos)) {
             return this;

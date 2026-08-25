@@ -45,8 +45,8 @@ public class ServerMonitoringManager {
         public final BlockPos pos;
         public String status = "RED";
         public ResourceLocation lastRecipeId = null;
-        /** Recipe a saturating (ORANGE) machine would run once its output clears -- distinct from
-         *  lastRecipeId, which only tracks an actually in-progress craft. */
+        /** Recipe a saturating (ORANGE) machine runs once its output clears. Distinct from
+         *  lastRecipeId, which only tracks an active craft. */
         public ResourceLocation saturatedRecipeId = null;
         public long lastUsedEnergy = 0;
         public long lastRecipeEnergy = 0;
@@ -68,11 +68,11 @@ public class ServerMonitoringManager {
 
     public static final Map<GlobalPos, MachineTracker> TRACKERS = new ConcurrentHashMap<>();
 
-    /** Stale-tracker eviction cadence: 200 ticks (10s) between prunes. */
+    /** Evicts stale trackers every 200 ticks (10s). */
     private static final int PRUNE_INTERVAL_TICKS = 200;
     private static long lastPruneTick = Long.MIN_VALUE;
 
-    /** Dimension-safe map key -- bare BlockPos collides across dimensions. */
+    /** Dimension-safe map key. Bare BlockPos collides across dimensions. */
     public static GlobalPos key(ServerLevel level, BlockPos pos) {
         return GlobalPos.of(level.dimension(), pos);
     }
@@ -82,8 +82,8 @@ public class ServerMonitoringManager {
     }
 
     /**
-     * Removes trackers no longer backed by any held clipboard's linked-machines set. Unlink ->
-     * relink therefore resets that machine's energy history (fresh window) -- accepted semantics.
+     * Removes trackers not linked by any held clipboard. Unlinking and relinking
+     * resets a machine energy history window.
      */
     public static void pruneTrackers(Set<GlobalPos> activeKeys) {
         TRACKERS.keySet().removeIf(key -> !activeKeys.contains(key));
@@ -210,8 +210,8 @@ public class ServerMonitoringManager {
         return getMachinePassiveStatusDetailed(crafter, level).status();
     }
 
-    /** Same passive-status decision as {@link #getMachinePassiveStatus}, but also reports which
-     *  recipe matched when saturating (ORANGE) -- the machine would run it once its output clears. */
+    /** Evaluates passive status like {@link #getMachinePassiveStatus}, and returns the matching
+     *  recipe ID when saturating (ORANGE). */
     public static PassiveStatus getMachinePassiveStatusDetailed(CrafterComponent crafter, ServerLevel level) {
         if (crafter.hasActiveRecipe()) {
             return new PassiveStatus("GREEN", null);

@@ -7,9 +7,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
 /**
- * Read access to CrafterComponent's private active recipe holder, replacing the previous
- * java.lang.reflect.Field approach. A renamed field in an MI update now fails loudly at mixin
- * apply time ("required": true) instead of silently returning null from every reflective get.
+ * Accessor interface providing read access to {@link CrafterComponent#activeRecipe}.
  */
 @Mixin(CrafterComponent.class)
 public interface CrafterComponentAccessor {

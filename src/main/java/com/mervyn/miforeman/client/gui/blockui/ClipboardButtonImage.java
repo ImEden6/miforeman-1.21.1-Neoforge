@@ -7,12 +7,7 @@ import com.mervyn.miforeman.client.gui.NineSliceTexture;
 import net.minecraft.resources.ResourceLocation;
 
 /**
- * A {@link ButtonImage} that bypasses BlockUI's own background renderer, which stretches
- * {@code setImage(...)} non-uniformly to fill the button (source aspect ratio is not preserved
- * per-axis), badly distorting clipboard_button.png's chamfered corners on the wide/short buttons
- * this window uses. {@link BOGuiGraphics} extends vanilla {@code GuiGraphics} directly, so the
- * same {@link NineSliceTexture} blitter {@code ClipboardButton} (the vanilla-Screen equivalent of
- * this widget) uses works here unchanged.
+ * BlockUI button widget rendered with a 9-slice clipboard texture.
  */
 public class ClipboardButtonImage extends ButtonImage {
     private static final ResourceLocation TEX_NORMAL = ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "textures/gui/clipboard_button.png");

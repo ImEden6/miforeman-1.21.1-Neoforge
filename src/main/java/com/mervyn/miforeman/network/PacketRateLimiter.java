@@ -13,10 +13,7 @@ import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * Per-player cooldown for packet handlers that trigger expensive main-thread work
- * (recipe plan recompute, chunk-radius machine scan). An internal safety net against a
- * modified client spamming a packet to cause tick lag -- not a user-facing tunable, so each
- * handler just owns its own instance with a hardcoded interval.
+ * Rate limiter for packet handlers that run main-thread operations.
  */
 public final class PacketRateLimiter {
     // Every instance registers itself here, so Cleanup (below) can evict a disconnected player's
@@ -32,7 +29,7 @@ public final class PacketRateLimiter {
         ALL.add(this);
     }
 
-    /** Returns true if this call may proceed (and records it); false if it arrived too soon. */
+    /** Returns true and records execution if enough ticks elapsed since the last call. */
     public boolean tryAcquire(UUID playerId, long currentGameTime) {
         Long last = lastProcessedTick.get(playerId);
         if (last != null && currentGameTime - last < minIntervalTicks) {

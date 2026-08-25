@@ -9,10 +9,7 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
 /**
- * Server-to-client only. Sent after {@code ForemanClipboardItem.useOn()} links/unlinks a machine
- * by shift-right-clicking it in the world -- that path writes straight to the item's data
- * component server-side and has no other way to tell the client's WorldHighlightRenderer a
- * position's linked state changed.
+ * Server-to-client payload syncing a machine link state update to the client.
  */
 public record MachineLinkSyncPayload(BlockPos pos, boolean linked) implements CustomPacketPayload {
     public static final Type<MachineLinkSyncPayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "machine_link_sync"));

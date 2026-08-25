@@ -9,16 +9,7 @@ import org.lwjgl.opengl.GL11;
 import java.util.OptionalDouble;
 
 /**
- * Custom {@link RenderType}s for {@link WorldHighlightRenderer}'s "ghost through blocks" effect:
- * each shape is drawn twice, once into the *_OUTSIDE_BLOCKS type (normal depth test -- only
- * visible where actually unobstructed) and once into the *_INSIDE_BLOCKS type (depth test flipped
- * to GL_GREATER -- draws only the currently-occluded portion, meant to be used at reduced
- * colour/alpha). This is the same dual-pass technique used by Minecolonies for its own see-through
- * overlays (references/minecolonies-1.21.1/.../worldevent/RenderTypes.java), confirmed against
- * the decompiled vanilla RenderType.LINES/DEBUG_FILLED_BOX composite states. Unlike Minecolonies'
- * version (which draws its "lines" as extruded quads via an external library), LINES_* here keep
- * vanilla's real POSITION_COLOR_NORMAL/LINES format so {@link net.minecraft.client.renderer.LevelRenderer#renderLineBox}
- * can write into them unmodified.
+ * Custom {@link RenderType} instances for rendering see-through in-world highlight overlays.
  */
 public final class MIForemanRenderTypes {
     private static final RenderStateShard.DepthTestStateShard GREATER_DEPTH_TEST =
@@ -67,6 +58,7 @@ public final class MIForemanRenderTypes {
             true,
             RenderType.CompositeState.builder()
                     .setShaderState(RenderStateShard.POSITION_COLOR_SHADER)
+                    .setLayeringState(RenderStateShard.VIEW_OFFSET_Z_LAYERING)
                     .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
                     .setDepthTestState(RenderStateShard.LEQUAL_DEPTH_TEST)
                     .setOutputState(RenderStateShard.MAIN_TARGET)
@@ -84,6 +76,7 @@ public final class MIForemanRenderTypes {
             true,
             RenderType.CompositeState.builder()
                     .setShaderState(RenderStateShard.POSITION_COLOR_SHADER)
+                    .setLayeringState(RenderStateShard.VIEW_OFFSET_Z_LAYERING)
                     .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
                     .setDepthTestState(GREATER_DEPTH_TEST)
                     .setOutputState(RenderStateShard.MAIN_TARGET)

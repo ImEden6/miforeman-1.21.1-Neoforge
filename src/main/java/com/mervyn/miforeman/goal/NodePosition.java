@@ -7,9 +7,7 @@ import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 
 /**
- * A node's dragged position in GraphCanvas space — independent of the current
- * screen size, pan offset, or zoom level, so it stays stable across window
- * resizes and re-renders.
+ * Position coordinates of a node in canvas space.
  */
 public record NodePosition(int x, int y) {
     public static final Codec<NodePosition> CODEC = RecordCodecBuilder.create(instance -> instance.group(

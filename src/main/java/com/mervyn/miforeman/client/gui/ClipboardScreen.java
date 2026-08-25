@@ -25,7 +25,6 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.core.BlockPos;
 
 import java.util.*;
 
@@ -86,16 +85,10 @@ public class ClipboardScreen extends Screen {
     private boolean isMinimized;
     private Button toggleModeButton;
 
-    /** The goal as it existed on the item when this screen opened. Only used by {@link #init()}
-     *  to pick the initial step, and never updated after construction. */
+    /** Goal state at screen opening. Used by {@link #init()} to determine initial wizard step. */
     private final ProductionGoal openedGoal;
 
-    /** The last goal this screen pushed to the server, via {@link #syncGoal()} or {@link #save()}.
-     *  Starts as {@code openedGoal} if neither has fired yet. {@link #removed()} builds the
-     *  UI-state sliver on top of this, not {@code openedGoal}, so a session that included a real
-     *  save doesn't get overwritten back to the open-time snapshot. Draft edits to the rest of the
-     *  goal (name/target/rate/plan) elsewhere in the screen still don't leak through on close,
-     *  because this field only changes when a GoalUpdatePayload is actually sent. */
+    /** The most recent goal state synchronized to the server. */
     private ProductionGoal lastSyncedGoal;
 
     public ClipboardScreen(ItemStack stack) {
@@ -193,23 +186,12 @@ public class ClipboardScreen extends Screen {
         }
     }
 
-    /**
-     * BlockUI trial for this step (see .scratch/blockui-define-goal-trial/map.md) --
-     * pushed as a layer on top of this still-alive Screen rather than built as widgets here.
-     * ClipboardScreen doesn't receive input again until the layer is popped (Cancel/Next),
-     * since Minecraft only routes input to the current top-of-stack screen.
-     */
+    /** Opens the goal definition window overlay. */
     private void openDefineGoalWindow() {
         openDefineGoalWindow(null);
     }
 
-    /**
-     * Reopens the window with a server/traversal-side error already showing -- used when
-     * {@link #computePlan()} fails for a reason {@link GoalFormValidation} can't catch client-side
-     * (e.g. the target item exists but has no reachable recipe path). Mirrors the vanilla form's old
-     * recovery path: the resubmitted values already pass {@link GoalFormValidation}, so Next stays
-     * enabled and the player can just press it again (or edit a field) to retry.
-     */
+    /** Reopens the goal definition window overlay displaying an initial error message. */
     private void openDefineGoalWindow(String initialError) {
         DefineGoalWindow window = new DefineGoalWindow(
                 guiWidth(), guiHeight(),

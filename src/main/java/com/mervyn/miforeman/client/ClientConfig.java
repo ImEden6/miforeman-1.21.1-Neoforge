@@ -3,10 +3,7 @@ package com.mervyn.miforeman.client;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 /**
- * Client-only config. Unlike {@link com.mervyn.miforeman.Config} (COMMON, loaded on both client
- * and dedicated server), this never exists on a dedicated server and is never synced. Holds the
- * player-adjustable colours (see {@code ColourPalette}/{@code ColourPickerScreen}), which are a
- * rendering preference and don't belong in the common/server-shared config.
+ * Client-only configuration for highlight and UI colors.
  */
 public class ClientConfig {
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();

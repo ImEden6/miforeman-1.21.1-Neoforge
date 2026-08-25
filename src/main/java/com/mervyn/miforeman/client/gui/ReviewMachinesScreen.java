@@ -13,13 +13,7 @@ import net.minecraft.network.chat.Component;
 import java.util.List;
 
 /**
- * Full-window scanned/linked machine review list, opened from {@link ClipboardScreen}'s Monitor
- * step so the list gets nearly the whole window instead of the small leftover strip it used to be
- * squeezed into. Reads/mutates the {@link MonitoringState} directly instead of reaching through a
- * parent screen; every mutation here delegates to the state's existing apply* methods (still
- * running {@code onChange}, which triggers syncGoal() on the real ClipboardScreen) and then
- * re-renders itself via {@link #rebuild()}, the same clear-and-repopulate idiom
- * {@code ClipboardScreen.rebuildStep()} already uses.
+ * Full-window screen for reviewing scanned and linked machine lists.
  */
 public class ReviewMachinesScreen extends Screen {
     private static final int MIN_GUI_WIDTH = 440;

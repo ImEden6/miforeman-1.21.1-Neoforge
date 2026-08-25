@@ -7,10 +7,7 @@ import net.minecraft.resources.ResourceLocation;
 import java.util.Optional;
 
 /**
- * Define Goal form validation rules, extracted out of {@link ClipboardScreen#validateInputs()} so
- * both the vanilla screen and {@link com.mervyn.miforeman.client.gui.blockui.DefineGoalWindow} call
- * one copy of the logic instead of duplicating it (see
- * .scratch/blockui-define-goal-trial/issues/04-state-handoff-contract.md).
+ * Validation utilities for goal definition form inputs.
  */
 public final class GoalFormValidation {
     private GoalFormValidation() {

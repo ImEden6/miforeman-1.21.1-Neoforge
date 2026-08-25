@@ -1,11 +1,7 @@
 package com.mervyn.miforeman.client.gui;
 
 /**
- * RGB/HSV/HSL conversion math for {@link ColourPickerScreen}'s sliders. Kept separate from
- * {@link ColourPalette}, which owns persistence and defaults; this is just numeric conversion,
- * testable on its own. Standard formulas. See
- * references/color-picker/src/utils/colorConversion.ts for the larger OKLCH/HWB-aware original
- * this was scoped down from.
+ * Color space conversion utilities between RGB, HSV, and HSL representations.
  */
 public final class ColourMath {
     private ColourMath() {
@@ -15,7 +11,7 @@ public final class ColourMath {
         return new int[]{(argb >> 16) & 0xFF, (argb >> 8) & 0xFF, argb & 0xFF};
     }
 
-    /** @return {h (0-360), s (0-100), v (0-100)} */
+    /** Converts RGB values to HSV array (H: 0-360, S: 0-100, V: 0-100). */
     public static float[] hsvFromRgb(int r, int g, int b) {
         float rf = r / 255f, gf = g / 255f, bf = b / 255f;
         float max = Math.max(rf, Math.max(gf, bf));
@@ -36,7 +32,7 @@ public final class ColourMath {
         return rgbFromChroma(h, c, x, m);
     }
 
-    /** @return {h (0-360), s (0-100), l (0-100)} */
+    /** Converts RGB values to HSL array (H: 0-360, S: 0-100, L: 0-100). */
     public static float[] hslFromRgb(int r, int g, int b) {
         float rf = r / 255f, gf = g / 255f, bf = b / 255f;
         float max = Math.max(rf, Math.max(gf, bf));

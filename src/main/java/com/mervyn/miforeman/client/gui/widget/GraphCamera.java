@@ -6,10 +6,7 @@ import net.minecraft.util.Mth;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Pan/zoom/drag interaction state and math for {@link GraphCanvas} -- split out (see
- * .claude/plans/gleaming-mapping-waffle.md) since it shares almost no fields with the
- * layout/rendering half of what used to be one class. Framework-free on purpose: takes the
- * widget's screen origin as parameters rather than holding a widget reference.
+ * Camera panning, zoom, and node dragging state for {@link GraphCanvas}.
  */
 class GraphCamera {
     private double panX, panY;
@@ -66,8 +63,7 @@ class GraphCamera {
         liveDragPos = hitNodePos;
     }
 
-    /** Returns true iff this drag panned the camera (so the caller should fire its
-     *  camera-change callback) rather than moving a node in place. */
+    /** Returns true if this drag operation panned the camera instead of moving a node. */
     boolean onDrag(boolean dragEnabled, double dragX, double dragY) {
         dragAccumPixels += Math.abs(dragX) + Math.abs(dragY);
         if (dragEnabled && draggingNodeId != null && liveDragPos != null) {

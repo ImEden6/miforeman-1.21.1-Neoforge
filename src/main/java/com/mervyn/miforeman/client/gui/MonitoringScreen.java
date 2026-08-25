@@ -17,13 +17,7 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Full-window live machine status list, opened from ClipboardScreen's Monitor step so every
- * machine gets a row instead of the old hardcoded top-3 summary. Reads/mutates the
- * {@link MonitoringState} directly instead of reaching through a parent screen --
- * {@code state.liveData} stays the single source of truth. Keeps polling
- * (RequestMonitoringUpdatePayload) while it's the active screen and refreshes its list whenever a
- * response arrives (see ClientAccess.handleLiveMonitoring); polling naturally hands back to
- * ClipboardScreen the moment the player leaves, since only the active Screen gets ticked.
+ * Full-window screen displaying live machine status data and monitoring metrics.
  */
 public class MonitoringScreen extends Screen {
     private static final int MIN_GUI_WIDTH = 440;
@@ -91,9 +85,7 @@ public class MonitoringScreen extends Screen {
         new RequestMonitoringUpdatePayload().sendToServer();
     }
 
-    /** Independent of the general Highlights on/off toggle -- clicking Locate on the current
-     *  selection clears it, otherwise it becomes the new selection. Either way it's visible
-     *  regardless of whether the linked/candidate highlights are on. */
+    /** Toggles locating a machine in-world when clicked. */
     private void handleLocate(MonitoringListPanel.MonitoringRow row) {
         BlockPos pos = row.machine().pos();
         if (pos.equals(WorldHighlightRenderer.getSelected())) {

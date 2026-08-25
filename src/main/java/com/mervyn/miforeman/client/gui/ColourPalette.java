@@ -7,10 +7,7 @@ import java.util.EnumMap;
 import java.util.Map;
 
 /**
- * Config-backed palette for the colours players can customize in-game: the in-world highlight
- * boxes and the monitor list's Locate/Located buttons. See {@link ColourPickerScreen} for the
- * editor. Everything else in the GUI stays a hardcoded {@code COLOUR_*} constant. Extend
- * {@link ColourKey} if more things earn colour-coding later.
+ * Configuration-backed palette for customizable UI and highlight colors.
  */
 public final class ColourPalette {
     public enum ColourKey {
@@ -41,7 +38,7 @@ public final class ColourPalette {
     private ColourPalette() {
     }
 
-    /** Current effective ARGB colour for the given key: the config override if set, else the default. */
+    /** Returns the effective ARGB color for a key using config overrides when present. */
     public static int get(ColourKey key) {
         String hex = CONFIG.get(key).get();
         if (hex == null || hex.isBlank()) {
@@ -54,11 +51,7 @@ public final class ColourPalette {
         }
     }
 
-    /**
-     * Unpacks {@link #get(ColourKey)} into 0-1 floats for world rendering, which wants separate
-     * r/g/b instead of one packed ARGB int. Alpha is ignored; {@link com.mervyn.miforeman.client.WorldHighlightRenderer}
-     * applies its own fill/outline alpha on top.
-     */
+    /** Unpacks the ARGB color for a key into normalized RGB float values. */
     public static float[] getRgbFloats(ColourKey key) {
         int argb = get(key);
         float r = ((argb >> 16) & 0xFF) / 255.0f;
@@ -71,17 +64,12 @@ public final class ColourPalette {
         return String.format("#%08X", argb);
     }
 
-    /**
-     * Updates an override in memory only. Per {@link ModConfigSpec.ConfigValue#set}'s own
-     * javadoc, this does not write the config file. Used for live preview while the player is
-     * still typing in {@link ColourPickerScreen}'s hex box. Call {@link #persist()} once they're
-     * done (Done/close, or a reset) instead of writing the whole config file on every keystroke.
-     */
+    /** Updates a color key override in memory. */
     public static void set(ColourKey key, String hex) {
         CONFIG.get(key).set(hex == null ? "" : hex);
     }
 
-    /** Writes every current in-memory value to the config file. */
+    /** Persists in-memory palette overrides to the client config file. */
     public static void persist() {
         ClientConfig.SPEC.save();
     }

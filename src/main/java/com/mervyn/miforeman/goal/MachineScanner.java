@@ -19,20 +19,14 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * One-shot chunk-radius scan for machines matching a plan's recipes ("Recipe Match" auto-detect
- * strategy). Distinct from {@link ServerMonitoringManager}, which owns tick-driven tracker state
- * for a known list of positions -- this is a query, not persistent state. Reuses
- * ServerMonitoringManager's existing reflection helpers rather than re-implementing them.
+ * Scans a chunk radius for machines that match recipe IDs in a factory plan.
+ * Query utility that reuses {@link ServerMonitoringManager} helpers.
  */
 public class MachineScanner {
     public record ScanCandidate(BlockPos pos, ResourceLocation machineId, @Nullable ResourceLocation recipeId) {}
 
     /**
-     * Every MACHINE-type RecipeGraphNode's id IS the recipe's ResourceLocation (see
-     * RecipeGraphTraverser.buildGraph, where `recipeId = chosenHolder.id()` is used as the
-     * node map key for machine nodes). FactoryPlan's own machines()/rawInputs()/
-     * intermediateFlows() are NOT recipe-id keyed (machine-type-id / resource-id respectively) --
-     * don't use those here.
+     * Extracts recipe IDs from all machine nodes in the graph.
      */
     public static Set<ResourceLocation> buildRecipeIndex(RecipeGraph graph) {
         Set<ResourceLocation> index = new HashSet<>();
@@ -44,9 +38,7 @@ public class MachineScanner {
         return index;
     }
 
-    /** Whether {@code pos} falls within the same square chunk-grid bound {@link #scan} enumerates
-     *  (a chunk-grid check, not a Euclidean/block-radius one) -- used to validate positions a
-     *  client claims came from a legitimate scan without re-running the whole scan. */
+    /** Returns true if {@code pos} lies within the square chunk grid bounded by {@code radiusChunks}. */
     public static boolean isWithinScanRadius(BlockPos center, BlockPos pos, int radiusChunks) {
         ChunkPos centerChunk = new ChunkPos(center);
         ChunkPos posChunk = new ChunkPos(pos);
