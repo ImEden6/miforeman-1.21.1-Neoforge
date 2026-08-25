@@ -66,7 +66,7 @@ class GoalDraft {
         draft.targetIdStr = "modern_industrialization:quantum_upgrade";
         draft.rate = 1.0;
         draft.perHour = false;
-        draft.threshold = 0.8;
+        draft.threshold = ProductionGoal.getDefaultThreshold();
         return draft;
     }
 

@@ -107,6 +107,14 @@ public class DetailCard extends AbstractWidget {
             guiGraphics.drawString(fontSource.font, targetText, getX() + 10, currentY, COLOUR_TEXT, false);
             currentY += 15;
 
+            // Total Power Demand
+            long totalPower = plan.totalPowerDemandEu();
+            if (totalPower > 0) {
+                String powerLine = String.format("Total Power: %d EU/t", totalPower);
+                guiGraphics.drawString(fontSource.font, powerLine, getX() + 6, currentY, COLOUR_AMBER, false);
+                currentY += 14;
+            }
+
             // Machines Needed
             guiGraphics.drawString(fontSource.font, "Machines Needed:", getX() + 6, currentY, COLOUR_GREEN, false);
             currentY += 10;
@@ -116,7 +124,9 @@ public class DetailCard extends AbstractWidget {
                 currentY += 10;
             } else {
                 for (MachineRequirement req : machines) {
-                    String machLine = String.format(" - %.1f x %s", req.count(), DisplayFormat.formatId(req.machineId()));
+                    String machLine = req.totalEuPerTick() > 0
+                            ? String.format(" - %.1f x %s (%d EU/t)", req.count(), DisplayFormat.formatId(req.machineId()), req.totalEuPerTick())
+                            : String.format(" - %.1f x %s", req.count(), DisplayFormat.formatId(req.machineId()));
                     guiGraphics.drawString(fontSource.font, machLine, getX() + 10, currentY, COLOUR_TEXT, false);
                     currentY += 10;
                 }
@@ -154,11 +164,15 @@ public class DetailCard extends AbstractWidget {
                 guiGraphics.drawString(fontSource.font, countLine, getX() + 10, currentY + 10, COLOUR_TEXT, false);
                 currentY += 24;
 
-                // Energy / Duration if recipe details exist
+                // Energy / Duration / Power demand
                 MachineRecipe recipe = node.getRecipe();
-                if (recipe != null) {
-                    guiGraphics.drawString(fontSource.font, "Recipe Info:", getX() + 6, currentY, COLOUR_LABEL, false);
-                    String infoLine = String.format(" Duration: %.1fs | Eu: %d", recipe.duration / 20.0, recipe.eu);
+                long baseEu = node.getBaseEuPerTick() > 0 ? node.getBaseEuPerTick() : (recipe != null ? recipe.eu : 0);
+                long totalEu = node.getTotalEuPerTick() > 0 ? node.getTotalEuPerTick() : (long) Math.ceil(node.getMachineCount() * baseEu);
+                if (recipe != null || totalEu > 0) {
+                    guiGraphics.drawString(fontSource.font, "Power & Duration:", getX() + 6, currentY, COLOUR_LABEL, false);
+                    String infoLine = recipe != null
+                            ? String.format(" Duration: %.1fs | %d EU/t (%d total)", recipe.duration / 20.0, baseEu, totalEu)
+                            : String.format(" Power: %d EU/t (%d total)", baseEu, totalEu);
                     guiGraphics.drawString(fontSource.font, infoLine, getX() + 10, currentY + 10, COLOUR_MUTED, false);
                     currentY += 24;
                 }

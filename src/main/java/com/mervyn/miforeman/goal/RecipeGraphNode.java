@@ -24,6 +24,8 @@ public class RecipeGraphNode {
     private final List<GraphEdge> outputs = new ArrayList<>();
     private int depth;
     private boolean expanded = true;
+    private long baseEuPerTick;
+    private long totalEuPerTick;
 
     public RecipeGraphNode(ResourceLocation id, NodeType type, @Nullable ResourceLocation machineType,
                            @Nullable MachineRecipe recipe, double requiredRate, double machineCount,
@@ -66,4 +68,8 @@ public class RecipeGraphNode {
     public void setDepth(int depth) { this.depth = depth; }
     public boolean isExpanded() { return expanded; }
     public void setExpanded(boolean expanded) { this.expanded = expanded; }
+    public long getBaseEuPerTick() { return baseEuPerTick; }
+    public void setBaseEuPerTick(long baseEuPerTick) { this.baseEuPerTick = baseEuPerTick; }
+    public long getTotalEuPerTick() { return totalEuPerTick; }
+    public void setTotalEuPerTick(long totalEuPerTick) { this.totalEuPerTick = totalEuPerTick; }
 }

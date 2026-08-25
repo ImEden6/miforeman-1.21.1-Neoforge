@@ -58,19 +58,31 @@ public class ServerMonitoringManager {
 
         public void addEnergy(long tick, ResourceLocation recipeId, double energy, double totalEnergy) {
             energyEvents.addLast(new EnergyEvent(tick, recipeId, energy, totalEnergy));
-            // Events arrive in non-decreasing tick order, so trimming stale ones off the head is
-            // amortized O(1) -- a full removeIf() scan on every add is unnecessary.
-            while (!energyEvents.isEmpty() && tick - energyEvents.peekFirst().tick > 72000) {
+            int windowTicks = getMonitoringWindowTicks();
+            while (!energyEvents.isEmpty() && tick - energyEvents.peekFirst().tick > windowTicks) {
                 energyEvents.pollFirst();
             }
         }
     }
 
     public static final Map<GlobalPos, MachineTracker> TRACKERS = new ConcurrentHashMap<>();
-
-    /** Evicts stale trackers every 200 ticks (10s). */
-    private static final int PRUNE_INTERVAL_TICKS = 200;
     private static long lastPruneTick = Long.MIN_VALUE;
+
+    public static int getMonitoringWindowTicks() {
+        try {
+            return com.mervyn.miforeman.Config.MONITORING_WINDOW_TICKS.get();
+        } catch (Exception e) {
+            return 72000;
+        }
+    }
+
+    public static int getPruneIntervalTicks() {
+        try {
+            return com.mervyn.miforeman.Config.TRACKER_PRUNE_INTERVAL_TICKS.get();
+        } catch (Exception e) {
+            return 200;
+        }
+    }
 
     /** Dimension-safe map key. Bare BlockPos collides across dimensions. */
     public static GlobalPos key(ServerLevel level, BlockPos pos) {
@@ -191,7 +203,7 @@ public class ServerMonitoringManager {
 
         // Pass 3: periodically evict trackers nothing links anymore.
         long pruneTick = event.getServer().overworld().getGameTime();
-        if (lastPruneTick == Long.MIN_VALUE || pruneTick - lastPruneTick >= PRUNE_INTERVAL_TICKS) {
+        if (lastPruneTick == Long.MIN_VALUE || pruneTick - lastPruneTick >= getPruneIntervalTicks()) {
             lastPruneTick = pruneTick;
             pruneTrackers(activeKeys);
         }

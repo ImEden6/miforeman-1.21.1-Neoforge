@@ -9,6 +9,8 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.StringRepresentable;
 
+import org.jetbrains.annotations.Nullable;
+
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -28,12 +30,20 @@ public record ProductionGoal(
         List<BlockPos> rejectedMachines,
         ClipboardUiState uiState
 ) {
+    public static double getDefaultThreshold() {
+        try {
+            return com.mervyn.miforeman.Config.DEFAULT_EFFICIENCY_THRESHOLD.get();
+        } catch (Exception e) {
+            return 0.8;
+        }
+    }
+
     public ProductionGoal(String name, TargetType type, ResourceLocation targetId, double rate) {
-        this(name, type, targetId, rate, Map.of(), Optional.empty(), false, 0.8, List.of(), GraphLayoutState.EMPTY, MachineLinkHistory.EMPTY, List.of());
+        this(name, type, targetId, rate, Map.of(), Optional.empty(), false, getDefaultThreshold(), List.of(), GraphLayoutState.EMPTY, MachineLinkHistory.EMPTY, List.of());
     }
 
     public ProductionGoal(String name, TargetType type, ResourceLocation targetId, double rate, Map<ResourceLocation, ResourceLocation> recipeSelections, Optional<FactoryPlan> plan) {
-        this(name, type, targetId, rate, recipeSelections, plan, false, 0.8, List.of(), GraphLayoutState.EMPTY, MachineLinkHistory.EMPTY, List.of());
+        this(name, type, targetId, rate, recipeSelections, plan, false, getDefaultThreshold(), List.of(), GraphLayoutState.EMPTY, MachineLinkHistory.EMPTY, List.of());
     }
 
     public ProductionGoal(String name, TargetType type, ResourceLocation targetId, double rate, Map<ResourceLocation, ResourceLocation> recipeSelections, Optional<FactoryPlan> plan, boolean perHour, double threshold, List<BlockPos> linkedMachines) {
@@ -110,11 +120,19 @@ public record ProductionGoal(
 
     public record MachineRequirement(
             ResourceLocation machineId,
-            double count
+            double count,
+            long baseEuPerTick,
+            long totalEuPerTick
     ) {
+        public MachineRequirement(ResourceLocation machineId, double count) {
+            this(machineId, count, 0L, 0L);
+        }
+
         public static final Codec<MachineRequirement> CODEC = RecordCodecBuilder.create(instance -> instance.group(
                 ResourceLocation.CODEC.fieldOf("machine").forGetter(MachineRequirement::machineId),
-                Codec.DOUBLE.fieldOf("count").forGetter(MachineRequirement::count)
+                Codec.DOUBLE.fieldOf("count").forGetter(MachineRequirement::count),
+                Codec.LONG.optionalFieldOf("base_eu", 0L).forGetter(MachineRequirement::baseEuPerTick),
+                Codec.LONG.optionalFieldOf("total_eu", 0L).forGetter(MachineRequirement::totalEuPerTick)
         ).apply(instance, MachineRequirement::new));
 
         public static final StreamCodec<RegistryFriendlyByteBuf, MachineRequirement> STREAM_CODEC = StreamCodec.composite(
@@ -122,6 +140,10 @@ public record ProductionGoal(
                 MachineRequirement::machineId,
                 ByteBufCodecs.DOUBLE,
                 MachineRequirement::count,
+                ByteBufCodecs.VAR_LONG,
+                MachineRequirement::baseEuPerTick,
+                ByteBufCodecs.VAR_LONG,
+                MachineRequirement::totalEuPerTick,
                 MachineRequirement::new
         );
     }
@@ -171,7 +193,7 @@ public record ProductionGoal(
             List<MaterialFlow> rawInputs,
             List<MaterialFlow> intermediateFlows,
             List<Ambiguity> ambiguities,
-            @org.jetbrains.annotations.Nullable RecipeGraph graph
+            @Nullable RecipeGraph graph
     ) {
         public FactoryPlan(List<MachineRequirement> machines, List<MaterialFlow> rawInputs, List<MaterialFlow> intermediateFlows, List<Ambiguity> ambiguities) {
             this(machines, rawInputs, intermediateFlows, ambiguities, null);
@@ -179,6 +201,15 @@ public record ProductionGoal(
 
         public FactoryPlan withGraph(RecipeGraph graph) {
             return new FactoryPlan(this.machines, this.rawInputs, this.intermediateFlows, this.ambiguities, graph);
+        }
+
+        /** Returns total EU/t power demand summed across all required machines in the plan. */
+        public long totalPowerDemandEu() {
+            long total = 0;
+            for (MachineRequirement req : machines) {
+                total += req.totalEuPerTick();
+            }
+            return total;
         }
 
         public static final Codec<FactoryPlan> CODEC = RecordCodecBuilder.create(instance -> instance.group(

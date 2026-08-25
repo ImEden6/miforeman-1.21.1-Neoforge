@@ -32,35 +32,30 @@ correctness fixes, feature ideas, and docs debt.
 
 ## Monitoring & correctness
 
-- **Persist or cache `FactoryPlan.graph`** — `FactoryPlan.CODEC`/`STREAM_CODEC` drop the graph
-  (`ProductionGoal.java`, known-null after network crossing per the comment in
-  `ScanPacketHandlers.java`), so every clipboard reopen recomputes the whole traversal
-  (`ClipboardScreen.java` recompute-on-open). Either serialize the graph or cache it keyed by
-  plan inputs so big-graph opens are instant.
-- **Move monitoring constants next to `AUTOLINK_SCAN_RADIUS_CHUNKS`** — the demo config entries
-  (`LOG_DIRT_BLOCK`, `MAGIC_NUMBER`, `ITEM_STRINGS`) are gone, but the monitoring window
-  (72000 ticks), prune interval (200 ticks), and default threshold (0.8) are still hardcoded
-  in `ServerMonitoringManager.java`/`ProductionGoal.java` rather than living in `Config.java`.
-- **`getSubPlan()` vs `resolveStructure()` rate divergence** — `RecipeGraphTraverser.java` has
-  two independent implementations of the same "resolve chosen recipe, propagate demand rate"
-  algorithm: `getSubPlan()` (recursive per-unit `SubPlan`, scaled/summed via `mergeScaled()`,
-  feeds `computePlan()`'s numeric `FactoryPlan`) and `resolveStructure()` + `propagateRates()`
-  (two-phase structural DAG + Kahn's-algorithm rate propagation, feeds `computeRecipeGraph()`'s
-  visual graph). Both use identical candidate indexing/selection logic, so they *should* agree,
-  but attempting to consolidate them (deriving `computePlan()` from `computeRecipeGraph()`'s
-  resolved nodes) made `testGenerateRequirementsComplex` in `ForemanGameTests.java` fail: the
-  pinned `polyvinyl_chloride` raw-input rate (437500.0/s) came out as 28000.0/s from the
-  graph-derived path — a ~15.6x divergence, localized (the assembler-count and uu_matter-rate
-  assertions in the same test still passed). Ruled out: different chosen-recipe (selection logic
-  and candidate lists are byte-identical, goal has no `recipeSelections` overrides, so both must
-  pick the same default); PVC's own recipe ambiguity (it's a true raw leaf in both algorithms per
-  the test's existing comment). Unverified leads: a real cycle somewhere in the ~110 ambiguous
-  intermediates upstream of `quantum_upgrade` that the two cycle-guards handle differently; a
-  `memo`/`structMemo` key collision since both are keyed by bare `ResourceLocation` with no
-  `TargetType`, so an item/fluid id collision could cross-contaminate one algorithm but not the
-  other. Consolidating the two (there's a natural `planFromGraph()` shape for it) would remove
-  this whole class of future drift, but is blocked on root-causing this discrepancy first — don't
-  re-attempt the consolidation without figuring out which number is actually correct.
+- **Consolidate `computePlan()` into `planFromGraph()`** — Now that the traversal discrepancy
+  has been resolved (Kahn's algorithm cycle deadlocks fixed via reachable acyclic `collectDag` and
+  PVC rate reconciled at 28000.0/s), derive `computePlan()` directly from `computeRecipeGraph()`'s
+  resolved nodes to unify the pipeline into a single source of truth.
+
+## Tests
+
+- **Power demand calculation & math validation** — verify `FactoryPlan.totalPowerDemandEu()`
+  strictly matches `sum(req.totalEuPerTick())` across all machine requirements in the plan,
+  and validate that machine nodes with EU/t consumption scale with `ceil(count) * baseEuPerTick`.
+- **Fluid target goal traversal** — test a `ProductionGoal` with `TargetType.FLUID` (e.g.
+  `synthetic_oil`, `cryofluid`, `sulfuric_acid`) to verify both `computePlan` and
+  `computeRecipeGraph` produce valid non-empty DAGs, correct machine requirements, and non-zero inputs.
+- **Graph cache hit & invalidation semantics** — verify `GRAPH_CACHE` in `RecipeGraphTraverser`
+  returns the exact same cached reference on identical goal queries, re-evaluates fresh instances
+  after `clearGraphCache()`, and isolates entries across different `recipeSelections`.
+- **Packet rate limiter throttling & multi-player isolation** — unit test `PacketRateLimiter.tryAcquire`
+  to ensure rapid consecutive calls within `minIntervalTicks` are rejected, allowed after the interval,
+  and track limits independently per player UUID without cross-contamination.
+- **Multi-recipe wrap-around cycling** — verify ambiguity cycling on resources with 3+ alternative
+  recipes (e.g. petrochemical distillation pathways) wraps around cleanly through all options
+  without leaving orphaned nodes or stale edges.
+- **Machine status dynamic transition tests** — test in-world machine state transitions across
+  ticks from empty inputs (RED) to active crafting (GREEN) and blocked output saturation (ORANGE).
 
 ## Feature ideas
 
@@ -103,20 +98,6 @@ correctness fixes, feature ideas, and docs debt.
   resources. Surfacing the raw recipe (`RecipeGraphNode.getRecipe()` already carries the
   `MachineRecipe`) would at least let players see what else a machine produces, even if the tool
   doesn't route/plan around it.
-- **Hull tier / overclocker-aware machine-count and power calculation** — `RecipeGraphTraverser`
-  computes `machineCount` straight from `chosenRecipe.duration` (see `getSubPlan()` and
-  `resolveStructure()`, both `(runsPerSecond * chosenRecipe.duration) / 20.0`), and doesn't
-  surface EU/t consumption at all. Neither accounts for MI's hull tier speed bonus or overclocker
-  upgrades, and overclocking specifically has two compounding effects worth modeling separately:
-  each overclock tier roughly halves recipe duration *and* doubles EU/t draw ("perfect
-  overclocking"), so it changes both numbers the tool cares about — fewer machines needed to hit
-  a target rate, but proportionally higher power draw per machine. Real linked machines can be
-  running well past base speed, so today's "you need N machines" is a significant overestimate
-  once players start upgrading, and there's no power-budget number at all to check an overclocked
-  setup against. Would need reading actual hull tier + installed overclocker/upgrade modules off
-  `linkedMachines`' `MachineBlockEntity`s (where available) and feeding both an effective-speed
-  multiplier and an effective-EU/t multiplier into the machineCount/plan math, with a sane
-  fallback (base duration/EU) for unlinked/planned-but-not-yet-built machines.
 
 ## Code health
 

@@ -73,7 +73,7 @@ public class ForemanGameTests {
                 12.5,
                 Map.of(ResourceLocation.parse("minecraft:stone"), ResourceLocation.parse("minecraft:cobblestone")),
                 java.util.Optional.of(new ProductionGoal.FactoryPlan(
-                        List.of(new ProductionGoal.MachineRequirement(ResourceLocation.parse("modern_industrialization:assembler"), 3.0)),
+                        List.of(new ProductionGoal.MachineRequirement(ResourceLocation.parse("modern_industrialization:assembler"), 3.0, 32L, 96L)),
                         List.of(new ProductionGoal.MaterialFlow(ProductionGoal.TargetType.ITEM, ResourceLocation.parse("minecraft:iron_ingot"), 4.0)),
                         List.of(),
                         List.of(new ProductionGoal.Ambiguity(ResourceLocation.parse("minecraft:dye"), List.of(ResourceLocation.parse("minecraft:red_dye"))))
@@ -146,7 +146,7 @@ public class ForemanGameTests {
 
         MIForeman.LOGGER.info("Machines calculated in plan:");
         for (var req : plan.machines()) {
-            MIForeman.LOGGER.info("  - {}: {}", req.machineId(), req.count());
+            MIForeman.LOGGER.info("  - {}: count={}, baseEu={}, totalEu={}", req.machineId(), req.count(), req.baseEuPerTick(), req.totalEuPerTick());
         }
 
         MIForeman.LOGGER.info("Raw inputs calculated in plan:");
@@ -162,6 +162,12 @@ public class ForemanGameTests {
 
         if (assemblerCount < 210.0) {
             helper.fail("Expected at least 210.0 assemblers for quantum_upgrade plan, but calculated: " + assemblerCount);
+            return;
+        }
+
+        long totalPower = plan.totalPowerDemandEu();
+        if (totalPower <= 0) {
+            helper.fail("Expected positive total power demand for quantum_upgrade, but calculated: " + totalPower);
             return;
         }
 
@@ -195,7 +201,14 @@ public class ForemanGameTests {
             return;
         }
 
-        MIForeman.LOGGER.info("UC2 complex recipe graph traversal test passed successfully!");
+        com.mervyn.miforeman.goal.RecipeGraph graph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
+        var pvcNode = graph.nodes().get(pvcId);
+        if (pvcNode == null || pvcNode.getRequiredRate() != 28000.0) {
+            helper.fail("Expected 28000.0 polyvinyl_chloride requiredRate on graph node, but calculated: "
+                    + (pvcNode != null ? pvcNode.getRequiredRate() : "null"));
+            return;
+        }
+
         helper.succeed();
     }
 
@@ -262,50 +275,43 @@ public class ForemanGameTests {
         var level = helper.getLevel();
 
         ResourceLocation targetId = ResourceLocation.parse("modern_industrialization:quantum_upgrade");
-        double rate = 1.0;
+        ProductionGoal goal = new ProductionGoal("cycle_test", ProductionGoal.TargetType.ITEM, targetId, 1.0);
 
-        ProductionGoal goal = new ProductionGoal("cycle_test", ProductionGoal.TargetType.ITEM, targetId, rate);
-
-        // Compute initial plan and graph
         var initialGraph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
 
-        // Find the first resource node with ambiguities
-        com.mervyn.miforeman.goal.RecipeGraphNode ambiguousNode = null;
-        for (var node : initialGraph.nodes().values()) {
-            if (node.getType() != com.mervyn.miforeman.goal.NodeType.MACHINE && !node.getAmbiguityOptions().isEmpty()) {
-                ambiguousNode = node;
-                break;
-            }
-        }
+        // Find an ambiguous resource node with at least 2 options
+        var ambiguousNode = initialGraph.nodes().values().stream()
+                .filter(node -> node.getType() != com.mervyn.miforeman.goal.NodeType.MACHINE && node.getAmbiguityOptions().size() > 1)
+                .findFirst()
+                .orElse(null);
 
         if (ambiguousNode == null) {
-            helper.fail("Expected to find at least one ambiguous resource node in the quantum_upgrade plan.");
+            helper.fail("Expected at least one ambiguous resource node in quantum_upgrade recipe graph.");
             return;
         }
 
-        java.util.List<ResourceLocation> options = ambiguousNode.getAmbiguityOptions();
-        if (options.size() < 2) {
-            helper.fail("Ambiguous node " + ambiguousNode.getId() + " had fewer than 2 options: " + options.size());
-            return;
-        }
-
+        List<ResourceLocation> options = ambiguousNode.getAmbiguityOptions();
         ResourceLocation firstRecipe = options.get(0);
         ResourceLocation secondRecipe = options.get(1);
 
+        // Verify initial selection matches first option
+        if (!firstRecipe.equals(ambiguousNode.getSelectedAmbiguity())) {
+            helper.fail("Expected initial ambiguity selection to be " + firstRecipe + ", but was: " + ambiguousNode.getSelectedAmbiguity());
+            return;
+        }
+
         // Update selections to second recipe choice
         java.util.Map<ResourceLocation, ResourceLocation> selections = new java.util.HashMap<>(goal.recipeSelections());
-        selections.put(ambiguousNode.getId(), secondRecipe);
+        selections.put(ambiguousNode.getAmbiguityOwnerId(), secondRecipe);
 
         ProductionGoal updatedGoal = new ProductionGoal(
             goal.name(), goal.type(), goal.targetId(), goal.rate(),
             selections, java.util.Optional.empty(), goal.perHour(),
             goal.threshold(), goal.linkedMachines()
         );
-
-        // Recompute plan and graph
         var updatedGraph = RecipeGraphTraverser.computeRecipeGraph(level, updatedGoal);
 
-        // Assert that the updated graph contains the second recipe node but NOT the first recipe node
+        // Verify that the new recipe exists in the graph and the old one does not
         boolean hasFirstRecipe = updatedGraph.nodes().containsKey(firstRecipe);
         boolean hasSecondRecipe = updatedGraph.nodes().containsKey(secondRecipe);
 
@@ -391,13 +397,13 @@ public class ForemanGameTests {
             }
         }
 
-        if (graph.edges().size() != 150) {
-            helper.fail("Expected 150 edges in the quantum_upgrade graph, but got: " + graph.edges().size()
+        if (graph.edges().size() != 158) {
+            helper.fail("Expected 158 edges in the quantum_upgrade graph, but got: " + graph.edges().size()
                     + ". If this changed intentionally, e.g. an MI recipe update, update this snapshot.");
             return;
         }
-        if (graph.nodes().size() != 89) {
-            helper.fail("Expected 89 nodes in the quantum_upgrade graph, but got: " + graph.nodes().size()
+        if (graph.nodes().size() != 97) {
+            helper.fail("Expected 97 nodes in the quantum_upgrade graph, but got: " + graph.nodes().size()
                     + ". If this changed intentionally, e.g. an MI recipe update, update this snapshot.");
             return;
         }
