@@ -3,11 +3,11 @@ package com.mervyn.miforeman.client.gui;
 import com.mervyn.miforeman.goal.ClipboardCloseSync;
 import com.mervyn.miforeman.goal.ClipboardUiState;
 import com.mervyn.miforeman.goal.ProductionGoal;
+import com.mervyn.miforeman.goal.ProductionGoal.TargetType;
 import com.mervyn.miforeman.registry.ModComponents;
 import com.mervyn.miforeman.network.GoalUpdatePayload;
 import com.mervyn.miforeman.network.RequestMonitoringUpdatePayload;
 import com.mervyn.miforeman.network.LiveMonitoringPayload;
-import com.mervyn.miforeman.client.gui.blockui.DefineGoalWindow;
 import com.mervyn.miforeman.client.gui.widget.ClipboardButton;
 import com.mervyn.miforeman.client.gui.widget.GraphCanvas;
 import com.mervyn.miforeman.client.gui.widget.DetailCard;
@@ -21,6 +21,7 @@ import com.mervyn.miforeman.network.ScanResultPayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -37,6 +38,7 @@ public class ClipboardScreen extends Screen {
     private static final int MIN_GUI_WIDTH = 440;
     private static final int MIN_GUI_HEIGHT = 230;
     private static final int PADDING = 8;
+    private static final int FIELD_HEIGHT = 14;
 
     // --- Text Colours ---
     private static final int COLOUR_TITLE = 0xFFDAA520;
@@ -81,6 +83,7 @@ public class ClipboardScreen extends Screen {
 
     private Button nextButton;
     private Button backButton;
+    private Button defineNextButton;
 
     private boolean isMinimized;
     private Button toggleModeButton;
@@ -180,36 +183,121 @@ public class ClipboardScreen extends Screen {
         }
 
         switch (step) {
-            case STEP_DEFINE_GOAL -> openDefineGoalWindow();
+            case STEP_DEFINE_GOAL -> buildStepDefineGoal();
             case STEP_REVIEW_PLAN -> buildStepReviewPlan();
             case STEP_MONITOR -> buildStepMonitor();
         }
     }
 
-    /** Opens the goal definition window overlay. */
-    private void openDefineGoalWindow() {
-        openDefineGoalWindow(null);
+    private void buildStepDefineGoal() {
+        int left = (this.width - guiWidth()) / 2;
+        int top = (this.height - guiHeight()) / 2;
+
+        int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
+        int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
+        int contentW = guiWidth() - (PADDING + ClipboardChrome.MAIN_BORDER) * 2 - 4;
+
+        int y = contentY + 16;
+
+        EditBox nameField = new EditBox(this.font, contentX, y + 10, contentW, FIELD_HEIGHT, Component.literal("Goal Name"));
+        nameField.setMaxLength(64);
+        nameField.setValue(this.goalDraft.goalName == null ? "" : this.goalDraft.goalName);
+        nameField.setResponder(val -> {
+            this.goalDraft.goalName = val;
+            revalidateDefineGoal();
+        });
+        this.addRenderableWidget(nameField);
+        y += 10 + FIELD_HEIGHT + 8;
+
+        Button typeButton = new ClipboardButton(contentX, y + 10, 55, FIELD_HEIGHT,
+                Component.literal(this.goalDraft.targetType.name()), b -> {
+                    this.goalDraft.targetType = this.goalDraft.targetType == TargetType.ITEM ? TargetType.FLUID : TargetType.ITEM;
+                    b.setMessage(Component.literal(this.goalDraft.targetType.name()));
+                    revalidateDefineGoal();
+                });
+        this.addRenderableWidget(typeButton);
+
+        EditBox targetIdField = new EditBox(this.font, contentX + 60, y + 10, contentW - 60, FIELD_HEIGHT, Component.literal("Target ID"));
+        targetIdField.setMaxLength(256);
+        targetIdField.setValue(this.goalDraft.targetIdStr == null ? "" : this.goalDraft.targetIdStr);
+        targetIdField.setResponder(val -> {
+            this.goalDraft.targetIdStr = val;
+            revalidateDefineGoal();
+        });
+        this.addRenderableWidget(targetIdField);
+        y += 10 + FIELD_HEIGHT + 8;
+
+        EditBox rateField = new EditBox(this.font, contentX, y + 10, contentW - 80, FIELD_HEIGHT, Component.literal("Rate"));
+        rateField.setValue(String.valueOf(this.goalDraft.rate));
+        rateField.setResponder(val -> {
+            try {
+                this.goalDraft.rate = Double.parseDouble(val);
+            } catch (NumberFormatException e) {
+                // handled by revalidateDefineGoal()'s error message
+            }
+            revalidateDefineGoal();
+        });
+        this.addRenderableWidget(rateField);
+
+        Button unitButton = new ClipboardButton(contentX + contentW - 70, y + 10, 70, FIELD_HEIGHT,
+                Component.literal(this.goalDraft.perHour ? "Per Hour" : "Per Min"), b -> {
+                    this.goalDraft.perHour = !this.goalDraft.perHour;
+                    b.setMessage(Component.literal(this.goalDraft.perHour ? "Per Hour" : "Per Min"));
+                    revalidateDefineGoal();
+                });
+        this.addRenderableWidget(unitButton);
+        y += 10 + FIELD_HEIGHT + 8;
+
+        EditBox thresholdField = new EditBox(this.font, contentX, y + 10, contentW, FIELD_HEIGHT, Component.literal("Threshold"));
+        thresholdField.setValue(String.valueOf((int) (this.goalDraft.threshold * 100)));
+        thresholdField.setResponder(val -> {
+            try {
+                double pct = Double.parseDouble(val);
+                this.goalDraft.threshold = pct / 100.0;
+            } catch (NumberFormatException e) {
+                // handled by revalidateDefineGoal()'s error message
+            }
+            revalidateDefineGoal();
+        });
+        this.addRenderableWidget(thresholdField);
+
+        int btnY = top + guiHeight() - PADDING - ClipboardChrome.MAIN_BORDER - 22;
+
+        Button cancelButton = new ClipboardButton(contentX, btnY, 80, 16, Component.literal("Cancel"), b -> this.onClose());
+        this.addRenderableWidget(cancelButton);
+
+        defineNextButton = new ClipboardButton(contentX + contentW - 80, btnY, 80, 16, Component.literal("Next ->"), b -> {
+            GoalFormResult result = new GoalFormResult(
+                    this.goalDraft.goalName, this.goalDraft.targetType, this.goalDraft.targetIdStr,
+                    this.goalDraft.rate, this.goalDraft.perHour, this.goalDraft.threshold);
+            this.goalDraft.applyFormResult(result);
+            computePlan();
+            if (this.goalDraft.errorMessage == null && this.goalDraft.currentPlan != null) {
+                this.selectedNodeId = null;
+                goToStep(STEP_REVIEW_PLAN);
+            } else {
+                String serverError = this.goalDraft.errorMessage;
+                rebuildStep(STEP_DEFINE_GOAL);
+                if (serverError != null) {
+                    this.goalDraft.errorMessage = serverError;
+                    defineNextButton.active = false;
+                }
+            }
+        });
+        this.addRenderableWidget(defineNextButton);
+
+        revalidateDefineGoal();
     }
 
-    /** Reopens the goal definition window overlay displaying an initial error message. */
-    private void openDefineGoalWindow(String initialError) {
-        DefineGoalWindow window = new DefineGoalWindow(
-                guiWidth(), guiHeight(),
-                this.goalDraft.goalName, this.goalDraft.targetType, this.goalDraft.targetIdStr,
-                this.goalDraft.rate, this.goalDraft.perHour, this.goalDraft.threshold, initialError,
-                result -> {
-                    this.goalDraft.applyFormResult(result);
-                    computePlan();
-                    if (this.goalDraft.errorMessage == null && this.goalDraft.currentPlan != null) {
-                        this.selectedNodeId = null;
-                        goToStep(STEP_REVIEW_PLAN);
-                    } else {
-                        openDefineGoalWindow(this.goalDraft.errorMessage);
-                    }
-                },
-                this::onClose
-        );
-        window.openAsLayer();
+    /** Client-side revalidation of the Define Goal form, run on every field/toggle change. */
+    private void revalidateDefineGoal() {
+        Optional<String> error = GoalFormValidation.validateGoalInputs(
+                this.goalDraft.goalName, this.goalDraft.targetIdStr, this.goalDraft.targetType,
+                this.goalDraft.rate, this.goalDraft.threshold);
+        this.goalDraft.errorMessage = error.orElse(null);
+        if (defineNextButton != null) {
+            defineNextButton.active = error.isEmpty();
+        }
     }
 
     private void goToStep(int step) {
@@ -492,6 +580,7 @@ public class ClipboardScreen extends Screen {
             renderViewMode(guiGraphics, left, top);
         } else {
             switch (currentStep) {
+                case STEP_DEFINE_GOAL -> renderStepDefineGoal(guiGraphics, left, top);
                 case STEP_REVIEW_PLAN -> renderStepReviewPlan(guiGraphics, left, top);
                 case STEP_MONITOR -> renderStepMonitor(guiGraphics, left, top);
             }
@@ -508,26 +597,26 @@ public class ClipboardScreen extends Screen {
 
         int currentY = contentY + 20;
 
-        guiGraphics.drawString(this.font, Component.literal("Goal Name:"), contentX, currentY, COLOUR_LABEL);
-        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.goalName), contentX + 80, currentY, COLOUR_TEXT);
+        guiGraphics.drawString(this.font, Component.literal("Goal Name:"), contentX, currentY, COLOUR_LABEL, false);
+        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.goalName), contentX + 80, currentY, COLOUR_TEXT, false);
         currentY += 15;
 
-        guiGraphics.drawString(this.font, Component.literal("Target ID:"), contentX, currentY, COLOUR_LABEL);
-        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.targetIdStr), contentX + 80, currentY, COLOUR_TEXT);
+        guiGraphics.drawString(this.font, Component.literal("Target ID:"), contentX, currentY, COLOUR_LABEL, false);
+        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.targetIdStr), contentX + 80, currentY, COLOUR_TEXT, false);
         currentY += 15;
 
-        guiGraphics.drawString(this.font, Component.literal("Target Type:"), contentX, currentY, COLOUR_LABEL);
-        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.targetType.name()), contentX + 80, currentY, COLOUR_TEXT);
+        guiGraphics.drawString(this.font, Component.literal("Target Type:"), contentX, currentY, COLOUR_LABEL, false);
+        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.targetType.name()), contentX + 80, currentY, COLOUR_TEXT, false);
         currentY += 15;
 
         String rateStr = String.format("%.2f units/%s", this.goalDraft.rate, this.goalDraft.perHour ? "hour" : "min");
-        guiGraphics.drawString(this.font, Component.literal("Desired Rate:"), contentX, currentY, COLOUR_LABEL);
-        guiGraphics.drawString(this.font, Component.literal(rateStr), contentX + 80, currentY, COLOUR_TEXT);
+        guiGraphics.drawString(this.font, Component.literal("Desired Rate:"), contentX, currentY, COLOUR_LABEL, false);
+        guiGraphics.drawString(this.font, Component.literal(rateStr), contentX + 80, currentY, COLOUR_TEXT, false);
         currentY += 15;
 
         String thresholdStr = String.format("%d%%", (int) (this.goalDraft.threshold * 100));
-        guiGraphics.drawString(this.font, Component.literal("Threshold:"), contentX, currentY, COLOUR_LABEL);
-        guiGraphics.drawString(this.font, Component.literal(thresholdStr), contentX + 80, currentY, COLOUR_TEXT);
+        guiGraphics.drawString(this.font, Component.literal("Threshold:"), contentX, currentY, COLOUR_LABEL, false);
+        guiGraphics.drawString(this.font, Component.literal(thresholdStr), contentX + 80, currentY, COLOUR_TEXT, false);
         currentY += 20;
 
         String statusStr = "Status: Planning Complete";
@@ -539,7 +628,28 @@ public class ClipboardScreen extends Screen {
             statusStr = "Status: Goal Definition Draft";
             statusColour = COLOUR_AMBER;
         }
-        guiGraphics.drawString(this.font, Component.literal(statusStr), contentX, currentY, statusColour);
+        guiGraphics.drawString(this.font, Component.literal(statusStr), contentX, currentY, statusColour, false);
+    }
+
+    private void renderStepDefineGoal(GuiGraphics guiGraphics, int left, int top) {
+        int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
+        int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
+
+        guiGraphics.drawString(this.font, Component.literal("Define Goal"), contentX, contentY, COLOUR_TITLE);
+
+        int y = contentY + 16;
+        guiGraphics.drawString(this.font, Component.literal("Goal Name"), contentX, y, COLOUR_LABEL, false);
+        y += 10 + FIELD_HEIGHT + 8;
+        guiGraphics.drawString(this.font, Component.literal("Target Type & ID"), contentX, y, COLOUR_LABEL, false);
+        y += 10 + FIELD_HEIGHT + 8;
+        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.perHour ? "Rate (units/hour)" : "Rate (units/min)"), contentX, y, COLOUR_LABEL, false);
+        y += 10 + FIELD_HEIGHT + 8;
+        guiGraphics.drawString(this.font, Component.literal("Threshold (%)"), contentX, y, COLOUR_LABEL, false);
+        y += 10 + FIELD_HEIGHT + 6;
+
+        if (this.goalDraft.errorMessage != null) {
+            guiGraphics.drawString(this.font, Component.literal(this.goalDraft.errorMessage), contentX, y, COLOUR_ERROR, false);
+        }
     }
 
     private void renderStepReviewPlan(GuiGraphics guiGraphics, int left, int top) {
@@ -556,7 +666,7 @@ public class ClipboardScreen extends Screen {
 
         int currentY = contentY + 16;
         if (this.monitoringState.liveData.isEmpty()) {
-            guiGraphics.drawString(this.font, Component.literal(" - None linked yet"), contentX + 4, currentY, COLOUR_MUTED);
+            guiGraphics.drawString(this.font, Component.literal(" - None linked yet"), contentX + 4, currentY, COLOUR_MUTED, false);
             return;
         }
 
@@ -573,7 +683,7 @@ public class ClipboardScreen extends Screen {
 
         // Counts lead with RED/ORANGE (what actually needs attention), not machine order.
         String prefix = this.monitoringState.liveData.size() + " machines: ";
-        guiGraphics.drawString(this.font, Component.literal(prefix), contentX + 4, currentY, COLOUR_TEXT);
+        guiGraphics.drawString(this.font, Component.literal(prefix), contentX + 4, currentY, COLOUR_TEXT, false);
         int segX = contentX + 4 + this.font.width(prefix);
         segX = drawStatusCount(guiGraphics, segX, currentY, red, "RED", COLOUR_ERROR);
         segX = drawStatusCount(guiGraphics, segX, currentY, orange, "ORANGE", 0xFFE67700);
@@ -585,7 +695,7 @@ public class ClipboardScreen extends Screen {
     private int drawStatusCount(GuiGraphics guiGraphics, int x, int y, int count, String label, int colour) {
         if (count == 0) return x;
         String segment = count + " " + label + "  ";
-        guiGraphics.drawString(this.font, Component.literal(segment), x, y, colour);
+        guiGraphics.drawString(this.font, Component.literal(segment), x, y, colour, false);
         return x + this.font.width(segment);
     }
 
