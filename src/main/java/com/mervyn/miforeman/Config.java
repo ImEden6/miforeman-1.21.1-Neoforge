@@ -21,5 +21,19 @@ public class Config {
             .comment("Default threshold ratio of actual to expected rate for machine performance status (default: 0.8 = 80%).")
             .defineInRange("defaultEfficiencyThreshold", 0.8, 0.0, 1.0);
 
+    public static final ModConfigSpec.BooleanValue INCLUDE_PROXIED_RECIPE_TYPES = BUILDER
+            .comment("Also index recipes from ProxyableMachineRecipeType, which builds its recipe list at "
+                    + "runtime instead of registering through the vanilla RecipeManager -- invisible to "
+                    + "plans/graphs otherwise. This isn't just an addon thing: MI's OWN FurnaceMachineRecipeType, "
+                    + "CuttingMachineRecipeType, and CentrifugeMachineRecipeType already work this way, and "
+                    + "FurnaceMachineRecipeType additionally synthesizes a MachineRecipe for every vanilla "
+                    + "smelting recipe on top of whatever's already registered. So enabling this changes "
+                    + "candidate recipe sets -- and therefore default ambiguous-recipe selection -- across plans, "
+                    + "even with zero addons installed. Off by default so existing plans/graphs are unaffected. "
+                    + "Only affects server-side plan computation (commands, packet handlers) -- the live plan "
+                    + "preview in ClipboardScreen runs client-side and will NOT reflect proxied recipes even with "
+                    + "this enabled, since the API has no client-side equivalent.")
+            .define("includeProxiedRecipeTypes", false);
+
     public static final ModConfigSpec SPEC = BUILDER.build();
 }

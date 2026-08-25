@@ -44,7 +44,7 @@ public final class RecipeGraphTraverser {
         // Index all machine recipes by item and fluid outputs
         Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> itemRecipes = new HashMap<>();
         Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> fluidRecipes = new HashMap<>();
-        indexMachineRecipes(recipeManager, itemRecipes, fluidRecipes);
+        indexMachineRecipes(level, recipeManager, itemRecipes, fluidRecipes);
 
         Map<ResourceLocation, SubPlan> memo = new HashMap<>();
         Set<ResourceLocation> visited = new HashSet<>();
@@ -240,13 +240,43 @@ public final class RecipeGraphTraverser {
      * Deterministic sorting ensures default recipe selection stays consistent across game loads.
      */
     private static void indexMachineRecipes(
+            Level level,
             RecipeManager recipeManager,
             Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> itemRecipes,
             Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> fluidRecipes) {
         Map<ResourceLocation, Map<ResourceLocation, RecipeHolder<MachineRecipe>>> itemByRecipeId = new HashMap<>();
         Map<ResourceLocation, Map<ResourceLocation, RecipeHolder<MachineRecipe>>> fluidByRecipeId = new HashMap<>();
 
-        for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
+        indexMachineRecipeCollection(recipeManager.getRecipes(), itemByRecipeId, fluidByRecipeId);
+
+        // Addons can supply recipes via a ProxyableMachineRecipeType (e.g. Extended Industrialization's
+        // runtime-generated canning/bucket recipes) that never register through RecipeManager at all --
+        // recipeManager.getRecipes() above can't see them. Off by default: see Config's comment for why
+        // (ClipboardScreen's client-side preview can't reflect this even when enabled).
+        if (com.mervyn.miforeman.Config.INCLUDE_PROXIED_RECIPE_TYPES.get() && level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+            for (var recipeType : net.minecraft.core.registries.BuiltInRegistries.RECIPE_TYPE) {
+                if (!(recipeType instanceof aztech.modern_industrialization.machines.recipe.ProxyableMachineRecipeType proxyable)) {
+                    continue;
+                }
+                try {
+                    indexMachineRecipeCollection(proxyable.getRecipesWithCache(serverLevel), itemByRecipeId, fluidByRecipeId);
+                } catch (Exception e) {
+                    ResourceLocation typeId = net.minecraft.core.registries.BuiltInRegistries.RECIPE_TYPE.getKey(recipeType);
+                    com.mervyn.miforeman.MIForeman.LOGGER.warn(
+                            "Skipping proxied machine recipe type {} -- its recipe list threw while building", typeId, e);
+                }
+            }
+        }
+
+        sortIntoLists(itemByRecipeId, itemRecipes);
+        sortIntoLists(fluidByRecipeId, fluidRecipes);
+    }
+
+    private static void indexMachineRecipeCollection(
+            Collection<? extends RecipeHolder<?>> recipes,
+            Map<ResourceLocation, Map<ResourceLocation, RecipeHolder<MachineRecipe>>> itemByRecipeId,
+            Map<ResourceLocation, Map<ResourceLocation, RecipeHolder<MachineRecipe>>> fluidByRecipeId) {
+        for (RecipeHolder<?> holder : recipes) {
             if (!(holder.value() instanceof MachineRecipe recipe)) {
                 continue;
             }
@@ -266,9 +296,6 @@ public final class RecipeGraphTraverser {
                 }
             }
         }
-
-        sortIntoLists(itemByRecipeId, itemRecipes);
-        sortIntoLists(fluidByRecipeId, fluidRecipes);
     }
 
     private static void sortIntoLists(
@@ -343,7 +370,7 @@ public final class RecipeGraphTraverser {
 
         Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> itemRecipes = new HashMap<>();
         Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> fluidRecipes = new HashMap<>();
-        indexMachineRecipes(recipeManager, itemRecipes, fluidRecipes);
+        indexMachineRecipes(level, recipeManager, itemRecipes, fluidRecipes);
 
         // Two phases -- mirrors computePlan()/getSubPlan()'s existing memoization pattern, which
         // buildGraph() previously didn't share (its old `visited` set was only a recursion-stack

@@ -933,4 +933,63 @@ public class ForemanGameTests {
             });
         });
     }
+
+    /**
+     * Verifies {@code Config.INCLUDE_PROXIED_RECIPE_TYPES} defaults to off (so existing plans/graphs
+     * are byte-for-byte unaffected by default), and that toggling it on produces a valid non-empty
+     * result rather than throwing or corrupting state.
+     * <p>
+     * Does NOT assert identical output before/after: base MI's own {@code FurnaceMachineRecipeType},
+     * {@code CuttingMachineRecipeType}, and {@code CentrifugeMachineRecipeType} are themselves
+     * {@code ProxyableMachineRecipeType}s, and {@code FurnaceMachineRecipeType.fillRecipeList}
+     * synthesizes a {@code MachineRecipe} for every vanilla {@code RecipeType.SMELTING} recipe via
+     * {@code RecipeConversions.ofSmelting} on top of whatever's already in the RecipeManager. So
+     * enabling this config changes candidate recipe sets, and therefore default ambiguous recipe
+     * selection, even with zero addons installed -- measured directly: quantum_upgrade's graph goes
+     * from 97/158 nodes/edges to 89/149 with the flag on. Expected, not a bug.
+     */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testProxiedRecipeTypesConfigDefaultsOffAndTogglesCleanly(GameTestHelper helper) {
+        if (com.mervyn.miforeman.Config.INCLUDE_PROXIED_RECIPE_TYPES.get()) {
+            helper.fail("Expected includeProxiedRecipeTypes to default to false.");
+            return;
+        }
+
+        var level = helper.getLevel();
+        ResourceLocation targetId = ResourceLocation.parse("modern_industrialization:quantum_upgrade");
+        ProductionGoal goal = new ProductionGoal("proxied_config_test", ProductionGoal.TargetType.ITEM, targetId, 1.0);
+
+        com.mervyn.miforeman.Config.INCLUDE_PROXIED_RECIPE_TYPES.set(true);
+        try {
+            RecipeGraphTraverser.clearGraphCache();
+            var graphAfter = RecipeGraphTraverser.computeRecipeGraph(level, goal);
+            ProductionGoal.FactoryPlan planAfter = RecipeGraphTraverser.computePlan(level, goal);
+
+            if (graphAfter.nodes().isEmpty() || graphAfter.edges().isEmpty()) {
+                helper.fail("Expected a non-empty graph with includeProxiedRecipeTypes on, but got: "
+                        + graphAfter.nodes().size() + " nodes / " + graphAfter.edges().size() + " edges.");
+                return;
+            }
+            if (planAfter.machines().isEmpty()) {
+                helper.fail("Expected non-empty machine requirements with includeProxiedRecipeTypes on.");
+                return;
+            }
+        } finally {
+            com.mervyn.miforeman.Config.INCLUDE_PROXIED_RECIPE_TYPES.set(false);
+            RecipeGraphTraverser.clearGraphCache();
+        }
+
+        // Confirm the flag going back off restores exactly today's pinned snapshot -- proves the
+        // toggle has no lingering side effect on the shared static GRAPH_CACHE or recipe indexing.
+        var graphRestored = RecipeGraphTraverser.computeRecipeGraph(level, goal);
+        if (graphRestored.nodes().size() != 97 || graphRestored.edges().size() != 158) {
+            helper.fail("Expected graph to return to the pinned 97 nodes/158 edges after disabling "
+                    + "includeProxiedRecipeTypes again, but got: " + graphRestored.nodes().size()
+                    + " nodes / " + graphRestored.edges().size() + " edges.");
+            return;
+        }
+
+        helper.succeed();
+    }
 }
+

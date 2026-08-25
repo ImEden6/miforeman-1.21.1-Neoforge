@@ -177,6 +177,24 @@ public class DetailCard extends AbstractWidget {
                     currentY += 24;
                 }
 
+                // Process conditions (voltage tier, open water, nearby entity, etc. -- e.g. from
+                // MI-Tweaks) gate whether this recipe can actually run beyond its item/fluid/EU
+                // requirements. Reuse each condition's own appendDescription() instead of trying to
+                // describe arbitrary third-party condition types ourselves.
+                if (recipe != null && !recipe.conditions.isEmpty()) {
+                    guiGraphics.drawString(fontSource.font, "Requirements:", getX() + 6, currentY, COLOUR_AMBER, false);
+                    currentY += 10;
+                    List<Component> conditionLines = new java.util.ArrayList<>();
+                    for (var condition : recipe.conditions) {
+                        condition.appendDescription(conditionLines);
+                    }
+                    for (Component line : conditionLines) {
+                        guiGraphics.drawString(fontSource.font, " - " + line.getString(), getX() + 10, currentY, COLOUR_TEXT, false);
+                        currentY += 10;
+                    }
+                    currentY += 5;
+                }
+
                 // Inputs
                 guiGraphics.drawString(fontSource.font, "Recipe Inputs:", getX() + 6, currentY, COLOUR_CYAN, false);
                 currentY += 10;
