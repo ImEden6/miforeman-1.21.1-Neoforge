@@ -34,7 +34,8 @@
 | | `client/gui/blockui/DefineGoalWindow.java` | Step 0 modal popup to configure target item/fluid, rate, and units |
 | GUI widgets | `client/gui/widget/GraphCanvas.java`, `GraphCamera.java` | Interactive pan/zoom DAG canvas rendering recipe nodes, transitive edge bridging, and right-click visibility toggle |
 | | `client/gui/widget/GraphSearchBar.java`, `GraphSearchState.java` | Floating search overlay widget, query matching, match cycling, and camera centering |
-| | `client/gui/widget/DetailCard.java` | Contextual inspector card for selected node, material flows, ambiguity cycling, and node visibility checklist |
+| | `client/gui/widget/HiddenNodesDrawer.java` | Slide-out drawer widget on left side of canvas displaying and unhiding hidden nodes |
+| | `client/gui/widget/DetailCard.java` | Contextual inspector card for selected node, material flows, and ambiguity cycling |
 | | `client/gui/widget/MonitoringListPanel.java`, `ReviewListPanel.java` | Scrollable panels for machine lists, status badges, and batch actions |
 | Goal model | `goal/ProductionGoal.java` | Immutable record with `CODEC`/`STREAM_CODEC` — target, rate, plan, layout, history, uiState |
 | Recipe traversal | `goal/RecipeGraphTraverser.java` | Recursive BFS through MI recipe graph; cycle handling, ambiguity resolution, DAG construction |

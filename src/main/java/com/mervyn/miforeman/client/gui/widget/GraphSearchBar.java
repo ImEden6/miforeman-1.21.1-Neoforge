@@ -24,7 +24,7 @@ public class GraphSearchBar {
 
     private static final int BAR_WIDTH = 172;
     private static final int BAR_HEIGHT = 20;
-    private static final int ICON_BTN_SIZE = 18;
+    private static final int ICON_BTN_SIZE = 22;
 
     private int x, y;
     private boolean visible = false;
@@ -106,7 +106,7 @@ public class GraphSearchBar {
             if (hover) {
                 guiGraphics.fill(x, y, x + ICON_BTN_SIZE, y + ICON_BTN_SIZE, COLOUR_HOVER_BTN);
             }
-            guiGraphics.drawCenteredString(font, "\u2315", x + ICON_BTN_SIZE / 2, y + 5, COLOUR_TEXT);
+            guiGraphics.drawCenteredString(font, "\u2315", x + ICON_BTN_SIZE / 2, y + (ICON_BTN_SIZE - font.lineHeight) / 2 + 1, COLOUR_TEXT);
             return;
         }
 

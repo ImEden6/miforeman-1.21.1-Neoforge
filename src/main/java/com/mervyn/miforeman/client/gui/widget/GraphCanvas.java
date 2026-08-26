@@ -79,6 +79,7 @@ public class GraphCanvas extends AbstractWidget {
     private final boolean dragEnabled;
     private final GraphSearchState searchState = new GraphSearchState();
     private final GraphSearchBar searchBar;
+    private final HiddenNodesDrawer hiddenNodesDrawer;
 
     public GraphCanvas(int x, int y, int width, int height, RecipeGraph graph,
                         GraphLayoutState layoutState, double panX, double panY, float zoom,
@@ -99,7 +100,9 @@ public class GraphCanvas extends AbstractWidget {
         this.viewMode = viewMode;
         this.dragEnabled = dragEnabled;
         this.searchBar = new GraphSearchBar(this.searchState, Minecraft.getInstance().font, this::onSearchMatchChanged, null);
+        this.hiddenNodesDrawer = new HiddenNodesDrawer(Minecraft.getInstance().font, () -> this.layoutState, () -> this.graph, this::toggleNodeVisibility, this::unhideAll);
         updateSearchBarPosition();
+        updateDrawerPosition();
         computeFilteredView();
         computeAutoLayout();
     }
@@ -208,34 +211,45 @@ public class GraphCanvas extends AbstractWidget {
         }
     }
 
+    private void updateDrawerPosition() {
+        if (hiddenNodesDrawer != null) {
+            hiddenNodesDrawer.setPosition(getX() + 1, getY() + 6, getHeight());
+        }
+    }
+
     @Override
     public void setX(int x) {
         super.setX(x);
         updateSearchBarPosition();
+        updateDrawerPosition();
     }
 
     @Override
     public void setY(int y) {
         super.setY(y);
         updateSearchBarPosition();
+        updateDrawerPosition();
     }
 
     @Override
     public void setWidth(int width) {
         super.setWidth(width);
         updateSearchBarPosition();
+        updateDrawerPosition();
     }
 
     @Override
     public void setHeight(int height) {
         super.setHeight(height);
         updateSearchBarPosition();
+        updateDrawerPosition();
     }
 
     @Override
     public void setPosition(int x, int y) {
         super.setPosition(x, y);
         updateSearchBarPosition();
+        updateDrawerPosition();
     }
 
     private void onSearchMatchChanged() {
@@ -445,6 +459,9 @@ public class GraphCanvas extends AbstractWidget {
 
         // Render search bar overlay on top of canvas
         searchBar.render(guiGraphics, mouseX, mouseY, partialTick);
+
+        // Render hidden nodes left drawer on top of canvas
+        hiddenNodesDrawer.render(guiGraphics, mouseX, mouseY, partialTick);
     }
 
     /** Renders a flat-color chamfered rectangle. */
@@ -513,6 +530,13 @@ public class GraphCanvas extends AbstractWidget {
             return true;
         }
 
+        // Give hidden nodes left drawer priority on mouse click
+        if (hiddenNodesDrawer.isHovered(mouseX, mouseY)) {
+            if (hiddenNodesDrawer.mouseClicked(mouseX, mouseY, button)) {
+                return true;
+            }
+        }
+
         if (button == 1) {
             if (mouseX < getX() || mouseX >= getX() + getWidth() || mouseY < getY() || mouseY >= getY() + getHeight()) {
                 return false;
@@ -576,6 +600,12 @@ public class GraphCanvas extends AbstractWidget {
         if (!visible || !active) return false;
         if (mouseX < getX() || mouseX >= getX() + getWidth() || mouseY < getY() || mouseY >= getY() + getHeight()) {
             return false;
+        }
+
+        if (hiddenNodesDrawer.isHovered(mouseX, mouseY)) {
+            if (hiddenNodesDrawer.mouseScrolled(mouseX, mouseY, scrollX, scrollY)) {
+                return true;
+            }
         }
 
         camera.zoomAt(getX(), getY(), mouseX, mouseY, scrollY, MIN_ZOOM, MAX_ZOOM);

@@ -17,7 +17,6 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -63,22 +62,12 @@ public class DetailCard extends AbstractWidget {
     private int numToggleBoxH = 0;
     private boolean isNumToggleHovered = false;
 
-    // Boundaries of the unhide all box in summary mode
-    private int unhideAllBoxX = 0;
-    private int unhideAllBoxY = 0;
-    private int unhideAllBoxW = 0;
-    private int unhideAllBoxH = 0;
-    private boolean isUnhideAllHovered = false;
-
     // Boundaries of the single node visibility toggle in node details mode
     private int nodeVisBoxX = 0;
     private int nodeVisBoxY = 0;
     private int nodeVisBoxW = 0;
     private int nodeVisBoxH = 0;
     private boolean isNodeVisHovered = false;
-
-    private record VisibilityClickTarget(int x, int y, int w, int h, ResourceLocation nodeId) {}
-    private final List<VisibilityClickTarget> visibilityTargets = new ArrayList<>();
 
     public DetailCard(int x, int y, int width, int height, @Nullable RecipeGraphNode node,
                       FactoryPlan plan, boolean perHour, boolean showNumbers,
@@ -136,13 +125,9 @@ public class DetailCard extends AbstractWidget {
         isNumToggleHovered = false;
         numToggleBoxW = 0;
         numToggleBoxH = 0;
-        isUnhideAllHovered = false;
-        unhideAllBoxW = 0;
-        unhideAllBoxH = 0;
         isNodeVisHovered = false;
         nodeVisBoxW = 0;
         nodeVisBoxH = 0;
-        visibilityTargets.clear();
 
         if (node == null) {
             // Summary Mode
@@ -221,63 +206,6 @@ public class DetailCard extends AbstractWidget {
                     String flowLine = String.format(" - %.1f/%s %s", rateVal, perHour ? "h" : "m", DisplayFormat.formatId(flow.resourceId()));
                     guiGraphics.drawString(fontSource.font, flowLine, getX() + 10, currentY, COLOUR_TEXT, false);
                     currentY += 10;
-                }
-            }
-
-            // Node Visibility Checklist
-            currentY += 8;
-            guiGraphics.drawString(fontSource.font, "Node Visibility:", getX() + 6, currentY + 1, COLOUR_TITLE, false);
-
-            boolean anyHidden = false;
-            if (plan.graph() != null && isHiddenPredicate != null) {
-                for (RecipeGraphNode n : plan.graph().nodes().values()) {
-                    if (isHiddenPredicate.test(n.getId())) {
-                        anyHidden = true;
-                        break;
-                    }
-                }
-            }
-            if (anyHidden && onUnhideAll != null) {
-                String unhideText = "Unhide All";
-                int unhideTextW = fontSource.font.width(unhideText);
-                int headerW = fontSource.font.width("Node Visibility:");
-                unhideAllBoxX = getX() + 6 + headerW + 6;
-                unhideAllBoxY = currentY;
-                unhideAllBoxW = unhideTextW + 6;
-                unhideAllBoxH = 10;
-                isUnhideAllHovered = mouseX >= unhideAllBoxX && mouseX < unhideAllBoxX + unhideAllBoxW &&
-                                     mouseY >= unhideAllBoxY && mouseY < unhideAllBoxY + unhideAllBoxH;
-                int unhideBg = isUnhideAllHovered ? COLOUR_CYCLE_HOVER : COLOUR_CYCLE_BOX;
-                guiGraphics.fill(unhideAllBoxX, unhideAllBoxY, unhideAllBoxX + unhideAllBoxW, unhideAllBoxY + unhideAllBoxH, unhideBg);
-                guiGraphics.renderOutline(unhideAllBoxX, unhideAllBoxY, unhideAllBoxW, unhideAllBoxH, COLOUR_BORDER);
-                guiGraphics.drawString(fontSource.font, unhideText, unhideAllBoxX + 3, unhideAllBoxY + 1, COLOUR_TEXT, false);
-            }
-
-            currentY += 13;
-            if (plan.graph() != null) {
-                List<RecipeGraphNode> allNodes = plan.graph().flatten();
-                for (RecipeGraphNode graphNode : allNodes) {
-                    boolean hidden = isHiddenPredicate != null && isHiddenPredicate.test(graphNode.getId());
-                    String icon = hidden ? "[x]" : "[o]";
-                    int iconW = fontSource.font.width(icon);
-                    int pillX = getX() + 6;
-                    int pillY = currentY;
-                    int pillW = iconW + 4;
-                    int pillH = 10;
-
-                    boolean hovered = mouseX >= pillX && mouseX < pillX + pillW &&
-                                      mouseY >= pillY && mouseY < pillY + pillH;
-                    int itemPillBg = hovered ? COLOUR_CYCLE_HOVER : COLOUR_CYCLE_BOX;
-                    guiGraphics.fill(pillX, pillY, pillX + pillW, pillY + pillH, itemPillBg);
-                    guiGraphics.renderOutline(pillX, pillY, pillW, pillH, COLOUR_BORDER);
-                    int iconColor = hidden ? COLOUR_MUTED : COLOUR_GREEN;
-                    guiGraphics.drawString(fontSource.font, icon, pillX + 2, pillY + 1, iconColor, false);
-                    visibilityTargets.add(new VisibilityClickTarget(pillX, pillY, pillW, pillH, graphNode.getId()));
-
-                    String label = (graphNode.getType() == NodeType.MACHINE ? "Recipe: " : "") + DisplayFormat.formatId(graphNode.getId());
-                    int labelColor = hidden ? COLOUR_MUTED : COLOUR_TEXT;
-                    guiGraphics.drawString(fontSource.font, label, pillX + pillW + 4, currentY + 1, labelColor, false);
-                    currentY += 12;
                 }
             }
         } else {
@@ -460,23 +388,6 @@ public class DetailCard extends AbstractWidget {
             onToggleNumbers.run();
             this.playDownSound(Minecraft.getInstance().getSoundManager());
             return true;
-        }
-
-        if (button == 0 && node == null && isUnhideAllHovered && onUnhideAll != null) {
-            onUnhideAll.run();
-            this.playDownSound(Minecraft.getInstance().getSoundManager());
-            return true;
-        }
-
-        if (button == 0 && node == null && onToggleVisibility != null) {
-            for (VisibilityClickTarget target : visibilityTargets) {
-                if (mouseX >= target.x() && mouseX < target.x() + target.w() &&
-                    mouseY >= target.y() && mouseY < target.y() + target.h()) {
-                    onToggleVisibility.accept(target.nodeId());
-                    this.playDownSound(Minecraft.getInstance().getSoundManager());
-                    return true;
-                }
-            }
         }
 
         if (button == 0 && node != null && isNodeVisHovered && onToggleVisibility != null) {
