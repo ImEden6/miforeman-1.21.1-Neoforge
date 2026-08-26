@@ -8,7 +8,7 @@ import org.jetbrains.annotations.Nullable;
 /**
  * Camera panning, zoom, and node dragging state for {@link GraphCanvas}.
  */
-class GraphCamera {
+public class GraphCamera {
     private double panX, panY;
     private float zoom;
 
@@ -17,30 +17,30 @@ class GraphCamera {
     private @Nullable NodePosition liveDragPos;
     private double dragAccumPixels;
 
-    record DragEnd(@Nullable ResourceLocation committedNodeId, @Nullable NodePosition committedFrom,
+    public record DragEnd(@Nullable ResourceLocation committedNodeId, @Nullable NodePosition committedFrom,
                     @Nullable NodePosition committedTo, @Nullable ResourceLocation clickedNodeId) {
-        static final DragEnd NONE = new DragEnd(null, null, null, null);
+        public static final DragEnd NONE = new DragEnd(null, null, null, null);
     }
 
-    GraphCamera(double panX, double panY, float zoom) {
+    public GraphCamera(double panX, double panY, float zoom) {
         this.panX = panX;
         this.panY = panY;
         this.zoom = zoom;
     }
 
-    double panX() {
+    public double panX() {
         return panX;
     }
 
-    double panY() {
+    public double panY() {
         return panY;
     }
 
-    float zoom() {
+    public float zoom() {
         return zoom;
     }
 
-    @Nullable ResourceLocation draggingNodeId() {
+    public @Nullable ResourceLocation draggingNodeId() {
         return draggingNodeId;
     }
 
@@ -111,5 +111,12 @@ class GraphCamera {
         panX = mouseX - originX - canvasXBefore * zoom;
         panY = mouseY - originY - canvasYBefore * zoom;
         return true;
+    }
+
+    public void centerOn(int canvasWidth, int canvasHeight, double nodeX, double nodeY, double nodeWidth, double nodeHeight) {
+        double centerX = nodeX + nodeWidth / 2.0;
+        double centerY = nodeY + nodeHeight / 2.0;
+        this.panX = (canvasWidth / 2.0) - (centerX * zoom);
+        this.panY = (canvasHeight / 2.0) - (centerY * zoom);
     }
 }

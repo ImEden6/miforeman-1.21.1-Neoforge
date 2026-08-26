@@ -33,6 +33,7 @@
 | | `client/gui/ColourPickerScreen.java` | In-game RGBA/HSB color picker screen for highlights and UI elements |
 | | `client/gui/blockui/DefineGoalWindow.java` | Step 0 modal popup to configure target item/fluid, rate, and units |
 | GUI widgets | `client/gui/widget/GraphCanvas.java`, `GraphCamera.java` | Interactive pan/zoom DAG canvas rendering recipe nodes and bezier edges |
+| | `client/gui/widget/GraphSearchBar.java`, `GraphSearchState.java` | Floating search overlay widget, query matching, match cycling, and camera centering |
 | | `client/gui/widget/DetailCard.java` | Contextual inspector card for selected node, material flows, and ambiguity cycling |
 | | `client/gui/widget/MonitoringListPanel.java`, `ReviewListPanel.java` | Scrollable panels for machine lists, status badges, and batch actions |
 | Goal model | `goal/ProductionGoal.java` | Immutable record with `CODEC`/`STREAM_CODEC` — target, rate, plan, layout, history, uiState |
@@ -46,7 +47,7 @@
 | Packets | `network/*.java` | 6 network packets for client-server communication (see below) |
 | Rate limiting | `network/PacketRateLimiter.java` | Server-side rate limiter guarding network payloads |
 | Mixins | `mixin/CrafterComponentAccessor.java` | Accessor mixin for `CrafterComponent.activeRecipe` |
-| Game tests | `test/ForemanGameTests.java` | 20 `@GameTest`s verifying core logic (see below) |
+| Game tests | `test/ForemanGameTests.java` | 23 `@GameTest`s verifying core logic (see below) |
 
 ### Network packets (registered in `MIForeman.java:75-107`)
 
@@ -92,6 +93,9 @@
 | `testProxiedRecipeTypesConfigDefaultsOffAndTogglesCleanly` | Config toggling for proxied recipe types defaults off and cleanly round-trips |
 | `testUnifiedCrafterStandardParity` | Asserts standard MI machines are wrapped directly via `StandardCrafterAdapter` |
 | `testUnifiedCrafterModularDuckTyping` | Asserts duck-typed modular multiblock crafter components resolve correctly via `ModularCrafterAdapter` |
+| `testGraphSearchMatchingLogic` | Search matching against formatted display names, namespace IDs, case-insensitivity, and empty queries |
+| `testGraphSearchMatchCycling` | Match selection indexing, forward/backward navigation, and cyclic wrap-around boundaries |
+| `testGraphCameraCenteringMath` | `GraphCamera.centerOn` coordinate calculations across zoom levels and canvas viewport dimensions |
 
 Tests use `@PrefixGameTestTemplate(false)` + `template="empty"` — no structure files needed.
 

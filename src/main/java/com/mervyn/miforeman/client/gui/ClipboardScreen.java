@@ -799,6 +799,37 @@ public class ClipboardScreen extends Screen {
     }
 
     @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (currentStep == STEP_REVIEW_PLAN && graphCanvas != null) {
+            // Ctrl+F / Cmd+F toggles search
+            if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_F && hasControlDown()) {
+                graphCanvas.toggleSearch();
+                return true;
+            }
+            if (graphCanvas.isSearchFocused()) {
+                if (graphCanvas.keyPressed(keyCode, scanCode, modifiers)) {
+                    return true;
+                }
+            }
+            if (graphCanvas.isSearchVisible() && keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
+                graphCanvas.toggleSearch();
+                return true;
+            }
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    @Override
+    public boolean charTyped(char codePoint, int modifiers) {
+        if (currentStep == STEP_REVIEW_PLAN && graphCanvas != null && graphCanvas.isSearchFocused()) {
+            if (graphCanvas.charTyped(codePoint, modifiers)) {
+                return true;
+            }
+        }
+        return super.charTyped(codePoint, modifiers);
+    }
+
+    @Override
     public boolean isPauseScreen() {
         return false;
     }

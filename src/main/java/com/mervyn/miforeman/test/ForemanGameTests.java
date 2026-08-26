@@ -1151,5 +1151,131 @@ public class ForemanGameTests {
 
         helper.succeed();
     }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testGraphSearchMatchingLogic(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ProductionGoal goal = new ProductionGoal("search_test", ProductionGoal.TargetType.ITEM,
+                ResourceLocation.parse("modern_industrialization:quantum_upgrade"), 1.0);
+        com.mervyn.miforeman.goal.RecipeGraph graph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
+        if (graph.nodes().isEmpty()) {
+            helper.fail("Expected quantum_upgrade graph to contain nodes.");
+            return;
+        }
+
+        com.mervyn.miforeman.client.gui.widget.GraphSearchState state = new com.mervyn.miforeman.client.gui.widget.GraphSearchState();
+
+        // 1. Empty query
+        state.setQuery("", graph.nodes().values());
+        if (state.isSearching() || state.getMatchCount() != 0 || state.getCurrentIndex() != -1) {
+            helper.fail("Empty query should have 0 matches and isSearching == false");
+            return;
+        }
+
+        // 2. Search by partial machine name (case-insensitive formatted name)
+        state.setQuery("assembler", graph.nodes().values());
+        if (!state.isSearching() || state.getMatchCount() == 0) {
+            helper.fail("Expected matches for query 'assembler' in quantum_upgrade graph");
+            return;
+        }
+        for (ResourceLocation matchId : state.getMatches()) {
+            String formatted = com.mervyn.miforeman.client.DisplayFormat.formatId(matchId).toLowerCase(java.util.Locale.ROOT);
+            String raw = matchId.toString().toLowerCase(java.util.Locale.ROOT);
+            if (!formatted.contains("assembler") && !raw.contains("assembler")) {
+                helper.fail("Match " + matchId + " does not contain query 'assembler'");
+                return;
+            }
+        }
+
+        // 3. Search by exact resource namespace ID
+        state.setQuery("modern_industrialization:quantum_upgrade", graph.nodes().values());
+        if (state.getMatchCount() != 1) {
+            helper.fail("Expected exactly 1 match for full quantum_upgrade ID, got: " + state.getMatchCount());
+            return;
+        }
+        if (!state.getMatches().get(0).equals(ResourceLocation.parse("modern_industrialization:quantum_upgrade"))) {
+            helper.fail("Expected match to be modern_industrialization:quantum_upgrade, got: " + state.getMatches().get(0));
+            return;
+        }
+
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testGraphSearchMatchCycling(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ProductionGoal goal = new ProductionGoal("cycle_test", ProductionGoal.TargetType.ITEM,
+                ResourceLocation.parse("modern_industrialization:quantum_upgrade"), 1.0);
+        com.mervyn.miforeman.goal.RecipeGraph graph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
+
+        com.mervyn.miforeman.client.gui.widget.GraphSearchState state = new com.mervyn.miforeman.client.gui.widget.GraphSearchState();
+        state.setQuery("assembler", graph.nodes().values());
+
+        int count = state.getMatchCount();
+        if (count < 2) {
+            helper.fail("Expected at least 2 assembler matches for cycling test, got: " + count);
+            return;
+        }
+
+        if (state.getCurrentIndex() != 0) {
+            helper.fail("Initial index expected 0, got: " + state.getCurrentIndex());
+            return;
+        }
+
+        // Step forward
+        ResourceLocation secondMatch = state.nextMatch();
+        if (state.getCurrentIndex() != 1 || secondMatch == null || !secondMatch.equals(state.getMatches().get(1))) {
+            helper.fail("Expected nextMatch() to advance to index 1");
+            return;
+        }
+
+        // Step back
+        ResourceLocation firstMatch = state.prevMatch();
+        if (state.getCurrentIndex() != 0 || firstMatch == null || !firstMatch.equals(state.getMatches().get(0))) {
+            helper.fail("Expected prevMatch() to return to index 0");
+            return;
+        }
+
+        // Wrap around backwards from 0 -> count - 1
+        ResourceLocation lastMatch = state.prevMatch();
+        if (state.getCurrentIndex() != count - 1 || lastMatch == null || !lastMatch.equals(state.getMatches().get(count - 1))) {
+            helper.fail("Expected wrap-around backwards to index " + (count - 1) + ", got: " + state.getCurrentIndex());
+            return;
+        }
+
+        // Wrap around forward from count - 1 -> 0
+        ResourceLocation wrappedFirst = state.nextMatch();
+        if (state.getCurrentIndex() != 0 || wrappedFirst == null || !wrappedFirst.equals(state.getMatches().get(0))) {
+            helper.fail("Expected wrap-around forward to index 0, got: " + state.getCurrentIndex());
+            return;
+        }
+
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testGraphCameraCenteringMath(GameTestHelper helper) {
+        // Node at (200, 100) with size 96x26 -> center is (248, 113)
+        // Canvas size 400x300 -> center is (200, 150)
+        // At zoom 1.0: panX = 200 - 248*1 = -48, panY = 150 - 113*1 = 37
+        com.mervyn.miforeman.client.gui.widget.GraphCamera camera1 = new com.mervyn.miforeman.client.gui.widget.GraphCamera(0, 0, 1.0f);
+        camera1.centerOn(400, 300, 200, 100, 96, 26);
+
+        if (Math.abs(camera1.panX() - (-48.0)) > 0.001 || Math.abs(camera1.panY() - 37.0) > 0.001) {
+            helper.fail("Expected pan (-48, 37) at zoom 1.0, got: (" + camera1.panX() + ", " + camera1.panY() + ")");
+            return;
+        }
+
+        // At zoom 2.0: panX = 200 - 248*2 = -296, panY = 150 - 113*2 = -76
+        com.mervyn.miforeman.client.gui.widget.GraphCamera camera2 = new com.mervyn.miforeman.client.gui.widget.GraphCamera(0, 0, 2.0f);
+        camera2.centerOn(400, 300, 200, 100, 96, 26);
+
+        if (Math.abs(camera2.panX() - (-296.0)) > 0.001 || Math.abs(camera2.panY() - (-76.0)) > 0.001) {
+            helper.fail("Expected pan (-296, -76) at zoom 2.0, got: (" + camera2.panX() + ", " + camera2.panY() + ")");
+            return;
+        }
+
+        helper.succeed();
+    }
 }
 

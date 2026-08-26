@@ -50,6 +50,15 @@ public class GraphCanvas extends AbstractWidget {
     private static final float MIN_ZOOM = 0.25f;
     private static final float MAX_ZOOM = 3.0f;
 
+    private static final int COLOUR_NODE_FILL_TOP_DIM = 0x33FFFBEF;
+    private static final int COLOUR_NODE_FILL_BOTTOM_DIM = 0x33EFE0BE;
+    private static final int COLOUR_BORDER_LIGHT_DIM = 0x449C8058;
+    private static final int COLOUR_BORDER_DARK_DIM = 0x444A3620;
+    private static final int COLOUR_TEXT_DIM = 0x553A2A18;
+    private static final int COLOUR_MUTED_DIM = 0x448A7A68;
+    private static final int COLOUR_SEARCH_MATCH_BORDER = 0xFFFFD700;
+    private static final int COLOUR_SEARCH_CURRENT_MATCH = 0xFFFF9900;
+
     public interface CameraChangeListener {
         void onCameraChange(double panX, double panY, float zoom);
     }
@@ -67,6 +76,8 @@ public class GraphCanvas extends AbstractWidget {
     private final CameraChangeListener onCameraChange;
 
     private final GraphCamera camera;
+    private final GraphSearchState searchState = new GraphSearchState();
+    private final GraphSearchBar searchBar;
 
     public GraphCanvas(int x, int y, int width, int height, RecipeGraph graph,
                         GraphLayoutState layoutState, double panX, double panY, float zoom,
@@ -86,6 +97,8 @@ public class GraphCanvas extends AbstractWidget {
         this.onCameraChange = onCameraChange;
         this.viewMode = viewMode;
         this.dragEnabled = dragEnabled;
+        this.searchBar = new GraphSearchBar(this.searchState, Minecraft.getInstance().font, this::onSearchMatchChanged, null);
+        updateSearchBarPosition();
         computeFilteredView();
         computeAutoLayout();
     }
@@ -195,6 +208,79 @@ public class GraphCanvas extends AbstractWidget {
         return null;
     }
 
+    private void updateSearchBarPosition() {
+        if (searchBar != null) {
+            searchBar.setPosition(getX() + getWidth() - 6, getY() + 6);
+        }
+    }
+
+    @Override
+    public void setX(int x) {
+        super.setX(x);
+        updateSearchBarPosition();
+    }
+
+    @Override
+    public void setY(int y) {
+        super.setY(y);
+        updateSearchBarPosition();
+    }
+
+    @Override
+    public void setWidth(int width) {
+        super.setWidth(width);
+        updateSearchBarPosition();
+    }
+
+    @Override
+    public void setHeight(int height) {
+        super.setHeight(height);
+        updateSearchBarPosition();
+    }
+
+    @Override
+    public void setPosition(int x, int y) {
+        super.setPosition(x, y);
+        updateSearchBarPosition();
+    }
+
+    private void onSearchMatchChanged() {
+        searchState.setQuery(searchBar.getValue(), visibleNodes.values());
+        ResourceLocation currentMatch = searchState.currentMatchId();
+        if (currentMatch != null) {
+            this.selectedNodeId = currentMatch;
+            this.onSelect.accept(currentMatch);
+            RecipeGraphNode node = visibleNodes.get(currentMatch);
+            if (node != null) {
+                NodePosition pos = positionOf(node);
+                if (pos != null) {
+                    camera.centerOn(getWidth(), getHeight(), pos.x(), pos.y(), NODE_WIDTH, NODE_HEIGHT);
+                    onCameraChange.onCameraChange(camera.panX(), camera.panY(), camera.zoom());
+                }
+            }
+        }
+    }
+
+    public void toggleSearch() {
+        searchBar.toggleVisible();
+    }
+
+    public void openSearch() {
+        searchBar.setVisible(true);
+    }
+
+    public boolean isSearchFocused() {
+        return searchBar.isFocused();
+    }
+
+    public boolean isSearchVisible() {
+        return searchBar.isVisible();
+    }
+
+    public GraphSearchState getSearchState() {
+        return searchState;
+    }
+
     public void undo() {
         GraphLayoutState next = layoutState.undo();
         if (next != layoutState) {
@@ -229,10 +315,6 @@ public class GraphCanvas extends AbstractWidget {
 
     @Override
     protected void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        // No border/fill of its own -- ClipboardScreen's own main panel is already the
-        // background here (drawn before widgets, in Screen.render()); a second bordered panel
-        // read as a nested "clipboard within the clipboard" rather than one continuous surface.
-
         guiGraphics.enableScissor(getX() + 1, getY() + 1, getX() + getWidth() - 1, getY() + getHeight() - 1);
 
         guiGraphics.pose().pushPose();
@@ -241,10 +323,9 @@ public class GraphCanvas extends AbstractWidget {
 
         RecipeGraphNode hovered = isMouseOver(mouseX, mouseY) ? nodeAt(mouseX, mouseY) : null;
         ResourceLocation hoveredNodeId = hovered != null ? hovered.getId() : null;
+        boolean isSearching = searchState.isSearching();
 
-        // Edges: simple elbow (horizontal-vertical-horizontal) connectors. When a node is
-        // selected, edges touching it pop in COLOUR_EDGE_HIGHLIGHT and the rest dim, so
-        // dependencies are traceable without hunting through crossing lines.
+        // Edges: simple elbow (horizontal-vertical-horizontal) connectors.
         for (GraphEdge edge : visibleEdges) {
             RecipeGraphNode from = visibleNodes.get(edge.from());
             RecipeGraphNode to = visibleNodes.get(edge.to());
@@ -253,7 +334,11 @@ public class GraphCanvas extends AbstractWidget {
             NodePosition toPos = positionOf(to);
             if (fromPos == null || toPos == null) continue;
             int colour = COLOUR_EDGE;
-            if (selectedNodeId != null) {
+            if (isSearching) {
+                boolean bothMatch = searchState.isMatch(edge.from()) && searchState.isMatch(edge.to());
+                boolean touchesSelected = selectedNodeId != null && (edge.from().equals(selectedNodeId) || edge.to().equals(selectedNodeId));
+                colour = (bothMatch || touchesSelected) ? COLOUR_EDGE_HIGHLIGHT : COLOUR_EDGE_DIM;
+            } else if (selectedNodeId != null) {
                 boolean touchesSelected = edge.from().equals(selectedNodeId) || edge.to().equals(selectedNodeId);
                 colour = touchesSelected ? COLOUR_EDGE_HIGHLIGHT : COLOUR_EDGE_DIM;
             }
@@ -268,35 +353,42 @@ public class GraphCanvas extends AbstractWidget {
             if (pos == null) continue;
             boolean selected = node.getId().equals(selectedNodeId);
             boolean hoveredNode = node.getId().equals(hoveredNodeId);
+            boolean isMatch = !isSearching || searchState.isMatch(node.getId());
+            boolean isCurrentMatch = isSearching && searchState.isCurrentMatch(node.getId());
+
+            int fillTop = !isMatch ? COLOUR_NODE_FILL_TOP_DIM : COLOUR_NODE_FILL_TOP;
+            int fillBottom = !isMatch ? COLOUR_NODE_FILL_BOTTOM_DIM : COLOUR_NODE_FILL_BOTTOM;
+            int borderLight = isCurrentMatch ? COLOUR_SEARCH_CURRENT_MATCH : (isSearching && isMatch ? COLOUR_SEARCH_MATCH_BORDER : (!isMatch ? COLOUR_BORDER_LIGHT_DIM : COLOUR_BORDER_LIGHT));
+            int borderDark = isCurrentMatch ? COLOUR_SEARCH_CURRENT_MATCH : (isSearching && isMatch ? COLOUR_SEARCH_MATCH_BORDER : (!isMatch ? COLOUR_BORDER_DARK_DIM : COLOUR_BORDER_DARK));
 
             if (node.getType() == NodeType.MACHINE) {
-                fillChamfered(guiGraphics, pos.x(), pos.y(), NODE_WIDTH, NODE_HEIGHT, MACHINE_CHAMFER, COLOUR_BORDER_LIGHT);
+                fillChamfered(guiGraphics, pos.x(), pos.y(), NODE_WIDTH, NODE_HEIGHT, MACHINE_CHAMFER, borderLight);
                 fillChamferedGradient(guiGraphics, pos.x() + 1, pos.y() + 1, NODE_WIDTH - 2, NODE_HEIGHT - 2,
-                        Math.max(0, MACHINE_CHAMFER - 1), COLOUR_NODE_FILL_TOP, COLOUR_NODE_FILL_BOTTOM);
-                if (selected) {
+                        Math.max(0, MACHINE_CHAMFER - 1), fillTop, fillBottom);
+                if (selected || isCurrentMatch) {
                     fillChamfered(guiGraphics, pos.x(), pos.y(), NODE_WIDTH, NODE_HEIGHT, MACHINE_CHAMFER, COLOUR_SELECTED);
                 }
                 if (hoveredNode) {
                     fillChamfered(guiGraphics, pos.x(), pos.y(), NODE_WIDTH, NODE_HEIGHT, MACHINE_CHAMFER, COLOUR_HOVER);
                 }
             } else {
-                guiGraphics.fillGradient(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOUR_NODE_FILL_TOP, COLOUR_NODE_FILL_BOTTOM);
-                if (selected) {
+                guiGraphics.fillGradient(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, fillTop, fillBottom);
+                if (selected || isCurrentMatch) {
                     guiGraphics.fill(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOUR_SELECTED);
                 }
                 if (hoveredNode) {
                     guiGraphics.fill(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOUR_HOVER);
                 }
                 // Raised-tile treatment: light top/left edge, dark bottom/right edge.
-                guiGraphics.fill(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + 1, COLOUR_BORDER_LIGHT);
-                guiGraphics.fill(pos.x(), pos.y(), pos.x() + 1, pos.y() + NODE_HEIGHT, COLOUR_BORDER_LIGHT);
-                guiGraphics.fill(pos.x(), pos.y() + NODE_HEIGHT - 1, pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOUR_BORDER_DARK);
-                guiGraphics.fill(pos.x() + NODE_WIDTH - 1, pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, COLOUR_BORDER_DARK);
+                guiGraphics.fill(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + 1, borderLight);
+                guiGraphics.fill(pos.x(), pos.y(), pos.x() + 1, pos.y() + NODE_HEIGHT, borderLight);
+                guiGraphics.fill(pos.x(), pos.y() + NODE_HEIGHT - 1, pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, borderDark);
+                guiGraphics.fill(pos.x() + NODE_WIDTH - 1, pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT, borderDark);
             }
 
-            // Nudged clear of the chamfered top-left corner on MACHINE nodes so the first glyph
-            // doesn't render partly over the cut-off area.
             int textInset = node.getType() == NodeType.MACHINE ? 3 + MACHINE_CHAMFER / 2 : 3;
+            int textColour = !isMatch ? COLOUR_TEXT_DIM : COLOUR_TEXT;
+            int rateColour = !isMatch ? COLOUR_MUTED_DIM : COLOUR_MUTED;
 
             String name = DisplayFormat.formatId(node.getId());
             boolean hasAmbiguity = !node.getAmbiguityOptions().isEmpty();
@@ -307,14 +399,17 @@ public class GraphCanvas extends AbstractWidget {
             if (mc.font.width(name) > maxTextWidth) {
                 name = mc.font.plainSubstrByWidth(name, maxTextWidth - 8) + "..";
             }
-            guiGraphics.drawString(mc.font, name, pos.x() + textInset, pos.y() + 3, COLOUR_TEXT, false);
+            guiGraphics.drawString(mc.font, name, pos.x() + textInset, pos.y() + 3, textColour, false);
 
             String rateText = String.format("%.1f", node.getRequiredRate());
-            guiGraphics.drawString(mc.font, rateText, pos.x() + textInset, pos.y() + 14, COLOUR_MUTED, false);
+            guiGraphics.drawString(mc.font, rateText, pos.x() + textInset, pos.y() + 14, rateColour, false);
         }
 
         guiGraphics.pose().popPose();
         guiGraphics.disableScissor();
+
+        // Render search bar overlay on top of canvas
+        searchBar.render(guiGraphics, mouseX, mouseY, partialTick);
     }
 
     /** Renders a flat-color chamfered rectangle. */
@@ -376,7 +471,14 @@ public class GraphCanvas extends AbstractWidget {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (!visible || !active || button != 0) return false;
+        if (!visible || !active) return false;
+
+        // Give floating search bar priority on mouse click
+        if (searchBar.mouseClicked(mouseX, mouseY, button)) {
+            return true;
+        }
+
+        if (button != 0) return false;
         if (mouseX < getX() || mouseX >= getX() + getWidth() || mouseY < getY() || mouseY >= getY() + getHeight()) {
             return false;
         }
@@ -384,6 +486,22 @@ public class GraphCanvas extends AbstractWidget {
         RecipeGraphNode hit = nodeAt(mouseX, mouseY);
         camera.beginDrag(hit != null ? hit.getId() : null, hit != null ? positionOf(hit) : null);
         return true;
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (searchBar.keyPressed(keyCode, scanCode, modifiers)) {
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    @Override
+    public boolean charTyped(char codePoint, int modifiers) {
+        if (searchBar.charTyped(codePoint, modifiers)) {
+            return true;
+        }
+        return super.charTyped(codePoint, modifiers);
     }
 
     @Override
