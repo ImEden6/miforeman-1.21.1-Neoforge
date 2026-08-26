@@ -20,12 +20,6 @@ correctness fixes, feature ideas, and docs debt.
   another currently gives no feedback; a "snap away" or warning outline on
   overlap would help.
 
-## Monitoring & correctness
- 
-- [x] **Consolidate `computePlan()` into `planFromGraph()`** — Derived `computePlan()` directly
-  from `computeRecipeGraph()`'s resolved nodes (`planFromGraph()`), eliminating `SubPlan`,
-  `MachineStats`, `getSubPlan`, and `mergeScaled` into a unified single source of truth.
-
 ## Feature ideas
 
 - **Alerts** — toast/chat notification when a machine sits RED > N seconds, or actual rate
@@ -52,10 +46,10 @@ correctness fixes, feature ideas, and docs debt.
   resources. Surfacing the raw recipe (`RecipeGraphNode.getRecipe()` already carries the
   `MachineRecipe`) would at least let players see what else a machine produces, even if the tool
   doesn't route/plan around it.
-
-## Code health
- 
-- [x] **`RecipeGraphTraverser.java` complexity & unification** — Resolved duplication and complexity
-  by consolidating `computePlan()` onto `computeRecipeGraph()` via `planFromGraph()`, fixing cycle
-  traversal memoization with white/gray/black DFS (`collectDag`), and removing the duplicate `getSubPlan`
-  traversal pipeline. Validated across all 18 GameTests.
+- **Avoid hardcoded texts** - the code is full of hardcoded texts, which should be replaced with
+  translatable texts.
+- **Avoid hardcoded colors** - the code is full of hardcoded colors, which should be replaced with
+  `ColourPalette` colors.
+- **Avoid hardcoded constants** - the code is full of hardcoded constants, which should be replaced
+  with `Constants`.
+(Basically just use lang files.)

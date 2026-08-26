@@ -44,6 +44,7 @@ public class DetailCard extends AbstractWidget {
     private final @Nullable Consumer<ResourceLocation> onToggleVisibility;
     private final @Nullable Runnable onUnhideAll;
     private final @Nullable Predicate<ResourceLocation> isHiddenPredicate;
+    private final @Nullable Consumer<ResourceLocation> onExpandMaterial;
     private final IntConsumer onScrollChange;
     private int scrollOffset;
     private int totalContentHeight = 0;
@@ -76,6 +77,7 @@ public class DetailCard extends AbstractWidget {
                       @Nullable Consumer<ResourceLocation> onToggleVisibility,
                       @Nullable Runnable onUnhideAll,
                       @Nullable Predicate<ResourceLocation> isHiddenPredicate,
+                      @Nullable Consumer<ResourceLocation> onExpandMaterial,
                       int initialScrollOffset, IntConsumer onScrollChange) {
         super(x, y, width, height, Component.literal("Detail Card"));
         this.node = node;
@@ -87,6 +89,7 @@ public class DetailCard extends AbstractWidget {
         this.onToggleVisibility = onToggleVisibility;
         this.onUnhideAll = onUnhideAll;
         this.isHiddenPredicate = isHiddenPredicate;
+        this.onExpandMaterial = onExpandMaterial;
         this.scrollOffset = initialScrollOffset;
         this.onScrollChange = onScrollChange;
     }
@@ -96,7 +99,7 @@ public class DetailCard extends AbstractWidget {
                       BiConsumer<ResourceLocation, ResourceLocation> onAmbiguity,
                       Runnable onToggleNumbers,
                       int initialScrollOffset, IntConsumer onScrollChange) {
-        this(x, y, width, height, node, plan, perHour, showNumbers, onAmbiguity, onToggleNumbers, null, null, null, initialScrollOffset, onScrollChange);
+        this(x, y, width, height, node, plan, perHour, showNumbers, onAmbiguity, onToggleNumbers, null, null, null, null, initialScrollOffset, onScrollChange);
     }
 
     public void setNode(@Nullable RecipeGraphNode node) {

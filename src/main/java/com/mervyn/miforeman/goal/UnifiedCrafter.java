@@ -1,5 +1,7 @@
 package com.mervyn.miforeman.goal;
 
+import aztech.modern_industrialization.api.machine.component.CrafterAccess;
+import aztech.modern_industrialization.api.machine.holder.CrafterComponentHolder;
 import aztech.modern_industrialization.inventory.ConfigurableFluidStack;
 import aztech.modern_industrialization.inventory.ConfigurableItemStack;
 import aztech.modern_industrialization.machines.MachineBlockEntity;
@@ -8,8 +10,6 @@ import aztech.modern_industrialization.machines.components.CrafterComponent;
 import aztech.modern_industrialization.machines.recipe.MachineRecipe;
 import aztech.modern_industrialization.machines.recipe.MachineRecipeType;
 import com.mervyn.miforeman.mixin.CrafterComponentAccessor;
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Collections;
@@ -45,24 +45,56 @@ public interface UnifiedCrafter {
      */
     @Nullable
     static UnifiedCrafter from(MachineBlockEntity machine) {
-        if (machine == null || machine.components == null) {
+        if (machine == null) {
             return null;
         }
 
-        for (MachineComponent comp : machine.components) {
-            if (comp instanceof CrafterComponent crafter) {
-                return new StandardCrafterAdapter(crafter);
+        if (machine.components != null) {
+            for (MachineComponent comp : machine.components) {
+                if (comp instanceof CrafterComponent crafter) {
+                    return new StandardCrafterAdapter(crafter);
+                }
+            }
+
+            // Addon/modular crafter fallback via cached reflection
+            for (MachineComponent comp : machine.components) {
+                if (comp == null) continue;
+                ModularAccessors accessors = ModularAccessors.get(comp.getClass());
+                if (accessors != null) {
+                    return new ModularCrafterAdapter(comp, accessors);
+                }
             }
         }
 
-        // Addon/modular crafter fallback via cached MethodHandles
-        for (MachineComponent comp : machine.components) {
-            if (comp == null) continue;
-            Class<?> clazz = comp.getClass();
-            ModularAccessors accessors = ModularAccessors.get(clazz);
-            if (accessors != null) {
-                return new ModularCrafterAdapter(comp, accessors);
+        if (machine instanceof CrafterComponentHolder holder) {
+            CrafterAccess crafter = holder.getCrafterComponent();
+            if (crafter instanceof CrafterComponent cc) {
+                return new StandardCrafterAdapter(cc);
             }
+            if (crafter != null) {
+                ModularAccessors accessors = ModularAccessors.get(crafter.getClass());
+                if (accessors != null) {
+                    return new ModularCrafterAdapter(crafter, accessors);
+                }
+            }
+        }
+
+        // Direct field fallback on machine class (e.g. crafter field)
+        try {
+            Field crafterField = ModularAccessors.findField(machine.getClass(), "crafter");
+            if (crafterField != null) {
+                Object crafterObj = crafterField.get(machine);
+                if (crafterObj instanceof CrafterComponent cc) {
+                    return new StandardCrafterAdapter(cc);
+                }
+                if (crafterObj != null) {
+                    ModularAccessors accessors = ModularAccessors.get(crafterObj.getClass());
+                    if (accessors != null) {
+                        return new ModularCrafterAdapter(crafterObj, accessors);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
         }
 
         return null;
@@ -128,7 +160,7 @@ public interface UnifiedCrafter {
     }
 
     /**
-     * Duck-typed adapter for modular / addon crafter components using cached {@link MethodHandle}s.
+     * Duck-typed adapter for modular / addon crafter components using cached reflection.
      */
     final class ModularCrafterAdapter implements UnifiedCrafter {
         private final Object component;
@@ -142,8 +174,8 @@ public interface UnifiedCrafter {
         @Override
         public boolean hasActiveRecipe() {
             try {
-                if (accessors.hasActiveRecipeHandle != null) {
-                    return (boolean) accessors.hasActiveRecipeHandle.invoke(component);
+                if (accessors.hasActiveRecipeMethod != null) {
+                    return (boolean) accessors.hasActiveRecipeMethod.invoke(component);
                 }
                 return getActiveRecipe() != null;
             } catch (Throwable t) {
@@ -156,10 +188,10 @@ public interface UnifiedCrafter {
         public @Nullable RecipeHolder<MachineRecipe> getActiveRecipe() {
             try {
                 Object raw = null;
-                if (accessors.getActiveRecipeHandle != null) {
-                    raw = accessors.getActiveRecipeHandle.invoke(component);
-                } else if (accessors.activeRecipeFieldHandle != null) {
-                    raw = accessors.activeRecipeFieldHandle.invoke(component);
+                if (accessors.getActiveRecipeMethod != null) {
+                    raw = accessors.getActiveRecipeMethod.invoke(component);
+                } else if (accessors.activeRecipeField != null) {
+                    raw = accessors.activeRecipeField.get(component);
                 }
 
                 if (raw instanceof RecipeHolder<?> holder && holder.value() instanceof MachineRecipe) {
@@ -173,8 +205,11 @@ public interface UnifiedCrafter {
         @Override
         public float getProgress() {
             try {
-                if (accessors.getProgressHandle != null) {
-                    return (float) accessors.getProgressHandle.invoke(component);
+                if (accessors.getProgressMethod != null) {
+                    Object res = accessors.getProgressMethod.invoke(component);
+                    if (res instanceof Number num) {
+                        return num.floatValue();
+                    }
                 }
             } catch (Throwable ignored) {
             }
@@ -182,12 +217,13 @@ public interface UnifiedCrafter {
         }
 
         @Override
+        @SuppressWarnings("unchecked")
         public List<ConfigurableItemStack> getItemInputs() {
             try {
-                if (accessors.getItemInputsHandle != null) {
-                    Object inv = accessors.getInventoryHandle != null ? accessors.getInventoryHandle.invoke(component) : component;
+                if (accessors.getItemInputsMethod != null) {
+                    Object inv = accessors.getInvMethod != null ? accessors.getInvMethod.invoke(component) : component;
                     if (inv != null) {
-                        return (List<ConfigurableItemStack>) accessors.getItemInputsHandle.invoke(inv);
+                        return (List<ConfigurableItemStack>) accessors.getItemInputsMethod.invoke(inv);
                     }
                 }
             } catch (Throwable ignored) {
@@ -196,12 +232,13 @@ public interface UnifiedCrafter {
         }
 
         @Override
+        @SuppressWarnings("unchecked")
         public List<ConfigurableFluidStack> getFluidInputs() {
             try {
-                if (accessors.getFluidInputsHandle != null) {
-                    Object inv = accessors.getInventoryHandle != null ? accessors.getInventoryHandle.invoke(component) : component;
+                if (accessors.getFluidInputsMethod != null) {
+                    Object inv = accessors.getInvMethod != null ? accessors.getInvMethod.invoke(component) : component;
                     if (inv != null) {
-                        return (List<ConfigurableFluidStack>) accessors.getFluidInputsHandle.invoke(inv);
+                        return (List<ConfigurableFluidStack>) accessors.getFluidInputsMethod.invoke(inv);
                     }
                 }
             } catch (Throwable ignored) {
@@ -212,12 +249,19 @@ public interface UnifiedCrafter {
         @Override
         public @Nullable MachineRecipeType getRecipeType() {
             try {
-                if (accessors.getRecipeTypeHandle != null) {
-                    Object behavior = accessors.getBehaviorHandle != null ? accessors.getBehaviorHandle.invoke(component) : component;
-                    if (behavior != null) {
-                        Object type = accessors.getRecipeTypeHandle.invoke(behavior);
+                if (accessors.getRecipeTypeMethod != null) {
+                    if (accessors.recipeTypeOnComponent) {
+                        Object type = accessors.getRecipeTypeMethod.invoke(component);
                         if (type instanceof MachineRecipeType mrt) {
                             return mrt;
+                        }
+                    } else {
+                        Object behavior = accessors.getBehaviorMethod != null ? accessors.getBehaviorMethod.invoke(component) : component;
+                        if (behavior != null) {
+                            Object type = accessors.getRecipeTypeMethod.invoke(behavior);
+                            if (type instanceof MachineRecipeType mrt) {
+                                return mrt;
+                            }
                         }
                     }
                 }
@@ -229,10 +273,14 @@ public interface UnifiedCrafter {
         @Override
         public boolean banRecipe(MachineRecipe recipe) {
             try {
-                if (accessors.banRecipeHandle != null) {
-                    Object behavior = accessors.getBehaviorHandle != null ? accessors.getBehaviorHandle.invoke(component) : component;
-                    if (behavior != null) {
-                        return (boolean) accessors.banRecipeHandle.invoke(behavior, recipe);
+                if (accessors.banRecipeMethod != null) {
+                    if (accessors.banRecipeOnComponent) {
+                        return (boolean) accessors.banRecipeMethod.invoke(component, recipe);
+                    } else {
+                        Object behavior = accessors.getBehaviorMethod != null ? accessors.getBehaviorMethod.invoke(component) : component;
+                        if (behavior != null) {
+                            return (boolean) accessors.banRecipeMethod.invoke(behavior, recipe);
+                        }
                     }
                 }
             } catch (Throwable ignored) {
@@ -246,40 +294,46 @@ public interface UnifiedCrafter {
      */
     final class ModularAccessors {
         private static final Map<Class<?>, ModularAccessors> CACHE = new ConcurrentHashMap<>();
-        private static final ModularAccessors NONE = new ModularAccessors(null, null, null, null, null, null, null, null, null, null);
+        private static final ModularAccessors NONE = new ModularAccessors(null, null, null, null, null, null, null, null, null, false, null, false);
 
-        final @Nullable MethodHandle hasActiveRecipeHandle;
-        final @Nullable MethodHandle getActiveRecipeHandle;
-        final @Nullable MethodHandle activeRecipeFieldHandle;
-        final @Nullable MethodHandle getProgressHandle;
-        final @Nullable MethodHandle getInventoryHandle;
-        final @Nullable MethodHandle getItemInputsHandle;
-        final @Nullable MethodHandle getFluidInputsHandle;
-        final @Nullable MethodHandle getBehaviorHandle;
-        final @Nullable MethodHandle getRecipeTypeHandle;
-        final @Nullable MethodHandle banRecipeHandle;
+        final @Nullable Method hasActiveRecipeMethod;
+        final @Nullable Method getActiveRecipeMethod;
+        final @Nullable Field activeRecipeField;
+        final @Nullable Method getProgressMethod;
+        final @Nullable Method getInvMethod;
+        final @Nullable Method getItemInputsMethod;
+        final @Nullable Method getFluidInputsMethod;
+        final @Nullable Method getBehaviorMethod;
+        final @Nullable Method getRecipeTypeMethod;
+        final boolean recipeTypeOnComponent;
+        final @Nullable Method banRecipeMethod;
+        final boolean banRecipeOnComponent;
 
         private ModularAccessors(
-                @Nullable MethodHandle hasActiveRecipeHandle,
-                @Nullable MethodHandle getActiveRecipeHandle,
-                @Nullable MethodHandle activeRecipeFieldHandle,
-                @Nullable MethodHandle getProgressHandle,
-                @Nullable MethodHandle getInventoryHandle,
-                @Nullable MethodHandle getItemInputsHandle,
-                @Nullable MethodHandle getFluidInputsHandle,
-                @Nullable MethodHandle getBehaviorHandle,
-                @Nullable MethodHandle getRecipeTypeHandle,
-                @Nullable MethodHandle banRecipeHandle) {
-            this.hasActiveRecipeHandle = hasActiveRecipeHandle;
-            this.getActiveRecipeHandle = getActiveRecipeHandle;
-            this.activeRecipeFieldHandle = activeRecipeFieldHandle;
-            this.getProgressHandle = getProgressHandle;
-            this.getInventoryHandle = getInventoryHandle;
-            this.getItemInputsHandle = getItemInputsHandle;
-            this.getFluidInputsHandle = getFluidInputsHandle;
-            this.getBehaviorHandle = getBehaviorHandle;
-            this.getRecipeTypeHandle = getRecipeTypeHandle;
-            this.banRecipeHandle = banRecipeHandle;
+                @Nullable Method hasActiveRecipeMethod,
+                @Nullable Method getActiveRecipeMethod,
+                @Nullable Field activeRecipeField,
+                @Nullable Method getProgressMethod,
+                @Nullable Method getInvMethod,
+                @Nullable Method getItemInputsMethod,
+                @Nullable Method getFluidInputsMethod,
+                @Nullable Method getBehaviorMethod,
+                @Nullable Method getRecipeTypeMethod,
+                boolean recipeTypeOnComponent,
+                @Nullable Method banRecipeMethod,
+                boolean banRecipeOnComponent) {
+            this.hasActiveRecipeMethod = hasActiveRecipeMethod;
+            this.getActiveRecipeMethod = getActiveRecipeMethod;
+            this.activeRecipeField = activeRecipeField;
+            this.getProgressMethod = getProgressMethod;
+            this.getInvMethod = getInvMethod;
+            this.getItemInputsMethod = getItemInputsMethod;
+            this.getFluidInputsMethod = getFluidInputsMethod;
+            this.getBehaviorMethod = getBehaviorMethod;
+            this.getRecipeTypeMethod = getRecipeTypeMethod;
+            this.recipeTypeOnComponent = recipeTypeOnComponent;
+            this.banRecipeMethod = banRecipeMethod;
+            this.banRecipeOnComponent = banRecipeOnComponent;
         }
 
         public static @Nullable ModularAccessors get(Class<?> clazz) {
@@ -289,8 +343,6 @@ public interface UnifiedCrafter {
 
         private static ModularAccessors inspect(Class<?> clazz) {
             try {
-                MethodHandles.Lookup lookup = MethodHandles.lookup();
-
                 Method hasActiveRecipeMethod = findMethod(clazz, "hasActiveRecipe");
                 Method getActiveRecipeMethod = findMethod(clazz, "getActiveRecipe");
                 Field activeRecipeField = findField(clazz, "activeRecipe");
@@ -301,52 +353,57 @@ public interface UnifiedCrafter {
                     return NONE;
                 }
 
-                MethodHandle hasActive = hasActiveRecipeMethod != null ? unreflectMethod(lookup, hasActiveRecipeMethod) : null;
-                MethodHandle getActive = getActiveRecipeMethod != null ? unreflectMethod(lookup, getActiveRecipeMethod) : null;
-                MethodHandle activeField = activeRecipeField != null ? unreflectGetter(lookup, activeRecipeField) : null;
-                MethodHandle getProgress = getProgressMethod != null ? unreflectMethod(lookup, getProgressMethod) : null;
-
                 Method getInvMethod = findMethod(clazz, "getInventory");
-                MethodHandle getInv = getInvMethod != null ? unreflectMethod(lookup, getInvMethod) : null;
                 Class<?> invClass = getInvMethod != null ? getInvMethod.getReturnType() : clazz;
 
                 Method getItemInputsMethod = findMethod(invClass, "getItemInputs");
-                MethodHandle getItemInputs = getItemInputsMethod != null ? unreflectMethod(lookup, getItemInputsMethod) : null;
-
                 Method getFluidInputsMethod = findMethod(invClass, "getFluidInputs");
-                MethodHandle getFluidInputs = getFluidInputsMethod != null ? unreflectMethod(lookup, getFluidInputsMethod) : null;
 
                 Method getBehaviorMethod = findMethod(clazz, "getBehavior");
-                MethodHandle getBehavior = getBehaviorMethod != null ? unreflectMethod(lookup, getBehaviorMethod) : null;
                 Class<?> behaviorClass = getBehaviorMethod != null ? getBehaviorMethod.getReturnType() : clazz;
 
-                Method getRecipeTypeMethod = findMethod(behaviorClass, "recipeType");
+                // Inspect recipeType on clazz first (e.g. MultipliedCrafterComponent), then fallback to behaviorClass
+                boolean recipeTypeOnComp = true;
+                Method getRecipeTypeMethod = findMethod(clazz, "recipeType");
                 if (getRecipeTypeMethod == null) {
-                    getRecipeTypeMethod = findMethod(behaviorClass, "getRecipeType");
+                    getRecipeTypeMethod = findMethod(clazz, "getRecipeType");
                 }
-                MethodHandle getRecipeType = getRecipeTypeMethod != null ? unreflectMethod(lookup, getRecipeTypeMethod) : null;
+                if (getRecipeTypeMethod == null && behaviorClass != clazz) {
+                    recipeTypeOnComp = false;
+                    getRecipeTypeMethod = findMethod(behaviorClass, "recipeType");
+                    if (getRecipeTypeMethod == null) {
+                        getRecipeTypeMethod = findMethod(behaviorClass, "getRecipeType");
+                    }
+                }
 
-                Method banRecipeMethod = findMethod(behaviorClass, "banRecipe", MachineRecipe.class);
-                MethodHandle banRecipe = banRecipeMethod != null ? unreflectMethod(lookup, banRecipeMethod) : null;
+                // Inspect banRecipe on clazz first, then fallback to behaviorClass
+                boolean banRecipeOnComp = true;
+                Method banRecipeMethod = findMethod(clazz, "banRecipe", MachineRecipe.class);
+                if (banRecipeMethod == null && behaviorClass != clazz) {
+                    banRecipeOnComp = false;
+                    banRecipeMethod = findMethod(behaviorClass, "banRecipe", MachineRecipe.class);
+                }
 
                 return new ModularAccessors(
-                        hasActive,
-                        getActive,
-                        activeField,
-                        getProgress,
-                        getInv,
-                        getItemInputs,
-                        getFluidInputs,
-                        getBehavior,
-                        getRecipeType,
-                        banRecipe
+                        hasActiveRecipeMethod,
+                        getActiveRecipeMethod,
+                        activeRecipeField,
+                        getProgressMethod,
+                        getInvMethod,
+                        getItemInputsMethod,
+                        getFluidInputsMethod,
+                        getBehaviorMethod,
+                        getRecipeTypeMethod,
+                        recipeTypeOnComp,
+                        banRecipeMethod,
+                        banRecipeOnComp
                 );
             } catch (Throwable t) {
                 return NONE;
             }
         }
 
-        private static @Nullable Method findMethod(Class<?> clazz, String name, Class<?>... params) {
+        public static @Nullable Method findMethod(Class<?> clazz, String name, Class<?>... params) {
             Class<?> current = clazz;
             while (current != null && current != Object.class) {
                 try {
@@ -368,7 +425,7 @@ public interface UnifiedCrafter {
             return null;
         }
 
-        private static @Nullable Field findField(Class<?> clazz, String name) {
+        public static @Nullable Field findField(Class<?> clazz, String name) {
             Class<?> current = clazz;
             while (current != null && current != Object.class) {
                 try {
@@ -380,22 +437,6 @@ public interface UnifiedCrafter {
                 current = current.getSuperclass();
             }
             return null;
-        }
-
-        private static @Nullable MethodHandle unreflectMethod(MethodHandles.Lookup lookup, Method method) {
-            try {
-                return lookup.unreflect(method);
-            } catch (IllegalAccessException e) {
-                return null;
-            }
-        }
-
-        private static @Nullable MethodHandle unreflectGetter(MethodHandles.Lookup lookup, Field field) {
-            try {
-                return lookup.unreflectGetter(field);
-            } catch (IllegalAccessException e) {
-                return null;
-            }
         }
     }
 }

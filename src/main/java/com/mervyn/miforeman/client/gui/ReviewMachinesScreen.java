@@ -3,6 +3,9 @@ package com.mervyn.miforeman.client.gui;
 import com.mervyn.miforeman.client.gui.widget.ClipboardButton;
 import com.mervyn.miforeman.client.gui.widget.ReviewListPanel;
 import com.mervyn.miforeman.goal.MachineLinkHistory;
+import com.mervyn.miforeman.network.LiveMonitoringPayload;
+import com.mervyn.miforeman.network.RequestMonitoringUpdatePayload;
+import com.mervyn.miforeman.network.ScanResultPayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -45,6 +48,7 @@ public class ReviewMachinesScreen extends Screen {
     protected void init() {
         super.init();
         rebuild();
+        new RequestMonitoringUpdatePayload().sendToServer();
     }
 
     private void rebuild() {
@@ -116,6 +120,24 @@ public class ReviewMachinesScreen extends Screen {
         this.addRenderableWidget(removeAllButton);
     }
 
+    public void updateLiveMonitoring(List<LiveMonitoringPayload.MachineStatusData> data) {
+        state.setLiveData(data);
+        rebuild();
+    }
+
+    public void updateScanResults(List<ScanResultPayload.Candidate> candidates) {
+        state.setScanResults(candidates);
+        rebuild();
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        if (state.tickAndShouldPoll()) {
+            new RequestMonitoringUpdatePayload().sendToServer();
+        }
+    }
+
     /** Links every unlinked, non-rejected candidate. Rejected candidates are skipped, since a
      * rejection is a deliberate per-machine decision the player has to undo explicitly. */
     private void handleAddAll() {
@@ -125,6 +147,7 @@ public class ReviewMachinesScreen extends Screen {
             }
         }
         onChange.run();
+        new RequestMonitoringUpdatePayload().sendToServer();
         rebuild();
     }
 
@@ -142,6 +165,7 @@ public class ReviewMachinesScreen extends Screen {
                             state.applyUnlink(row.pos(), () -> {});
                         }
                         onChange.run();
+                        new RequestMonitoringUpdatePayload().sendToServer();
                         rebuild();
                     }
                 },
@@ -156,6 +180,7 @@ public class ReviewMachinesScreen extends Screen {
         } else {
             state.applyLink(row.pos(), onChange);
         }
+        new RequestMonitoringUpdatePayload().sendToServer();
         rebuild();
     }
 

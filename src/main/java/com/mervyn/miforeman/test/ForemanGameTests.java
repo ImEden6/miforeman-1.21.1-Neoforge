@@ -1147,6 +1147,43 @@ public class ForemanGameTests {
         }
     }
 
+    /** Simulates MultipliedCrafterComponent / modular multiblocks where recipeType() is directly on the component. */
+    public static class MockDirectModularCrafter {
+        public boolean hasActive = true;
+        protected RecipeHolder<MachineRecipe> activeRecipe;
+        protected float progress = 0.5f;
+        protected MockInventory inv = new MockInventory();
+        protected Object behavior = new Object(); // behavior has NO recipeType or banRecipe methods
+
+        public MockDirectModularCrafter(RecipeHolder<MachineRecipe> recipe) {
+            this.activeRecipe = recipe;
+        }
+
+        public boolean hasActiveRecipe() {
+            return hasActive;
+        }
+
+        public float getProgress() {
+            return progress;
+        }
+
+        public MockInventory getInventory() {
+            return inv;
+        }
+
+        public Object getBehavior() {
+            return behavior;
+        }
+
+        public aztech.modern_industrialization.machines.recipe.MachineRecipeType getRecipeType() {
+            return aztech.modern_industrialization.machines.init.MIMachineRecipeTypes.COMPRESSOR;
+        }
+
+        public boolean banRecipe(MachineRecipe recipe) {
+            return false;
+        }
+    }
+
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testUnifiedCrafterStandardParity(GameTestHelper helper) {
         BlockPos machinePos = new BlockPos(1, 1, 1);
@@ -1230,6 +1267,52 @@ public class ForemanGameTests {
 
         if (unified.getRecipeType() != aztech.modern_industrialization.machines.init.MIMachineRecipeTypes.COMPRESSOR) {
             helper.fail("Expected COMPRESSOR recipe type, got: " + unified.getRecipeType());
+            return;
+        }
+
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testUnifiedCrafterDirectModularDuckTyping(GameTestHelper helper) {
+        var recipeManager = helper.getLevel().getRecipeManager();
+        var candidates = RecipeGraphTraverser.groupMachineRecipesByType(recipeManager);
+        var compressorRecipes = candidates.get(ResourceLocation.parse("modern_industrialization:compressor"));
+        if (compressorRecipes == null || compressorRecipes.isEmpty()) {
+            helper.fail("Could not find compressor recipes in RecipeManager.");
+            return;
+        }
+
+        RecipeHolder<MachineRecipe> testHolder = compressorRecipes.get(0);
+        MockDirectModularCrafter mock = new MockDirectModularCrafter(testHolder);
+
+        var accessors = UnifiedCrafter.ModularAccessors.get(MockDirectModularCrafter.class);
+        if (accessors == null) {
+            helper.fail("ModularAccessors.get(MockDirectModularCrafter.class) returned null!");
+            return;
+        }
+
+        UnifiedCrafter unified = new UnifiedCrafter.ModularCrafterAdapter(mock, accessors);
+
+        if (!unified.hasActiveRecipe()) {
+            helper.fail("Expected hasActiveRecipe() to return true.");
+            return;
+        }
+
+        RecipeHolder<MachineRecipe> extracted = unified.getActiveRecipe();
+        if (extracted == null || !extracted.id().equals(testHolder.id())) {
+            helper.fail("Expected active recipe ID " + testHolder.id() + ", got: "
+                    + (extracted != null ? extracted.id() : "null"));
+            return;
+        }
+
+        if (Math.abs(unified.getProgress() - 0.5f) > 0.001f) {
+            helper.fail("Expected progress 0.5, got: " + unified.getProgress());
+            return;
+        }
+
+        if (unified.getRecipeType() != aztech.modern_industrialization.machines.init.MIMachineRecipeTypes.COMPRESSOR) {
+            helper.fail("Expected COMPRESSOR recipe type from direct component method, got: " + unified.getRecipeType());
             return;
         }
 
@@ -1403,6 +1486,106 @@ public class ForemanGameTests {
         state = state.withUnhideAll();
         if (state.isHidden(nodeA) || state.isHidden(nodeB) || !state.hiddenNodes().isEmpty()) {
             helper.fail("Expected hiddenNodes to be empty after withUnhideAll");
+            return;
+        }
+
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testMaterialCandidateRecipesAndExpansion(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ResourceLocation ironPlate = ResourceLocation.parse("modern_industrialization:iron_plate");
+        var candidates = RecipeGraphTraverser.getCandidateRecipes(level, ironPlate);
+        if (candidates.isEmpty()) {
+            helper.fail("Expected at least 1 candidate recipe for iron_plate");
+            return;
+        }
+
+        // Test building a goal with iron_plate recipe selected
+        ProductionGoal goal = new ProductionGoal("iron_plate_test", ProductionGoal.TargetType.ITEM, ironPlate, 1.0);
+        var plan = RecipeGraphTraverser.computePlan(level, goal);
+        if (plan.graph() == null || plan.graph().nodes().isEmpty()) {
+            helper.fail("Expected computed plan to have a non-empty recipe graph");
+            return;
+        }
+
+        com.mervyn.miforeman.goal.RecipeGraphNode plateNode = plan.graph().node(ironPlate);
+        if (plateNode == null) {
+            helper.fail("Expected graph to contain iron_plate target node");
+            return;
+        }
+
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testStyreneButadieneRubberGraphTraversal(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ResourceLocation sbrId = ResourceLocation.parse("modern_industrialization:styrene_butadiene_rubber");
+        
+        var candidates = RecipeGraphTraverser.getCandidateRecipes(level, sbrId);
+        if (candidates.isEmpty()) {
+            helper.fail("Expected candidate recipes for styrene_butadiene_rubber in RecipeManager");
+            return;
+        }
+
+        ProductionGoal goal = new ProductionGoal("sbr_production", ProductionGoal.TargetType.FLUID, sbrId, 1000.0);
+        var plan = RecipeGraphTraverser.computePlan(level, goal);
+        if (plan.graph() == null || plan.graph().nodes().isEmpty()) {
+            helper.fail("Expected styrene_butadiene_rubber plan to have a non-empty recipe graph");
+            return;
+        }
+
+        var graph = plan.graph();
+        com.mervyn.miforeman.goal.RecipeGraphNode rootNode = graph.node(sbrId);
+        if (rootNode == null) {
+            helper.fail("Expected graph to contain target node for styrene_butadiene_rubber");
+            return;
+        }
+
+        if (rootNode.getType() != com.mervyn.miforeman.goal.NodeType.TARGET) {
+            helper.fail("Expected root node to have NodeType.TARGET, got: " + rootNode.getType());
+            return;
+        }
+
+        // Verify that intermediate fluid inputs in the tree (e.g. styrene_butadiene) were recursed and resolved
+        ResourceLocation intermediateFluid = ResourceLocation.parse("modern_industrialization:styrene_butadiene");
+        com.mervyn.miforeman.goal.RecipeGraphNode intermediateNode = graph.node(intermediateFluid);
+        if (intermediateNode == null) {
+            helper.fail("Expected graph to traverse and include intermediate fluid styrene_butadiene");
+            return;
+        }
+
+        if (intermediateNode.getRequiredRate() <= 0.0) {
+            helper.fail("Expected intermediate fluid rate to be positive, got: " + intermediateNode.getRequiredRate());
+            return;
+        }
+
+        var intermediateCandidates = RecipeGraphTraverser.getCandidateRecipes(level, intermediateFluid);
+        if (intermediateCandidates.isEmpty()) {
+            helper.fail("Expected candidate recipes for intermediate fluid styrene_butadiene");
+            return;
+        }
+
+        // Test expanding intermediate fluid node via selections
+        java.util.Map<ResourceLocation, ResourceLocation> selections = java.util.Map.of(intermediateFluid, intermediateCandidates.get(0).id());
+        ProductionGoal expandedGoal = goal.withRecipeSelections(selections);
+        var expandedPlan = RecipeGraphTraverser.computePlan(level, expandedGoal);
+        var expandedGraph = expandedPlan.graph();
+        if (expandedGraph == null) {
+            helper.fail("Expected expanded graph to not be null");
+            return;
+        }
+
+        var expandedIntermediateNode = expandedGraph.node(intermediateFluid);
+        if (expandedIntermediateNode == null || expandedIntermediateNode.getType() != com.mervyn.miforeman.goal.NodeType.INTERMEDIATE) {
+            helper.fail("Expected expanded intermediate node to have NodeType.INTERMEDIATE");
+            return;
+        }
+
+        if (expandedPlan.machines().isEmpty()) {
+            helper.fail("Expected plan to contain required machines for styrene_butadiene_rubber synthesis");
             return;
         }
 

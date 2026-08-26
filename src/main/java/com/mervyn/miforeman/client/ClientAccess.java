@@ -2,6 +2,7 @@ package com.mervyn.miforeman.client;
 
 import com.mervyn.miforeman.client.gui.ClipboardScreen;
 import com.mervyn.miforeman.client.gui.MonitoringScreen;
+import com.mervyn.miforeman.client.gui.ReviewMachinesScreen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.item.ItemStack;
 
@@ -16,6 +17,8 @@ public class ClientAccess {
             clipScreen.updateLiveMonitoring(payload.machines());
         } else if (screen instanceof MonitoringScreen monScreen) {
             monScreen.updateLiveMonitoring(payload.machines());
+        } else if (screen instanceof ReviewMachinesScreen revScreen) {
+            revScreen.updateLiveMonitoring(payload.machines());
         }
     }
 
@@ -23,6 +26,8 @@ public class ClientAccess {
         var screen = Minecraft.getInstance().screen;
         if (screen instanceof ClipboardScreen clipScreen) {
             clipScreen.updateScanResults(payload.candidates());
+        } else if (screen instanceof ReviewMachinesScreen revScreen) {
+            revScreen.updateScanResults(payload.candidates());
         }
     }
 

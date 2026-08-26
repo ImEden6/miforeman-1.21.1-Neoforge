@@ -15,9 +15,12 @@ import com.mervyn.miforeman.client.gui.widget.DetailCard;
 import com.mervyn.miforeman.client.gui.widget.ReviewListPanel;
 import com.mervyn.miforeman.client.WorldHighlightRenderer;
 import com.mervyn.miforeman.goal.RecipeGraphNode;
+import com.mervyn.miforeman.goal.RecipeGraphTraverser;
 import com.mervyn.miforeman.goal.NodeType;
 import com.mervyn.miforeman.network.ScanRequestPayload;
 import com.mervyn.miforeman.network.ScanResultPayload;
+import aztech.modern_industrialization.machines.recipe.MachineRecipe;
+import net.minecraft.world.item.crafting.RecipeHolder;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -93,6 +96,8 @@ public class ClipboardScreen extends Screen {
     private Button nextButton;
     private Button backButton;
     private Button defineNextButton;
+    private Button reviewButton;
+    private Button monitoringButton;
 
     private boolean isMinimized;
     private Button toggleModeButton;
@@ -256,7 +261,7 @@ public class ClipboardScreen extends Screen {
         }
         y += 10 + FIELD_HEIGHT + 8;
 
-        EditBox rateField = new EditBox(this.font, contentX, y + 10, contentW - 80, FIELD_HEIGHT,
+        EditBox rateField = new EditBox(this.font, contentX, y + 10, contentW, FIELD_HEIGHT,
                 Component.literal("Rate"));
         rateField.setValue(String.valueOf(this.goalDraft.rate));
         rateField.setResponder(val -> {
@@ -268,14 +273,6 @@ public class ClipboardScreen extends Screen {
             revalidateDefineGoal();
         });
         this.addRenderableWidget(rateField);
-
-        Button unitButton = new ClipboardButton(contentX + contentW - 70, y + 10, 70, FIELD_HEIGHT,
-                Component.literal(this.goalDraft.perHour ? "Per Hour" : "Per Min"), b -> {
-                    this.goalDraft.perHour = !this.goalDraft.perHour;
-                    b.setMessage(Component.literal(this.goalDraft.perHour ? "Per Hour" : "Per Min"));
-                    revalidateDefineGoal();
-                });
-        this.addRenderableWidget(unitButton);
         y += 10 + FIELD_HEIGHT + 8;
 
         EditBox thresholdField = new EditBox(this.font, contentX, y + 10, contentW, FIELD_HEIGHT,
@@ -452,7 +449,7 @@ public class ClipboardScreen extends Screen {
                             }
                         }, resId -> {
                             return this.goalDraft.graphLayout != null && this.goalDraft.graphLayout.isHidden(resId);
-                        }, detailScrollOffset, v -> this.detailScrollOffset = v);
+                        }, this::expandMaterialNode, detailScrollOffset, v -> this.detailScrollOffset = v);
                 this.addRenderableWidget(detailCard);
             } else {
                 detailCard = null;
@@ -554,14 +551,17 @@ public class ClipboardScreen extends Screen {
         monitoringState.updateWorldHighlightPositions(rows);
 
         int halfW = (contentW - 6) / 2;
-        Button reviewButton = new ClipboardButton(contentX, contentY + 46, halfW, 16,
+        reviewButton = new ClipboardButton(contentX, contentY + 46, halfW, 16,
                 Component.literal("Review Machines (" + rows.size() + ")"),
                 b -> Minecraft.getInstance().setScreen(new ReviewMachinesScreen(
                         monitoringState, this::onMonitoringStateChanged, this)));
         this.addRenderableWidget(reviewButton);
 
-        Button monitoringButton = new ClipboardButton(contentX + halfW + 6, contentY + 46, halfW, 16,
-                Component.literal("View Monitoring (" + monitoringState.liveData.size() + ")"),
+        int monitoredCount = monitoringState.liveData.isEmpty()
+                ? monitoringState.linkedMachines.size()
+                : monitoringState.liveData.size();
+        monitoringButton = new ClipboardButton(contentX + halfW + 6, contentY + 46, halfW, 16,
+                Component.literal("View Monitoring (" + monitoredCount + ")"),
                 b -> Minecraft.getInstance().setScreen(new MonitoringScreen(
                         monitoringState, goalDraft.perHour, this)));
         this.addRenderableWidget(monitoringButton);
@@ -576,6 +576,18 @@ public class ClipboardScreen extends Screen {
         this.addRenderableWidget(nextButton);
 
         new RequestMonitoringUpdatePayload().sendToServer();
+    }
+
+    private void updateMonitoringButtonLabels() {
+        if (reviewButton != null) {
+            reviewButton.setMessage(Component.literal("Review Machines (" + monitoringState.buildReviewRows().size() + ")"));
+        }
+        if (monitoringButton != null) {
+            int count = monitoringState.liveData.isEmpty()
+                    ? monitoringState.linkedMachines.size()
+                    : monitoringState.liveData.size();
+            monitoringButton.setMessage(Component.literal("View Monitoring (" + count + ")"));
+        }
     }
 
     /**
@@ -640,6 +652,9 @@ public class ClipboardScreen extends Screen {
 
     public void updateLiveMonitoring(List<LiveMonitoringPayload.MachineStatusData> data) {
         monitoringState.setLiveData(data);
+        if (currentStep == STEP_MONITOR) {
+            updateMonitoringButtonLabels();
+        }
     }
 
     @Override
@@ -810,6 +825,31 @@ public class ClipboardScreen extends Screen {
             return;
         lastSyncedGoal = buildCurrentGoal();
         new GoalUpdatePayload(lastSyncedGoal).sendToServer();
+    }
+
+    private void expandMaterialNode(ResourceLocation resourceId) {
+        if (this.minecraft == null || this.minecraft.level == null) return;
+        List<RecipeHolder<MachineRecipe>> candidates = RecipeGraphTraverser.getCandidateRecipes(this.minecraft.level, resourceId);
+        if (candidates.isEmpty()) return;
+
+        ResourceLocation currentSel = this.goalDraft.recipeSelections.get(resourceId);
+        int nextIndex = 0;
+        if (currentSel != null) {
+            for (int i = 0; i < candidates.size(); i++) {
+                if (candidates.get(i).id().equals(currentSel)) {
+                    nextIndex = i + 1;
+                    break;
+                }
+            }
+        }
+        if (nextIndex >= candidates.size() && currentSel != null) {
+            this.goalDraft.recipeSelections.remove(resourceId);
+        } else {
+            ResourceLocation newSel = candidates.get(nextIndex).id();
+            this.goalDraft.recipeSelections.put(resourceId, newSel);
+        }
+        computePlan();
+        rebuildStep(STEP_REVIEW_PLAN);
     }
 
     @Override

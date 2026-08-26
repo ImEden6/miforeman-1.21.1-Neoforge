@@ -36,9 +36,12 @@ class MonitoringState {
     private int tickCount = 0;
 
     private MonitoringState() {
-        // WorldHighlightRenderer's on/off state is static and outlives any screen's lifecycle
-        // (highlights are meant to keep rendering after the clipboard closes) -- read the live
-        // value here instead of hardcoding false, or the button lies about the real state every
+        // WorldHighlightRenderer's on/off state is static and outlives any screen's
+        // lifecycle
+        // (highlights are meant to keep rendering after the clipboard closes) -- read
+        // the live
+        // value here instead of hardcoding false, or the button lies about the real
+        // state every
         // time the clipboard is reopened.
         this.showInWorldHighlights = WorldHighlightRenderer.isEnabled();
     }
@@ -57,7 +60,8 @@ class MonitoringState {
 
     void applyLink(GlobalPos pos, Runnable onChange) {
         boolean wasLinked = linkedMachines.contains(pos);
-        if (!wasLinked) linkedMachines.add(pos);
+        if (!wasLinked)
+            linkedMachines.add(pos);
         rejectedMachines.remove(pos); // linking always clears a sticky rejection
         machineLinkHistory = machineLinkHistory.withToggle(pos, wasLinked, true);
         onChange.run();
@@ -71,7 +75,8 @@ class MonitoringState {
     }
 
     void applyReject(GlobalPos pos, Runnable onChange) {
-        if (!rejectedMachines.contains(pos)) rejectedMachines.add(pos);
+        if (!rejectedMachines.contains(pos))
+            rejectedMachines.add(pos);
         onChange.run();
     }
 
@@ -83,7 +88,8 @@ class MonitoringState {
     void applyLinkHistoryResult(MachineLinkHistory.UndoResult result, Runnable onChange) {
         machineLinkHistory = result.history();
         if (result.linked()) {
-            if (!linkedMachines.contains(result.pos())) linkedMachines.add(result.pos());
+            if (!linkedMachines.contains(result.pos()))
+                linkedMachines.add(result.pos());
         } else {
             linkedMachines.remove(result.pos());
         }
@@ -100,7 +106,10 @@ class MonitoringState {
         this.liveData.addAll(data);
     }
 
-    /** Increments poll counter and returns true every 20 ticks to trigger a monitoring payload request. */
+    /**
+     * Increments poll counter and returns true every 20 ticks to trigger a
+     * monitoring payload request.
+     */
     boolean tickAndShouldPoll() {
         tickCount++;
         if (tickCount >= 20) {
@@ -119,20 +128,39 @@ class MonitoringState {
             liveByPos.put(entry.pos(), entry);
         }
 
+        Map<GlobalPos, ScanResultPayload.Candidate> candidatesByPos = new HashMap<>();
+        for (ScanResultPayload.Candidate candidate : lastScanResults) {
+            candidatesByPos.put(candidate.pos(), candidate);
+        }
+
         for (GlobalPos pos : linkedMachines) {
             ResourceLocation machineId = resolveMachineId(pos);
             LiveMonitoringPayload.MachineStatusData live = liveByPos.get(pos);
-            String productLabel = live == null ? null : live.recipeId().map(MonitoringState::resolveProductLabel).orElse(null);
-            rows.add(new ReviewListPanel.ReviewRow(pos, machineId, true, rejectedMachines.contains(pos), false, productLabel));
+            String productLabel = live == null ? null
+                    : live.recipeId().map(MonitoringState::resolveProductLabel).orElse(null);
+            if (productLabel == null) {
+                ScanResultPayload.Candidate candidate = candidatesByPos.get(pos);
+                if (candidate != null) {
+                    productLabel = resolveProductLabel(candidate.recipeId());
+                    if (machineId.equals(ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "unknown"))) {
+                        machineId = candidate.machineId();
+                    }
+                }
+            }
+            rows.add(new ReviewListPanel.ReviewRow(pos, machineId, true, rejectedMachines.contains(pos), false,
+                    productLabel));
             seen.add(pos);
         }
 
         for (ScanResultPayload.Candidate candidate : lastScanResults) {
-            if (seen.contains(candidate.pos())) continue;
+            if (seen.contains(candidate.pos()))
+                continue;
             boolean isRejected = rejectedMachines.contains(candidate.pos());
-            if (isRejected && !showRejected) continue;
+            if (isRejected && !showRejected)
+                continue;
             String productLabel = resolveProductLabel(candidate.recipeId());
-            rows.add(new ReviewListPanel.ReviewRow(candidate.pos(), candidate.machineId(), false, isRejected, true, productLabel));
+            rows.add(new ReviewListPanel.ReviewRow(candidate.pos(), candidate.machineId(), false, isRejected, true,
+                    productLabel));
             seen.add(candidate.pos());
         }
 
@@ -143,8 +171,10 @@ class MonitoringState {
         List<GlobalPos> linked = new ArrayList<>();
         List<GlobalPos> candidates = new ArrayList<>();
         for (ReviewListPanel.ReviewRow row : rows) {
-            if (row.linked()) linked.add(row.pos());
-            else if (row.isNewCandidate()) candidates.add(row.pos());
+            if (row.linked())
+                linked.add(row.pos());
+            else if (row.isNewCandidate())
+                candidates.add(row.pos());
         }
         WorldHighlightRenderer.setPositions(linked, candidates);
     }
@@ -160,12 +190,17 @@ class MonitoringState {
         return ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "unknown");
     }
 
-    /** Resolves a recipe ID to formatted product names, or null if the recipe cannot be found. */
+    /**
+     * Resolves a recipe ID to formatted product names, or null if the recipe cannot
+     * be found.
+     */
     static @Nullable String resolveProductLabel(ResourceLocation recipeId) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null) return null;
+        if (mc.level == null)
+            return null;
         var holder = mc.level.getRecipeManager().byKey(recipeId).orElse(null);
-        if (holder == null || !(holder.value() instanceof MachineRecipe recipe)) return null;
+        if (holder == null || !(holder.value() instanceof MachineRecipe recipe))
+            return null;
 
         List<String> names = new ArrayList<>();
         for (var output : recipe.itemOutputs) {

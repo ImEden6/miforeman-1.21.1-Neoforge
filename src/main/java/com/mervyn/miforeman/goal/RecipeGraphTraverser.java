@@ -44,11 +44,13 @@ public final class RecipeGraphTraverser {
             } else if (node.getType() == NodeType.RAW) {
                 rawInputs.add(new MaterialFlow(getItemOrFluidType(node.getId()), node.getId(), node.getRequiredRate()));
             } else {
-                intermediateFlows.add(new MaterialFlow(getItemOrFluidType(node.getId()), node.getId(), node.getRequiredRate()));
+                intermediateFlows
+                        .add(new MaterialFlow(getItemOrFluidType(node.getId()), node.getId(), node.getRequiredRate()));
             }
 
             if (node.getType() != NodeType.MACHINE && node.getAmbiguityOptions().size() > 1) {
-                ResourceLocation ownerId = node.getAmbiguityOwnerId() != null ? node.getAmbiguityOwnerId() : node.getId();
+                ResourceLocation ownerId = node.getAmbiguityOwnerId() != null ? node.getAmbiguityOwnerId()
+                        : node.getId();
                 if (seenAmbiguityOwners.add(ownerId)) {
                     ambiguities.add(new Ambiguity(ownerId, node.getAmbiguityOptions()));
                 }
@@ -91,11 +93,13 @@ public final class RecipeGraphTraverser {
     }
 
     /**
-     * Indexes loaded {@link MachineRecipe} instances by output item and fluid. Scans the vanilla
+     * Indexes loaded {@link MachineRecipe} instances by output item and fluid.
+     * Scans the vanilla
      * {@link RecipeManager} directly to include addon-defined machine recipe types.
      * <p>
      * Output candidate lists are deduplicated by recipe ID and sorted by ID.
-     * Deterministic sorting ensures default recipe selection stays consistent across game loads.
+     * Deterministic sorting ensures default recipe selection stays consistent
+     * across game loads.
      */
     private static void indexMachineRecipes(
             Level level,
@@ -107,21 +111,28 @@ public final class RecipeGraphTraverser {
 
         indexMachineRecipeCollection(recipeManager.getRecipes(), itemByRecipeId, fluidByRecipeId);
 
-        // Addons can supply recipes via a ProxyableMachineRecipeType (e.g. Extended Industrialization's
-        // runtime-generated canning/bucket recipes) that never register through RecipeManager at all --
-        // recipeManager.getRecipes() above can't see them. Off by default: see Config's comment for why
+        // Addons can supply recipes via a ProxyableMachineRecipeType (e.g. Extended
+        // Industrialization's
+        // runtime-generated canning/bucket recipes) that never register through
+        // RecipeManager at all --
+        // recipeManager.getRecipes() above can't see them. Off by default: see Config's
+        // comment for why
         // (ClipboardScreen's client-side preview can't reflect this even when enabled).
-        if (com.mervyn.miforeman.Config.INCLUDE_PROXIED_RECIPE_TYPES.get() && level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+        if (com.mervyn.miforeman.Config.INCLUDE_PROXIED_RECIPE_TYPES.get()
+                && level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
             for (var recipeType : net.minecraft.core.registries.BuiltInRegistries.RECIPE_TYPE) {
                 if (!(recipeType instanceof aztech.modern_industrialization.machines.recipe.ProxyableMachineRecipeType proxyable)) {
                     continue;
                 }
                 try {
-                    indexMachineRecipeCollection(proxyable.getRecipesWithCache(serverLevel), itemByRecipeId, fluidByRecipeId);
+                    indexMachineRecipeCollection(proxyable.getRecipesWithCache(serverLevel), itemByRecipeId,
+                            fluidByRecipeId);
                 } catch (Exception e) {
-                    ResourceLocation typeId = net.minecraft.core.registries.BuiltInRegistries.RECIPE_TYPE.getKey(recipeType);
+                    ResourceLocation typeId = net.minecraft.core.registries.BuiltInRegistries.RECIPE_TYPE
+                            .getKey(recipeType);
                     com.mervyn.miforeman.MIForeman.LOGGER.warn(
-                            "Skipping proxied machine recipe type {} -- its recipe list threw while building", typeId, e);
+                            "Skipping proxied machine recipe type {} -- its recipe list threw while building", typeId,
+                            e);
                 }
             }
         }
@@ -150,7 +161,8 @@ public final class RecipeGraphTraverser {
             for (var output : recipe.fluidOutputs) {
                 if (output.amount() > 0 && output.probability() > 0) {
                     ResourceLocation fluidId = BuiltInRegistries.FLUID.getKey(output.fluid());
-                    fluidByRecipeId.computeIfAbsent(fluidId, k -> new HashMap<>()).put(machineHolder.id(), machineHolder);
+                    fluidByRecipeId.computeIfAbsent(fluidId, k -> new HashMap<>()).put(machineHolder.id(),
+                            machineHolder);
                 }
             }
         }
@@ -168,10 +180,12 @@ public final class RecipeGraphTraverser {
 
     /**
      * Groups loaded {@link MachineRecipe} instances by {@code RecipeType}. Scans
-     * {@link RecipeManager} directly to include addon-defined machine recipe types. Used by the
+     * {@link RecipeManager} directly to include addon-defined machine recipe types.
+     * Used by the
      * recipe-dump command and game tests.
      */
-    public static Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> groupMachineRecipesByType(RecipeManager recipeManager) {
+    public static Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> groupMachineRecipesByType(
+            RecipeManager recipeManager) {
         Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> byType = new LinkedHashMap<>();
         for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
             if (!(holder.value() instanceof MachineRecipe recipe)) {
@@ -185,13 +199,12 @@ public final class RecipeGraphTraverser {
         return byType;
     }
 
-
     private record GraphCacheKey(
             TargetType type,
             ResourceLocation targetId,
             double rate,
-            Map<ResourceLocation, ResourceLocation> selections
-    ) {}
+            Map<ResourceLocation, ResourceLocation> selections) {
+    }
 
     private static final Map<GraphCacheKey, RecipeGraph> GRAPH_CACHE = new HashMap<>();
 
@@ -200,7 +213,8 @@ public final class RecipeGraphTraverser {
     }
 
     public static RecipeGraph computeRecipeGraph(Level level, ProductionGoal goal) {
-        GraphCacheKey key = new GraphCacheKey(goal.type(), goal.targetId(), goal.rate(), new HashMap<>(goal.recipeSelections()));
+        GraphCacheKey key = new GraphCacheKey(goal.type(), goal.targetId(), goal.rate(),
+                new HashMap<>(goal.recipeSelections()));
         RecipeGraph cached = GRAPH_CACHE.get(key);
         if (cached != null) {
             return cached;
@@ -212,37 +226,34 @@ public final class RecipeGraphTraverser {
         Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> fluidRecipes = new HashMap<>();
         indexMachineRecipes(level, recipeManager, itemRecipes, fluidRecipes);
 
-        // Two phases -- mirrors computePlan()/getSubPlan()'s existing memoization pattern, which
-        // buildGraph() previously didn't share (its old `visited` set was only a recursion-stack
-        // cycle guard, removed again at every return, so a resourceId reached via more than one
-        // demand path had its entire input subtree re-walked from scratch on every occurrence, and
-        // its own supply edge got rebuilt with only that occurrence's *partial* rate each time
+        // Two phases -- mirrors computePlan()/getSubPlan()'s existing memoization
+        // pattern, which
+        // buildGraph() previously didn't share (its old `visited` set was only a
+        // recursion-stack
+        // cycle guard, removed again at every return, so a resourceId reached via more
+        // than one
+        // demand path had its entire input subtree re-walked from scratch on every
+        // occurrence, and
+        // its own supply edge got rebuilt with only that occurrence's *partial* rate
+        // each time
         // instead of the full accumulated total).
         //
-        // Phase 1 resolves the DAG structure (which recipe is chosen, and its input list with
-        // per-unit conversion factors) exactly once per resourceId, independent of rate.
+        // Phase 1 resolves the DAG structure (which recipe is chosen, and its input
         Map<ResourceLocation, StructuralNode> structNodes = new HashMap<>();
         resolveStructure(itemRecipes, fluidRecipes, goal.type(), goal.targetId(),
-                goal.recipeSelections(), new HashSet<>(), structNodes);
+                goal.recipeSelections(), new HashSet<>(), structNodes, goal.targetId());
 
-        // Phase 2 propagates the goal's target rate down through that resolved DAG in topological
-        // order, so every node's total rate is fully summed from all of its parents before it's
-        // used to derive machine counts or pushed further down to its own children.
         Map<ResourceLocation, RecipeGraphNode> nodes = new HashMap<>();
         Map<EdgeKey, GraphEdge> edges = new LinkedHashMap<>();
         propagateRates(goal.targetId(), goal.rate(), 0, structNodes, nodes, edges);
 
-        // finalizeResourceNode() processes parents before children (topological order), so a
-        // child's RecipeGraphNode often doesn't exist yet at the moment its parent would want to
-        // record an edge on it. Wiring getInputs()/getOutputs() is instead done here, once, after
-        // every node and every (now fully rate-merged) edge exists: an edge's `from` node records
-        // it as an output, its `to` node records it as an input -- the same convention the original
-        // single-pass buildGraph() used.
         for (GraphEdge edge : edges.values()) {
             RecipeGraphNode fromNode = nodes.get(edge.from());
-            if (fromNode != null) fromNode.putOutput(edge);
+            if (fromNode != null)
+                fromNode.putOutput(edge);
             RecipeGraphNode toNode = nodes.get(edge.to());
-            if (toNode != null) toNode.putInput(edge);
+            if (toNode != null)
+                toNode.putInput(edge);
         }
 
         RecipeGraph result = new RecipeGraph(goal.targetId(), goal.rate(), nodes, new ArrayList<>(edges.values()));
@@ -250,29 +261,36 @@ public final class RecipeGraphTraverser {
         return result;
     }
 
-    private record EdgeKey(ResourceLocation from, ResourceLocation to) {}
-
-    /** One recipe input normalized per 1.0 unit/s of the owning {@link StructuralNode} resource ID. */
-    private record StructInputEdge(ResourceLocation childId, double ratePerUnit) {}
+    private record EdgeKey(ResourceLocation from, ResourceLocation to) {
+    }
 
     /**
-     * Rate-independent graph structure for a resource ID, including the chosen recipe and
-     * per-unit normalized inputs. Resolved and memoized in {@link #resolveStructure}, then
+     * One recipe input normalized per 1.0 unit/s of the owning
+     * {@link StructuralNode} resource ID.
+     */
+    private record StructInputEdge(ResourceLocation childId, double ratePerUnit) {
+    }
+
+    /**
+     * Rate-independent graph structure for a resource ID, including the chosen
+     * recipe and
+     * per-unit normalized inputs. Resolved and memoized in
+     * {@link #resolveStructure}, then
      * reused across demand paths in {@link #propagateRates}.
      */
     private record StructuralNode(
             ResourceLocation resourceId,
-            @Nullable ResourceLocation recipeId,       // null => RAW (no candidate recipe, or an
-                                                        // unproducible chosen recipe -- see below)
+            @Nullable ResourceLocation recipeId, // null => RAW (no candidate recipe, or an
+                                                 // unproducible chosen recipe -- see below)
             @Nullable ResourceLocation machineTypeId,
             @Nullable MachineRecipe recipe,
             List<ResourceLocation> ambiguityOptions,
             @Nullable ResourceLocation selectedAmbiguity,
             double machineCountPerUnit,
-            List<StructInputEdge> itemInputs,          // recurses via resolveStructure
-            List<StructInputEdge> fluidInputs          // does NOT recurse -- always a leaf, exactly
-                                                        // like the original's fluid-input handling
-    ) {}
+            List<StructInputEdge> itemInputs, 
+            List<StructInputEdge> fluidInputs 
+    ) {
+    }
 
     private static @Nullable StructuralNode resolveStructure(
             Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> itemRecipes,
@@ -281,26 +299,31 @@ public final class RecipeGraphTraverser {
             ResourceLocation resourceId,
             Map<ResourceLocation, ResourceLocation> selections,
             Set<ResourceLocation> visited,
-            Map<ResourceLocation, StructuralNode> structMemo) {
+            Map<ResourceLocation, StructuralNode> structMemo,
+            ResourceLocation rootTargetId) {
         StructuralNode cached = structMemo.get(resourceId);
         if (cached != null) {
             return cached;
         }
         if (visited.contains(resourceId)) {
-            // A genuine cycle (a recipe input chain that loops back on itself) -- never memoized,
-            // so the caller treats this child as absent and drops the input edge to it entirely.
             return null;
         }
         visited.add(resourceId);
 
-        List<RecipeHolder<MachineRecipe>> candidates = type == TargetType.ITEM
+        List<RecipeHolder<MachineRecipe>> allCandidates = type == TargetType.ITEM
                 ? itemRecipes.getOrDefault(resourceId, Collections.emptyList())
                 : fluidRecipes.getOrDefault(resourceId, Collections.emptyList());
 
+        boolean shouldExpand = type == TargetType.ITEM || resourceId.equals(rootTargetId) || selections.containsKey(resourceId);
+
         StructuralNode result;
-        if (candidates.isEmpty()) {
-            result = rawStruct(resourceId);
+        if (!shouldExpand || allCandidates.isEmpty()) {
+            List<ResourceLocation> ambiguityOptions = allCandidates.size() > 1
+                    ? allCandidates.stream().map(RecipeHolder::id).toList()
+                    : (allCandidates.size() == 1 ? List.of(allCandidates.get(0).id()) : List.of());
+            result = new StructuralNode(resourceId, null, null, null, ambiguityOptions, selections.get(resourceId), 0.0, List.of(), List.of());
         } else {
+            List<RecipeHolder<MachineRecipe>> candidates = allCandidates;
             RecipeHolder<MachineRecipe> chosenHolder = null;
             List<ResourceLocation> ambiguityOptions = List.of();
             if (candidates.size() > 1) {
@@ -343,7 +366,7 @@ public final class RecipeGraphTraverser {
             }
 
             if (outputAmount <= 0.0 || outputProbability <= 0.0) {
-                result = rawStruct(resourceId);
+                result = new StructuralNode(resourceId, null, null, null, ambiguityOptions, selections.get(resourceId), 0.0, List.of(), List.of());
             } else {
                 double runsPerSecond = 1.0 / (outputAmount * outputProbability);
                 double machineCountPerUnit = (runsPerSecond * chosenRecipe.duration) / 20.0;
@@ -352,10 +375,6 @@ public final class RecipeGraphTraverser {
                         ? (selections.get(resourceId) != null ? selections.get(resourceId) : chosenHolder.id())
                         : null;
 
-                // Merge duplicate inputs (same recipe listing the same item/fluid in more than one
-                // slot) by childId up front, so each structural node contributes at most one edge
-                // per distinct child -- exactly the "merge instead of duplicate" fix edges need,
-                // applied at the source instead of after the fact.
                 Map<ResourceLocation, Double> itemRates = new LinkedHashMap<>();
                 for (var input : chosenRecipe.itemInputs) {
                     List<Item> inputItems = input.getInputItems();
@@ -369,7 +388,8 @@ public final class RecipeGraphTraverser {
                     List<Fluid> inputFluids = input.getInputFluids();
                     if (!inputFluids.isEmpty()) {
                         ResourceLocation inputFluidId = BuiltInRegistries.FLUID.getKey(inputFluids.get(0));
-                        fluidRates.merge(inputFluidId, runsPerSecond * input.amount() * input.probability(), Double::sum);
+                        fluidRates.merge(inputFluidId, runsPerSecond * input.amount() * input.probability(),
+                                Double::sum);
                     }
                 }
 
@@ -378,11 +398,13 @@ public final class RecipeGraphTraverser {
                 List<StructInputEdge> fluidInputs = fluidRates.entrySet().stream()
                         .map(e -> new StructInputEdge(e.getKey(), e.getValue())).toList();
 
-                // Recurse into item inputs now so they're memoized before this node is marked
-                // complete -- each distinct resourceId gets walked exactly once, total.
                 for (StructInputEdge edge : itemInputs) {
                     resolveStructure(itemRecipes, fluidRecipes, TargetType.ITEM, edge.childId(),
-                            selections, visited, structMemo);
+                            selections, visited, structMemo, rootTargetId);
+                }
+                for (StructInputEdge edge : fluidInputs) {
+                    resolveStructure(itemRecipes, fluidRecipes, TargetType.FLUID, edge.childId(),
+                            selections, visited, structMemo, rootTargetId);
                 }
 
                 result = new StructuralNode(resourceId, recipeId, machineTypeId, chosenRecipe,
@@ -395,8 +417,16 @@ public final class RecipeGraphTraverser {
         return result;
     }
 
-    private static StructuralNode rawStruct(ResourceLocation resourceId) {
-        return new StructuralNode(resourceId, null, null, null, List.of(), null, 0.0, List.of(), List.of());
+    public static List<RecipeHolder<MachineRecipe>> getCandidateRecipes(Level level, ResourceLocation resourceId) {
+        var recipeManager = level.getRecipeManager();
+        Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> itemRecipes = new HashMap<>();
+        Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> fluidRecipes = new HashMap<>();
+        indexMachineRecipes(level, recipeManager, itemRecipes, fluidRecipes);
+        List<RecipeHolder<MachineRecipe>> list = itemRecipes.get(resourceId);
+        if (list != null && !list.isEmpty()) {
+            return list;
+        }
+        return fluidRecipes.getOrDefault(resourceId, List.of());
     }
 
     private static void propagateRates(
@@ -405,16 +435,12 @@ public final class RecipeGraphTraverser {
             Map<ResourceLocation, RecipeGraphNode> nodes,
             Map<EdgeKey, GraphEdge> edges) {
 
-        // Step 1: Discover reachable subgraph and acyclic edges (breaking cycles via an
-        // onStack/done two-color DFS -- see collectDag's own doc comment for why both sets
-        // are required, not just onStack).
         Map<ResourceLocation, Set<ResourceLocation>> forwardEdges = new HashMap<>();
         Map<ResourceLocation, Integer> inDegree = new HashMap<>();
         Set<ResourceLocation> onStack = new HashSet<>();
         Set<ResourceLocation> done = new HashSet<>();
         collectDag(rootId, structNodes, forwardEdges, inDegree, onStack, done);
 
-        // Step 2: Kahn's algorithm over the guaranteed DAG
         Map<ResourceLocation, Double> totalRate = new HashMap<>();
         Map<ResourceLocation, Integer> minDepth = new HashMap<>();
         totalRate.put(rootId, rootRate);
@@ -439,9 +465,13 @@ public final class RecipeGraphTraverser {
             }
 
             Set<ResourceLocation> children = forwardEdges.getOrDefault(curr, Collections.emptySet());
-            for (StructInputEdge input : structNode.itemInputs()) {
+            List<StructInputEdge> allInputs = new ArrayList<>(structNode.itemInputs().size() + structNode.fluidInputs().size());
+            allInputs.addAll(structNode.itemInputs());
+            allInputs.addAll(structNode.fluidInputs());
+
+            for (StructInputEdge input : allInputs) {
                 if (!children.contains(input.childId())) {
-                    continue; // cyclic edge skipped
+                    continue;
                 }
                 ResourceLocation child = input.childId();
                 totalRate.merge(child, rate * input.ratePerUnit(), Double::sum);
@@ -455,29 +485,6 @@ public final class RecipeGraphTraverser {
         }
     }
 
-    /**
-     * Standard white/gray/black DFS cycle detection over the (already fully-resolved)
-     * {@code structNodes} graph. {@code onStack} is the gray set -- the current recursion
-     * path -- so an edge into an onStack node is a genuine back-edge (a real structural
-     * cycle, e.g. many MI ingot/nugget or plate/gear pairs each independently choosing the
-     * other as their default producer) and gets dropped, exactly like resolveStructure's
-     * own cycle guard.
-     * <p>
-     * {@code done} is the black set: resourceIds whose entire subtree has already been
-     * walked to completion via some earlier parent. Without it, a resourceId shared by many
-     * ancestors (i.e. almost every common material, since this graph is diamond-heavy, not
-     * tree-shaped) gets re-descended into from scratch by every single parent that reaches
-     * it, and each of those redundant re-walks re-runs the cycle check against whatever
-     * unrelated ancestors happen to be on the CURRENT branch's stack -- so the same edge can
-     * be kept on one re-walk and spuriously dropped on another, and the total work is
-     * combinatorial in the number of shared paths rather than linear in graph size. (Measured
-     * on quantum_upgrade: ~150k redundant cycle-checks across just 63 distinct edges before
-     * this fix, several minutes of wall time instead of low single-digit seconds.) Checking
-     * {@code done} up front makes every node's forwardEdges/inDegree contribution final the
-     * first time it's computed -- later parents just link to it without re-deriving anything,
-     * which is also what resolveStructure's memo-before-cycle-check ordering already gives
-     * {@code getSubPlan}/{@code computePlan} for free.
-     */
     private static void collectDag(
             ResourceLocation curr,
             Map<ResourceLocation, StructuralNode> structNodes,
@@ -486,18 +493,24 @@ public final class RecipeGraphTraverser {
             Set<ResourceLocation> onStack,
             Set<ResourceLocation> done) {
 
-        if (done.contains(curr)) return;
+        if (done.contains(curr))
+            return;
 
         StructuralNode node = structNodes.get(curr);
-        if (node == null) return;
+        if (node == null)
+            return;
 
         onStack.add(curr);
-        for (StructInputEdge edge : node.itemInputs()) {
+        List<StructInputEdge> allInputs = new ArrayList<>(node.itemInputs().size() + node.fluidInputs().size());
+        allInputs.addAll(node.itemInputs());
+        allInputs.addAll(node.fluidInputs());
+
+        for (StructInputEdge edge : allInputs) {
             ResourceLocation child = edge.childId();
-            if (!structNodes.containsKey(child)) continue;
+            if (!structNodes.containsKey(child))
+                continue;
 
             if (onStack.contains(child)) {
-                // Cycle detected: ignore this back-edge in DAG
                 continue;
             }
 
@@ -525,8 +538,7 @@ public final class RecipeGraphTraverser {
                 nodes.put(resourceId, new RecipeGraphNode(
                         resourceId, NodeType.RAW, null, null,
                         rate, 0,
-                        List.of(), null, null, depth
-                ));
+                        structNode.ambiguityOptions(), structNode.selectedAmbiguity(), resourceId, depth));
             }
             return;
         }
@@ -540,8 +552,7 @@ public final class RecipeGraphTraverser {
             resNode = new RecipeGraphNode(
                     resourceId, nodeType, null, null,
                     rate, 0,
-                    structNode.ambiguityOptions(), structNode.selectedAmbiguity(), resourceId, depth
-            );
+                    structNode.ambiguityOptions(), structNode.selectedAmbiguity(), resourceId, depth);
             nodes.put(resourceId, resNode);
         }
 
@@ -560,42 +571,27 @@ public final class RecipeGraphTraverser {
                     structNode.recipeId(), NodeType.MACHINE, structNode.machineTypeId(), structNode.recipe(),
                     rate, machineCount,
                     structNode.ambiguityOptions(), structNode.selectedAmbiguity(), resourceId,
-                    depth + 1
-            );
+                    depth + 1);
             machNode.setBaseEuPerTick(baseEu);
             machNode.setTotalEuPerTick(totalEu);
             nodes.put(structNode.recipeId(), machNode);
         }
 
-        edges.merge(new EdgeKey(structNode.recipeId(), resourceId), new GraphEdge(structNode.recipeId(), resourceId, rate),
+        edges.merge(new EdgeKey(structNode.recipeId(), resourceId),
+                new GraphEdge(structNode.recipeId(), resourceId, rate),
                 (oldEdge, newEdge) -> new GraphEdge(oldEdge.from(), oldEdge.to(), oldEdge.rate() + newEdge.rate()));
 
         for (StructInputEdge input : structNode.itemInputs()) {
             double inputRate = rate * input.ratePerUnit();
-            edges.merge(new EdgeKey(input.childId(), structNode.recipeId()), new GraphEdge(input.childId(), structNode.recipeId(), inputRate),
+            edges.merge(new EdgeKey(input.childId(), structNode.recipeId()),
+                    new GraphEdge(input.childId(), structNode.recipeId(), inputRate),
                     (oldEdge, newEdge) -> new GraphEdge(oldEdge.from(), oldEdge.to(), oldEdge.rate() + newEdge.rate()));
         }
 
-        // Fluid inputs are always leaves (never recursed into, matching the original), and unlike
-        // item resourceIds they aren't routed through propagateRates' topological queue at all --
-        // several different machines can each independently need the same fluid, so accumulate
-        // directly onto an existing RAW node the same way the original inline handling did.
         for (StructInputEdge input : structNode.fluidInputs()) {
             double inputRate = rate * input.ratePerUnit();
-            RecipeGraphNode fluidNode = nodes.get(input.childId());
-            if (fluidNode != null) {
-                fluidNode.setRequiredRate(fluidNode.getRequiredRate() + inputRate);
-                fluidNode.setDepth(Math.min(fluidNode.getDepth(), depth + 2));
-            } else {
-                fluidNode = new RecipeGraphNode(
-                        input.childId(), NodeType.RAW, null, null,
-                        inputRate, 0,
-                        List.of(), null, null, depth + 2
-                );
-                nodes.put(input.childId(), fluidNode);
-            }
-
-            edges.merge(new EdgeKey(input.childId(), structNode.recipeId()), new GraphEdge(input.childId(), structNode.recipeId(), inputRate),
+            edges.merge(new EdgeKey(input.childId(), structNode.recipeId()),
+                    new GraphEdge(input.childId(), structNode.recipeId(), inputRate),
                     (oldEdge, newEdge) -> new GraphEdge(oldEdge.from(), oldEdge.to(), oldEdge.rate() + newEdge.rate()));
         }
     }
