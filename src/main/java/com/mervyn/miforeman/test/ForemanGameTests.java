@@ -17,8 +17,8 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import java.util.List;
 import java.util.Map;
 import aztech.modern_industrialization.machines.MachineBlockEntity;
-import aztech.modern_industrialization.machines.components.CrafterComponent;
 import com.mervyn.miforeman.goal.ServerMonitoringManager;
+import com.mervyn.miforeman.goal.UnifiedCrafter;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.GlobalPos;
 import net.minecraft.server.level.ServerLevel;
@@ -256,7 +256,7 @@ public class ForemanGameTests {
             return;
         }
 
-        CrafterComponent crafter = ServerMonitoringManager.getCrafter(machine);
+        UnifiedCrafter crafter = ServerMonitoringManager.getCrafter(machine);
         if (crafter == null) {
             helper.fail("Placed Compressor does not have a CrafterComponent!");
             return;
@@ -271,11 +271,11 @@ public class ForemanGameTests {
 
         // Test 2: Add valid inputs, but block outputs -> Saturating (ORANGE)
         var ironIngot = net.minecraft.world.item.Items.IRON_INGOT;
-        var inputSlot = crafter.getInventory().getItemInputs().get(0);
+        var inputSlot = crafter.getItemInputs().get(0);
         inputSlot.setKey(aztech.modern_industrialization.thirdparty.fabrictransfer.api.item.ItemVariant.of(ironIngot));
         inputSlot.setAmount(1);
 
-        var outputSlot = crafter.getInventory().getItemOutputs().get(0);
+        var outputSlot = ((UnifiedCrafter.StandardCrafterAdapter) crafter).getUnderlying().getInventory().getItemOutputs().get(0);
         outputSlot.setKey(aztech.modern_industrialization.thirdparty.fabrictransfer.api.item.ItemVariant.of(net.minecraft.world.item.Items.GLASS));
         outputSlot.setAmount(64);
 
@@ -876,7 +876,7 @@ public class ForemanGameTests {
             return;
         }
 
-        CrafterComponent crafter = ServerMonitoringManager.getCrafter(machine);
+        UnifiedCrafter crafter = ServerMonitoringManager.getCrafter(machine);
         if (crafter == null) {
             helper.fail("Placed Compressor does not have a CrafterComponent!");
             return;
@@ -917,7 +917,7 @@ public class ForemanGameTests {
             // Phase 2: supply a valid input item and fill the energy buffer directly (bypassing
             // generator/cable infrastructure, same as MI's own EnergyComponent API allows) so the
             // machine's own ticker actually starts crafting.
-            var inputSlot = crafter.getInventory().getItemInputs().get(0);
+            var inputSlot = crafter.getItemInputs().get(0);
             inputSlot.setKey(aztech.modern_industrialization.thirdparty.fabrictransfer.api.item.ItemVariant.of(net.minecraft.world.item.Items.IRON_INGOT));
             inputSlot.setAmount(4);
 
@@ -939,7 +939,7 @@ public class ForemanGameTests {
 
                 // Phase 3: block the output with a mismatched item -> saturation (ORANGE) once the
                 // machine can no longer deposit its crafted output.
-                var outputSlot = crafter.getInventory().getItemOutputs().get(0);
+                var outputSlot = ((UnifiedCrafter.StandardCrafterAdapter) crafter).getUnderlying().getInventory().getItemOutputs().get(0);
                 outputSlot.setKey(aztech.modern_industrialization.thirdparty.fabrictransfer.api.item.ItemVariant.of(net.minecraft.world.item.Items.GLASS));
                 outputSlot.setAmount(64);
 
@@ -1006,6 +1006,146 @@ public class ForemanGameTests {
             helper.fail("Expected graph to return to the pinned 588 nodes/864 edges after disabling "
                     + "includeProxiedRecipeTypes again, but got: " + graphRestored.nodes().size()
                     + " nodes / " + graphRestored.edges().size() + " edges.");
+            return;
+        }
+
+        helper.succeed();
+    }
+
+    public static class MockModularCrafter {
+        public boolean hasActive = true;
+        public RecipeHolder<MachineRecipe> activeRecipe;
+        public float progress = 0.75f;
+        public MockInventory inv = new MockInventory();
+        public MockBehavior behavior = new MockBehavior();
+
+        public MockModularCrafter(RecipeHolder<MachineRecipe> recipe) {
+            this.activeRecipe = recipe;
+        }
+
+        public boolean hasActiveRecipe() {
+            return hasActive;
+        }
+
+        public RecipeHolder<MachineRecipe> getActiveRecipe() {
+            return activeRecipe;
+        }
+
+        public float getProgress() {
+            return progress;
+        }
+
+        public MockInventory getInventory() {
+            return inv;
+        }
+
+        public MockBehavior getBehavior() {
+            return behavior;
+        }
+    }
+
+    public static class MockInventory {
+        public List<aztech.modern_industrialization.inventory.ConfigurableItemStack> getItemInputs() {
+            return List.of();
+        }
+
+        public List<aztech.modern_industrialization.inventory.ConfigurableFluidStack> getFluidInputs() {
+            return List.of();
+        }
+    }
+
+    public static class MockBehavior {
+        public aztech.modern_industrialization.machines.recipe.MachineRecipeType recipeType() {
+            return aztech.modern_industrialization.machines.init.MIMachineRecipeTypes.COMPRESSOR;
+        }
+
+        public boolean banRecipe(MachineRecipe recipe) {
+            return false;
+        }
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testUnifiedCrafterStandardParity(GameTestHelper helper) {
+        BlockPos machinePos = new BlockPos(1, 1, 1);
+        var compressorBlock = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+                ResourceLocation.parse("modern_industrialization:bronze_compressor")
+        );
+        helper.setBlock(machinePos, compressorBlock);
+
+        BlockEntity be = helper.getBlockEntity(machinePos);
+        if (!(be instanceof MachineBlockEntity machine)) {
+            helper.fail("Placed block is not a MachineBlockEntity!");
+            return;
+        }
+
+        UnifiedCrafter crafter = ServerMonitoringManager.getCrafter(machine);
+        if (crafter == null) {
+            helper.fail("ServerMonitoringManager.getCrafter(machine) returned null for bronze compressor!");
+            return;
+        }
+
+        if (!(crafter instanceof UnifiedCrafter.StandardCrafterAdapter)) {
+            helper.fail("Expected StandardCrafterAdapter for standard MI machine, got: " + crafter.getClass().getName());
+            return;
+        }
+
+        if (crafter.hasActiveRecipe()) {
+            helper.fail("Newly placed compressor should not have active recipe.");
+            return;
+        }
+
+        if (crafter.getRecipeType() != aztech.modern_industrialization.machines.init.MIMachineRecipeTypes.COMPRESSOR) {
+            helper.fail("Expected COMPRESSOR recipe type, got: " + crafter.getRecipeType());
+            return;
+        }
+
+        if (crafter.getItemInputs().isEmpty()) {
+            helper.fail("Expected bronze compressor to have item inputs in its inventory.");
+            return;
+        }
+
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testUnifiedCrafterModularDuckTyping(GameTestHelper helper) {
+        var recipeManager = helper.getLevel().getRecipeManager();
+        var candidates = RecipeGraphTraverser.groupMachineRecipesByType(recipeManager);
+        var compressorRecipes = candidates.get(ResourceLocation.parse("modern_industrialization:compressor"));
+        if (compressorRecipes == null || compressorRecipes.isEmpty()) {
+            helper.fail("Could not find compressor recipes in RecipeManager.");
+            return;
+        }
+
+        RecipeHolder<MachineRecipe> testHolder = compressorRecipes.get(0);
+        MockModularCrafter mock = new MockModularCrafter(testHolder);
+
+        var accessors = UnifiedCrafter.ModularAccessors.get(MockModularCrafter.class);
+        if (accessors == null) {
+            helper.fail("ModularAccessors.get(MockModularCrafter.class) returned null!");
+            return;
+        }
+
+        UnifiedCrafter unified = new UnifiedCrafter.ModularCrafterAdapter(mock, accessors);
+
+        if (!unified.hasActiveRecipe()) {
+            helper.fail("Expected hasActiveRecipe() to return true.");
+            return;
+        }
+
+        RecipeHolder<MachineRecipe> extracted = unified.getActiveRecipe();
+        if (extracted == null || !extracted.id().equals(testHolder.id())) {
+            helper.fail("Expected active recipe ID " + testHolder.id() + ", got: " + (extracted != null ? extracted.id() : "null"));
+            return;
+        }
+
+        if (Math.abs(unified.getProgress() - 0.75f) > 0.001f) {
+            helper.fail("Expected progress 0.75, got: " + unified.getProgress());
+            return;
+        }
+
+        if (unified.getRecipeType() != aztech.modern_industrialization.machines.init.MIMachineRecipeTypes.COMPRESSOR) {
+            helper.fail("Expected COMPRESSOR recipe type, got: " + unified.getRecipeType());
             return;
         }
 

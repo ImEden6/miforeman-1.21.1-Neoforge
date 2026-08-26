@@ -1,4 +1,4 @@
-# AGENTS.md — MI Foreman
+# CONTRIBUTING.md — MI Foreman
 
 ## Quickstart
 
@@ -6,8 +6,7 @@
 ./gradlew runClient                  # Minecraft client with mod
 ./gradlew runServer                  # Dedicated server (nogui)
 ./gradlew runGameTestServer          # All game tests, then exit
-./gradlew runData                    # Datagen → src/generated/resources/
-./gradlew build                      # Mod JAR at build/libs/miforeman-1.0.0.jar
+./gradlew build -x test             # Mod JAR at build/libs/miforeman-1.0.0.jar
 ./gradlew --refresh-dependencies     # Force refresh all Gradle deps
 ```
 
@@ -39,14 +38,15 @@
 | Goal model | `goal/ProductionGoal.java` | Immutable record with `CODEC`/`STREAM_CODEC` — target, rate, plan, layout, history, uiState |
 | Recipe traversal | `goal/RecipeGraphTraverser.java` | Recursive BFS through MI recipe graph; cycle handling, ambiguity resolution, DAG construction |
 | Graph model | `goal/RecipeGraph.java`, `RecipeGraphNode.java`, `NodeType.java`, `GraphEdge.java` | DAG data model for factory planning & node canvas |
-| Machine scanner | `goal/MachineScanner.java` | Server-side sphere/area scanning for unlinked MI machines matching the active graph |
+| Crafter adapter | `goal/UnifiedCrafter.java` | Unified crafter abstraction supporting base MI `CrafterComponent` and duck-typed modular multiblock crafters |
+| Machine scanner | `goal/MachineScanner.java` | Server-side sphere/area scanning for unlinked MI & custom multiblock machines matching active graph |
 | State tracking & sync | `goal/MachineLinkHistory.java`, `ClipboardUiState.java`, `GraphLayoutState.java`, `ClipboardCloseSync.java` | Persistence & undo/redo tracking for machine links, canvas positions, and UI state |
-| Server monitoring | `goal/ServerMonitoringManager.java` | Server-side tracker & `@SubscribeEvent` tick handler — tracks `CrafterComponent` energy, status (GREEN/YELLOW/ORANGE/RED) |
+| Server monitoring | `goal/ServerMonitoringManager.java` | Server-side tracker & `@SubscribeEvent` tick handler — tracks `UnifiedCrafter` energy, status (GREEN/YELLOW/ORANGE/RED) |
 | Commands | `command/ForemanCommands.java` | `/miforeman goal create\|print\|plan\|select` and `/miforeman recipes print` |
 | Packets | `network/*.java` | 6 network packets for client-server communication (see below) |
 | Rate limiting | `network/PacketRateLimiter.java` | Server-side rate limiter guarding network payloads |
 | Mixins | `mixin/CrafterComponentAccessor.java` | Accessor mixin for `CrafterComponent.activeRecipe` |
-| Game tests | `test/ForemanGameTests.java` | 18 `@GameTest`s verifying core logic (see below) |
+| Game tests | `test/ForemanGameTests.java` | 20 `@GameTest`s verifying core logic (see below) |
 
 ### Network packets (registered in `MIForeman.java:75-107`)
 
@@ -59,14 +59,13 @@
 
 ## Development commands
 
-### Run / test / datagen
+### Run / test / build
 
 ```powershell
 ./gradlew runClient                           # Client
 ./gradlew runServer                           # Headless server
 ./gradlew runGameTestServer                   # All game tests, then exit
-./gradlew runData                             # Datagen (output: src/generated/resources/)
-./gradlew build                               # Build JAR
+./gradlew build -x test                       # Build JAR
 ```
 
 ### Game tests (`ForemanGameTests.java`)
@@ -91,6 +90,8 @@
 | `testAmbiguityWrapAroundCycling` | Full-cycle ambiguity rotation returns graph structurally identical to initial state |
 | `testMachineStatusDynamicTransitions` | In-world machine crafting status lifecycle transitions over server ticks |
 | `testProxiedRecipeTypesConfigDefaultsOffAndTogglesCleanly` | Config toggling for proxied recipe types defaults off and cleanly round-trips |
+| `testUnifiedCrafterStandardParity` | Asserts standard MI machines are wrapped directly via `StandardCrafterAdapter` |
+| `testUnifiedCrafterModularDuckTyping` | Asserts duck-typed modular multiblock crafter components resolve correctly via `ModularCrafterAdapter` |
 
 Tests use `@PrefixGameTestTemplate(false)` + `template="empty"` — no structure files needed.
 
@@ -101,19 +102,10 @@ Tests use `@PrefixGameTestTemplate(false)` + `template="empty"` — no structure
 - **Config locations**: Common config via `ModContainer.registerConfig(ModConfig.Type.COMMON, ...)` in `MIForeman.java`; Client config via `ModContainer.registerConfig(ModConfig.Type.CLIENT, ...)` in `MIForemanClient.java`.
 - **CurseMaven dependency** for MI (`build.gradle:162`): `implementation "curse.maven:modern-industrialization-405388:8439736"`. Not declared in `neoforge.mods.toml`.
 - **Template expansion**: `neoforge.mods.toml` lives in `src/main/templates/META-INF/`. Expanded via Groovy `${property}` in `generateModMetadata`. `neoForge.ideSyncTask` ensures re-expansion on IDE sync.
-- **Datagen output dir**: `src/generated/resources/` is declared as an input in `sourceSets.main.resources` but may not exist yet. Generate with `./gradlew runData`.
 - **Dimension-safe monitoring**: Machine links in `ProductionGoal` (`linkedMachines` / `rejectedMachines`), machine link history, network sync payloads, and `ServerMonitoringManager.TRACKERS` use `GlobalPos` end-to-end. `ProductionGoal.CODEC` maintains backward compatibility by decoding legacy bare `BlockPos` saves into Overworld `GlobalPos`. Stale trackers are pruned every 200 ticks against currently-linked machines.
 - **StreamCodec & Codec Parity**: Any field added to `ProductionGoal` or sub-records must be synchronized across both `CODEC` and `STREAM_CODEC` (enforced by `testProductionGoalStreamCodecParity`).
 - **Parchment mappings**: `parchment_mappings_version=2024.11.17` for `parchment_minecraft_version=1.21.1`.
 - **Gradle 9.2.1** with BIN distribution (not ALL).
 - **ProductionGoal rate** stored as per-minute; perHour toggle divides/multiplies by 60 for display.
 - **Monitoring** keeps rolling 1-hour (72000-tick) energy event window per machine. Checks both hands for clipboard. Request interval: every 20 ticks (1 second).
-- **`.bbmodel` files** excluded from JAR (`build.gradle:25`).
 - **`run/`, `.vscode/`, `.idea/`, `.run/`** in `.gitignore`.
-- **Generated `.cache/` excluded**: `**/src/generated/**/.cache/` in `.gitignore`.
-
-## Reference docs
-
-- `plan.md` — implementation plan for RecipeGraph data model + Hybrid Split Panel UI
-- `HANDOFF.md` — previous session notes
-- `references/MI_Foreman_Inception.md` — original design document

@@ -109,13 +109,12 @@ public class ServerMonitoringManager {
         return ((CrafterComponentAccessor) crafter).miforeman$getActiveRecipe();
     }
 
-    public static CrafterComponent getCrafter(MachineBlockEntity machine) {
-        for (var comp : machine.components) {
-            if (comp instanceof CrafterComponent) {
-                return (CrafterComponent) comp;
-            }
-        }
-        return null;
+    public static RecipeHolder<MachineRecipe> getActiveRecipeHolder(UnifiedCrafter crafter) {
+        return crafter.getActiveRecipe();
+    }
+
+    public static UnifiedCrafter getCrafter(MachineBlockEntity machine) {
+        return UnifiedCrafter.from(machine);
     }
 
     @SubscribeEvent
@@ -154,14 +153,14 @@ public class ServerMonitoringManager {
                 }
                 BlockEntity be = level.getBlockEntity(pos);
                 if (be instanceof MachineBlockEntity machine) {
-                    CrafterComponent crafter = getCrafter(machine);
+                    UnifiedCrafter crafter = getCrafter(machine);
                     if (crafter == null) continue;
 
                     MachineTracker tracker = trackerFor(GlobalPos.of(entry.getKey(), pos));
                     boolean hasActive = crafter.hasActiveRecipe();
 
                     if (hasActive) {
-                        var activeHolder = getActiveRecipeHolder(crafter);
+                        var activeHolder = crafter.getActiveRecipe();
                         if (activeHolder != null) {
                             ResourceLocation recipeId = activeHolder.id();
                             long recipeEnergy = activeHolder.value().getTotalEu();
@@ -217,25 +216,38 @@ public class ServerMonitoringManager {
 
     public record PassiveStatus(String status, @Nullable ResourceLocation matchedRecipeId) {}
 
-    public static String getMachinePassiveStatus(CrafterComponent crafter, ServerLevel level) {
+    public static String getMachinePassiveStatus(UnifiedCrafter crafter, ServerLevel level) {
         return getMachinePassiveStatusDetailed(crafter, level).status();
+    }
+
+    public static String getMachinePassiveStatus(CrafterComponent crafter, ServerLevel level) {
+        return getMachinePassiveStatusDetailed(UnifiedCrafter.from(crafter), level).status();
+    }
+
+    public static PassiveStatus getMachinePassiveStatusDetailed(CrafterComponent crafter, ServerLevel level) {
+        return getMachinePassiveStatusDetailed(UnifiedCrafter.from(crafter), level);
     }
 
     /** Evaluates passive status like {@link #getMachinePassiveStatus}, and returns the matching
      *  recipe ID when saturating (ORANGE). */
-    public static PassiveStatus getMachinePassiveStatusDetailed(CrafterComponent crafter, ServerLevel level) {
+    public static PassiveStatus getMachinePassiveStatusDetailed(UnifiedCrafter crafter, ServerLevel level) {
         if (crafter.hasActiveRecipe()) {
             return new PassiveStatus("GREEN", null);
         }
 
-        List<ConfigurableItemStack> itemInputs = crafter.getInventory().getItemInputs();
-        List<ConfigurableFluidStack> fluidInputs = crafter.getInventory().getFluidInputs();
+        var recipeType = crafter.getRecipeType();
+        if (recipeType == null) {
+            return new PassiveStatus("RED", null);
+        }
 
-        Collection<RecipeHolder<MachineRecipe>> candidates = CrafterComponent.getRecipes(level, crafter.getBehavior().recipeType(), itemInputs);
+        List<ConfigurableItemStack> itemInputs = crafter.getItemInputs();
+        List<ConfigurableFluidStack> fluidInputs = crafter.getFluidInputs();
+
+        Collection<RecipeHolder<MachineRecipe>> candidates = CrafterComponent.getRecipes(level, recipeType, itemInputs);
 
         for (RecipeHolder<MachineRecipe> holder : candidates) {
             MachineRecipe recipe = holder.value();
-            if (crafter.getBehavior().banRecipe(recipe)) {
+            if (crafter.banRecipe(recipe)) {
                 continue;
             }
             if (CrafterComponent.doInputsMatch(itemInputs, fluidInputs, recipe)) {

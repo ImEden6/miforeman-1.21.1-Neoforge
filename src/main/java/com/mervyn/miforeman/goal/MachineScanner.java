@@ -1,7 +1,6 @@
 package com.mervyn.miforeman.goal;
 
 import aztech.modern_industrialization.machines.MachineBlockEntity;
-import aztech.modern_industrialization.machines.components.CrafterComponent;
 import aztech.modern_industrialization.machines.recipe.MachineRecipe;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.GlobalPos;
@@ -58,9 +57,9 @@ public class MachineScanner {
                 LevelChunk chunk = level.getChunk(cx, cz);
                 for (BlockEntity be : chunk.getBlockEntities().values()) {
                     if (!(be instanceof MachineBlockEntity machine)) continue;
-                    CrafterComponent crafter = ServerMonitoringManager.getCrafter(machine);
+                    UnifiedCrafter crafter = ServerMonitoringManager.getCrafter(machine);
                     if (crafter == null) continue;
-                    RecipeHolder<MachineRecipe> active = ServerMonitoringManager.getActiveRecipeHolder(crafter);
+                    RecipeHolder<MachineRecipe> active = crafter.getActiveRecipe();
                     ResourceLocation recipeId = active != null ? active.id() : null;
                     // Edge case (accepted, not fixed): a just-loaded machine may have activeRecipe==null
                     // but a pending delayedActiveRecipe about to populate next tick. This scan skips it
