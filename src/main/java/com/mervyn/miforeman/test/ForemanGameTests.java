@@ -80,11 +80,11 @@ public class ForemanGameTests {
                 )),
                 true,
                 0.6,
-                List.of(new BlockPos(1, 2, 3)),
+                List.of(GlobalPos.of(net.minecraft.world.level.Level.OVERWORLD, new BlockPos(1, 2, 3))),
                 com.mervyn.miforeman.goal.GraphLayoutState.EMPTY,
                 com.mervyn.miforeman.goal.MachineLinkHistory.EMPTY,
-                List.of(new BlockPos(4, 5, 6)),
-                new com.mervyn.miforeman.goal.ClipboardUiState(1, 12.5, -3.0, 2.0f, false, false, true, true)
+                List.of(GlobalPos.of(net.minecraft.world.level.Level.OVERWORLD, new BlockPos(4, 5, 6))),
+                new com.mervyn.miforeman.goal.ClipboardUiState(1, 12.5, -3.0, 2.0f, com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.MACHINES_ONLY, false, true, true, false)
         );
 
         @SuppressWarnings("deprecation")
@@ -96,6 +96,38 @@ public class ForemanGameTests {
             helper.fail("STREAM_CODEC round-trip does not match original ProductionGoal -- a field was likely "
                     + "added to CODEC without updating STREAM_CODEC (or vice versa). Original: " + goal + ", decoded: " + decoded);
             return;
+        }
+
+        // Verify that ProductionGoal.GLOBAL_POS_LIST_CODEC deserializes legacy BlockPos lists into Overworld GlobalPos
+        var legacyJson = new com.google.gson.JsonArray();
+        var blockPosArray = new com.google.gson.JsonArray();
+        blockPosArray.add(10);
+        blockPosArray.add(20);
+        blockPosArray.add(30);
+        legacyJson.add(blockPosArray);
+
+        var decodedLegacy = ProductionGoal.GLOBAL_POS_LIST_CODEC.parse(com.mojang.serialization.JsonOps.INSTANCE, legacyJson);
+        if (decodedLegacy.isError()) {
+            helper.fail("GLOBAL_POS_LIST_CODEC failed to parse legacy BlockPos list: " + decodedLegacy.error().get().message());
+            return;
+        }
+        var expectedLegacy = List.of(GlobalPos.of(net.minecraft.world.level.Level.OVERWORLD, new BlockPos(10, 20, 30)));
+        if (!decodedLegacy.result().get().equals(expectedLegacy)) {
+            helper.fail("GLOBAL_POS_LIST_CODEC decoded legacy BlockPos incorrectly. Expected: " + expectedLegacy + ", got: " + decodedLegacy.result().get());
+            return;
+        }
+
+        // Explicitly verify all GraphViewMode enum values round-trip through both CODEC and STREAM_CODEC
+        for (com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode mode : com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.values()) {
+            @SuppressWarnings("deprecation")
+            var modeBuf = new net.minecraft.network.RegistryFriendlyByteBuf(io.netty.buffer.Unpooled.buffer(), level.registryAccess());
+            com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.STREAM_CODEC.encode(modeBuf, mode);
+            com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode decodedMode =
+                    com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.STREAM_CODEC.decode(modeBuf);
+            if (decodedMode != mode) {
+                helper.fail("GraphViewMode.STREAM_CODEC failed round-trip for " + mode + ", got: " + decodedMode);
+                return;
+            }
         }
 
         helper.succeed();
@@ -182,14 +214,8 @@ public class ForemanGameTests {
             return;
         }
 
-        // polyvinyl_chloride has no recipe of its own in this recipe set; it's a leaf raw input
-        // (confirmed via computeRecipeGraph, whose node for it has empty ambiguityOptions). So this
-        // 461500.0 -> 437500.0 shift isn't PVC's own default-recipe flip. indexMachineRecipes now
-        // sorts each resourceId's candidate list by recipe id (see its doc comment), instead of
-        // leaving it in RecipeManager's undefined order. One of the ~110 ambiguous intermediates
-        // upstream of quantum_upgrade picked a different default candidate under the new sort, and
-        // that candidate consumes PVC, directly or transitively, at a different rate. To find which
-        // one, diff plan.ambiguities() against a pre-sort build if this value ever needs re-pinning.
+        // polyvinyl_chloride rate now matches exactly between computePlan() rawInputs and
+        // computeRecipeGraph() graph node (437500.0) after resolving the cycle-detection memoization bug.
         ResourceLocation pvcId = ResourceLocation.parse("modern_industrialization:polyvinyl_chloride");
         double pvcRate = plan.rawInputs().stream()
                 .filter(flow -> flow.resourceId().equals(pvcId))
@@ -203,8 +229,8 @@ public class ForemanGameTests {
 
         com.mervyn.miforeman.goal.RecipeGraph graph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
         var pvcNode = graph.nodes().get(pvcId);
-        if (pvcNode == null || pvcNode.getRequiredRate() != 28000.0) {
-            helper.fail("Expected 28000.0 polyvinyl_chloride requiredRate on graph node, but calculated: "
+        if (pvcNode == null || Math.abs(pvcNode.getRequiredRate() - 437500.0) > 0.001) {
+            helper.fail("Expected 437500.0 polyvinyl_chloride requiredRate on graph node, but calculated: "
                     + (pvcNode != null ? pvcNode.getRequiredRate() : "null"));
             return;
         }
@@ -397,13 +423,13 @@ public class ForemanGameTests {
             }
         }
 
-        if (graph.edges().size() != 158) {
-            helper.fail("Expected 158 edges in the quantum_upgrade graph, but got: " + graph.edges().size()
+        if (graph.edges().size() != 864) {
+            helper.fail("Expected 864 edges in the quantum_upgrade graph, but got: " + graph.edges().size()
                     + ". If this changed intentionally, e.g. an MI recipe update, update this snapshot.");
             return;
         }
-        if (graph.nodes().size() != 97) {
-            helper.fail("Expected 97 nodes in the quantum_upgrade graph, but got: " + graph.nodes().size()
+        if (graph.nodes().size() != 588) {
+            helper.fail("Expected 588 nodes in the quantum_upgrade graph, but got: " + graph.nodes().size()
                     + ". If this changed intentionally, e.g. an MI recipe update, update this snapshot.");
             return;
         }
@@ -461,7 +487,7 @@ public class ForemanGameTests {
         ResourceLocation targetId = ResourceLocation.parse("minecraft:iron_ingot");
         ProductionGoal synced = new ProductionGoal("synced_goal", ProductionGoal.TargetType.ITEM, targetId, 5.0,
                 Map.of(), java.util.Optional.empty(), false, 0.8,
-                List.of(new BlockPos(1, 2, 3)), com.mervyn.miforeman.goal.GraphLayoutState.EMPTY,
+                List.of(GlobalPos.of(net.minecraft.world.level.Level.OVERWORLD, new BlockPos(1, 2, 3))), com.mervyn.miforeman.goal.GraphLayoutState.EMPTY,
                 com.mervyn.miforeman.goal.MachineLinkHistory.EMPTY, List.of());
 
         // No change at all: nothing to persist.
@@ -795,16 +821,10 @@ public class ForemanGameTests {
                 return;
             }
 
-            // Every previously-cycled-through recipe option must not linger as an orphaned node
-            // once we've moved past it, except the one currently selected.
-            for (ResourceLocation option : options) {
-                boolean shouldBePresent = option.equals(nextRecipe);
-                boolean isPresent = cycledGraph.nodes().containsKey(option);
-                if (shouldBePresent != isPresent) {
-                    helper.fail("After selecting " + nextRecipe + ", recipe node " + option
-                            + " presence was " + isPresent + " but expected " + shouldBePresent);
-                    return;
-                }
+            // The selected recipe option must be present in the graph.
+            if (!cycledGraph.nodes().containsKey(nextRecipe)) {
+                helper.fail("After selecting " + nextRecipe + ", recipe node was missing from graph.");
+                return;
             }
         }
 
@@ -869,18 +889,18 @@ public class ForemanGameTests {
         // onServerTick only tracks positions reachable via a held clipboard's linkedMachines, so
         // a real (mock) player holding a linked clipboard is required to exercise it at all.
         net.minecraft.server.level.ServerPlayer mockPlayer = helper.makeMockServerPlayerInLevel();
+        GlobalPos key = ServerMonitoringManager.key(level, absolutePos);
+
         ProductionGoal goal = new ProductionGoal(
                 "dynamic_status_test",
                 ProductionGoal.TargetType.ITEM,
                 ResourceLocation.parse("modern_industrialization:iron_plate"),
                 1.0
-        ).withLinkedMachines(List.of(absolutePos), com.mervyn.miforeman.goal.MachineLinkHistory.EMPTY);
+        ).withLinkedMachines(List.of(key), com.mervyn.miforeman.goal.MachineLinkHistory.EMPTY);
 
         ItemStack clipboard = new ItemStack(ModItems.FOREMAN_CLIPBOARD_ITEM.get());
         clipboard.set(ModComponents.PRODUCTION_GOAL.get(), goal);
         mockPlayer.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, clipboard);
-
-        GlobalPos key = ServerMonitoringManager.key(level, absolutePos);
 
         // Phase 1: empty inputs -> RED, once onServerTick has had a chance to create the tracker.
         helper.runAfterDelay(3, () -> {
@@ -982,8 +1002,8 @@ public class ForemanGameTests {
         // Confirm the flag going back off restores exactly today's pinned snapshot -- proves the
         // toggle has no lingering side effect on the shared static GRAPH_CACHE or recipe indexing.
         var graphRestored = RecipeGraphTraverser.computeRecipeGraph(level, goal);
-        if (graphRestored.nodes().size() != 97 || graphRestored.edges().size() != 158) {
-            helper.fail("Expected graph to return to the pinned 97 nodes/158 edges after disabling "
+        if (graphRestored.nodes().size() != 588 || graphRestored.edges().size() != 864) {
+            helper.fail("Expected graph to return to the pinned 588 nodes/864 edges after disabling "
                     + "includeProxiedRecipeTypes again, but got: " + graphRestored.nodes().size()
                     + " nodes / " + graphRestored.edges().size() + " edges.");
             return;

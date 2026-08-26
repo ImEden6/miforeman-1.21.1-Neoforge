@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.GlobalPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -46,27 +47,28 @@ public class ForemanClipboardItem extends Item {
                     return InteractionResult.SUCCESS;
                 }
 
-                List<BlockPos> linked = new ArrayList<>(goal.linkedMachines());
-                boolean wasLinked = linked.contains(pos);
+                GlobalPos globalPos = GlobalPos.of(level.dimension(), pos);
+                List<GlobalPos> linked = new ArrayList<>(goal.linkedMachines());
+                boolean wasLinked = linked.contains(globalPos);
                 MachineLinkHistory history;
                 ProductionGoal updatedGoal;
                 if (wasLinked) {
-                    linked.remove(pos);
-                    history = goal.machineLinkHistory().withToggle(pos, true, false);
+                    linked.remove(globalPos);
+                    history = goal.machineLinkHistory().withToggle(globalPos, true, false);
                     updatedGoal = goal.withLinkedMachines(linked, history);
                     player.sendSystemMessage(Component.literal("Unlinked machine at " + pos.toShortString()).withStyle(ChatFormatting.YELLOW));
                 } else {
-                    linked.add(pos);
-                    history = goal.machineLinkHistory().withToggle(pos, false, true);
+                    linked.add(globalPos);
+                    history = goal.machineLinkHistory().withToggle(globalPos, false, true);
                     // manual link always clears a sticky rejection
-                    updatedGoal = goal.withLinkedMachines(linked, history).withoutRejectedMachine(pos);
+                    updatedGoal = goal.withLinkedMachines(linked, history).withoutRejectedMachine(globalPos);
                     player.sendSystemMessage(Component.literal("Linked machine at " + pos.toShortString()).withStyle(ChatFormatting.GREEN));
                 }
                 stack.set(ModComponents.PRODUCTION_GOAL.get(), updatedGoal);
 
                 if (player instanceof ServerPlayer serverPlayer) {
                     boolean nowLinked = !wasLinked;
-                    PacketDistributor.sendToPlayer(serverPlayer, new MachineLinkSyncPayload(pos, nowLinked));
+                    PacketDistributor.sendToPlayer(serverPlayer, new MachineLinkSyncPayload(globalPos, nowLinked));
                 }
             }
             return InteractionResult.sidedSuccess(level.isClientSide());

@@ -6,7 +6,7 @@ import com.mervyn.miforeman.goal.ServerMonitoringManager;
 import com.mervyn.miforeman.goal.ServerMonitoringManager.MachineTracker;
 import com.mervyn.miforeman.registry.ModItems;
 import com.mervyn.miforeman.registry.ModComponents;
-import net.minecraft.core.BlockPos;
+import net.minecraft.core.GlobalPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -25,7 +25,6 @@ public class MonitoringPacketHandlers {
             if (!(context.player() instanceof ServerPlayer player)) {
                 return;
             }
-            ServerLevel level = player.serverLevel();
             ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
             if (stack.isEmpty() || !stack.is(ModItems.FOREMAN_CLIPBOARD_ITEM.get())) {
                 stack = player.getItemInHand(InteractionHand.OFF_HAND);
@@ -39,23 +38,23 @@ public class MonitoringPacketHandlers {
                 return;
             }
 
-            long currentTick = level.getGameTime();
             long windowTicks = goal.perHour() ? 72000 : 1200;
 
             List<LiveMonitoringPayload.MachineStatusData> list = new ArrayList<>();
 
             // 1. Calculate actual rate maps for all linked machines
-            Map<BlockPos, Map<ResourceLocation, Double>> machineRates = new HashMap<>();
+            Map<GlobalPos, Map<ResourceLocation, Double>> machineRates = new HashMap<>();
             Map<ResourceLocation, Double> totalRates = new HashMap<>();
 
-            for (BlockPos pos : goal.linkedMachines()) {
-                if (!level.isLoaded(pos)) {
+            for (GlobalPos pos : goal.linkedMachines()) {
+                ServerLevel machineLevel = player.server.getLevel(pos.dimension());
+                if (machineLevel == null || !machineLevel.isLoaded(pos.pos())) {
                     continue;
                 }
-                BlockEntity be = level.getBlockEntity(pos);
+                BlockEntity be = machineLevel.getBlockEntity(pos.pos());
                 if (be instanceof MachineBlockEntity) {
-                    MachineTracker tracker = ServerMonitoringManager.trackerFor(level, pos);
-                    Map<ResourceLocation, Double> rates = ServerMonitoringManager.getActualRates(tracker, level, currentTick, windowTicks);
+                    MachineTracker tracker = ServerMonitoringManager.trackerFor(pos);
+                    Map<ResourceLocation, Double> rates = ServerMonitoringManager.getActualRates(tracker, machineLevel, machineLevel.getGameTime(), windowTicks);
                     machineRates.put(pos, rates);
                     for (var entry : rates.entrySet()) {
                         totalRates.merge(entry.getKey(), entry.getValue(), Double::sum);
@@ -64,13 +63,14 @@ public class MonitoringPacketHandlers {
             }
 
             // 2. Compute final statuses and package data
-            for (BlockPos pos : goal.linkedMachines()) {
-                if (!level.isLoaded(pos)) {
+            for (GlobalPos pos : goal.linkedMachines()) {
+                ServerLevel machineLevel = player.server.getLevel(pos.dimension());
+                if (machineLevel == null || !machineLevel.isLoaded(pos.pos())) {
                     continue;
                 }
-                BlockEntity be = level.getBlockEntity(pos);
+                BlockEntity be = machineLevel.getBlockEntity(pos.pos());
                 if (be instanceof MachineBlockEntity machine) {
-                    MachineTracker tracker = ServerMonitoringManager.trackerFor(level, pos);
+                    MachineTracker tracker = ServerMonitoringManager.trackerFor(pos);
                     String status = tracker.status;
 
                     Map<ResourceLocation, Double> rates = machineRates.getOrDefault(pos, Map.of());

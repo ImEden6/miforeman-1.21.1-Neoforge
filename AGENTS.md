@@ -46,7 +46,7 @@
 | Packets | `network/*.java` | 6 network packets for client-server communication (see below) |
 | Rate limiting | `network/PacketRateLimiter.java` | Server-side rate limiter guarding network payloads |
 | Mixins | `mixin/CrafterComponentAccessor.java` | Accessor mixin for `CrafterComponent.activeRecipe` |
-| Game tests | `test/ForemanGameTests.java` | 11 `@GameTest`s verifying core logic (see below) |
+| Game tests | `test/ForemanGameTests.java` | 18 `@GameTest`s verifying core logic (see below) |
 
 ### Network packets (registered in `MIForeman.java:75-107`)
 
@@ -84,6 +84,13 @@
 | `testAmbiguityOwnerIdIsConsistent` | Ambiguity owner resource IDs match actual output edges on nodes |
 | `testCloseSyncGoalPreservesLastSynced` | `computeCloseSyncGoal` preserves linked machines while applying UI state deltas |
 | `testDimensionKeyedTrackers` | `ServerMonitoringManager` tracker keys are dimension-safe (`GlobalPos`) and prune cleanly |
+| `testPowerDemandMatchesRequirements` | Machine EU/t power demand matches between `computePlan` and `MachineStats` |
+| `testFluidTargetGoalTraversal` | Fluid production target graph traversal and candidate recipe resolution |
+| `testGraphCacheHitAndInvalidation` | Graph cache returns cached instance and properly invalidates on goal mutation |
+| `testPacketRateLimiterThrottling` | Server-side rate limiter throttles excessive network payloads |
+| `testAmbiguityWrapAroundCycling` | Full-cycle ambiguity rotation returns graph structurally identical to initial state |
+| `testMachineStatusDynamicTransitions` | In-world machine crafting status lifecycle transitions over server ticks |
+| `testProxiedRecipeTypesConfigDefaultsOffAndTogglesCleanly` | Config toggling for proxied recipe types defaults off and cleanly round-trips |
 
 Tests use `@PrefixGameTestTemplate(false)` + `template="empty"` — no structure files needed.
 
@@ -95,7 +102,7 @@ Tests use `@PrefixGameTestTemplate(false)` + `template="empty"` — no structure
 - **CurseMaven dependency** for MI (`build.gradle:162`): `implementation "curse.maven:modern-industrialization-405388:8439736"`. Not declared in `neoforge.mods.toml`.
 - **Template expansion**: `neoforge.mods.toml` lives in `src/main/templates/META-INF/`. Expanded via Groovy `${property}` in `generateModMetadata`. `neoForge.ideSyncTask` ensures re-expansion on IDE sync.
 - **Datagen output dir**: `src/generated/resources/` is declared as an input in `sourceSets.main.resources` but may not exist yet. Generate with `./gradlew runData`.
-- **Dimension-safe monitoring**: `ServerMonitoringManager.TRACKERS` is keyed by `GlobalPos`, not bare `BlockPos` -- same coordinates in different dimensions get independent trackers. Stale trackers are pruned every 200 ticks against currently-linked machines.
+- **Dimension-safe monitoring**: Machine links in `ProductionGoal` (`linkedMachines` / `rejectedMachines`), machine link history, network sync payloads, and `ServerMonitoringManager.TRACKERS` use `GlobalPos` end-to-end. `ProductionGoal.CODEC` maintains backward compatibility by decoding legacy bare `BlockPos` saves into Overworld `GlobalPos`. Stale trackers are pruned every 200 ticks against currently-linked machines.
 - **StreamCodec & Codec Parity**: Any field added to `ProductionGoal` or sub-records must be synchronized across both `CODEC` and `STREAM_CODEC` (enforced by `testProductionGoalStreamCodecParity`).
 - **Parchment mappings**: `parchment_mappings_version=2024.11.17` for `parchment_minecraft_version=1.21.1`.
 - **Gradle 9.2.1** with BIN distribution (not ALL).

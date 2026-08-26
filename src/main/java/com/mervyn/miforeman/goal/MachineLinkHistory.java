@@ -2,7 +2,7 @@ package com.mervyn.miforeman.goal;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
-import net.minecraft.core.BlockPos;
+import net.minecraft.core.GlobalPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
@@ -23,7 +23,7 @@ public record MachineLinkHistory(
     public static final MachineLinkHistory EMPTY = new MachineLinkHistory(List.of(), List.of());
 
     /** Records a link/unlink toggle, capping the undo stack and clearing redo. */
-    public MachineLinkHistory withToggle(BlockPos pos, boolean from, boolean to) {
+    public MachineLinkHistory withToggle(GlobalPos pos, boolean from, boolean to) {
         List<MachineLinkAction> undo = new ArrayList<>(undoStack);
         undo.add(new MachineLinkAction(pos, from, to));
         while (undo.size() > MAX_HISTORY) {
@@ -33,7 +33,7 @@ public record MachineLinkHistory(
     }
 
     /** The updated history plus which machine changed link state and what it changed to. */
-    public record UndoResult(MachineLinkHistory history, BlockPos pos, boolean linked) {}
+    public record UndoResult(MachineLinkHistory history, GlobalPos pos, boolean linked) {}
 
     /** Reverts the most recent toggle. */
     public @Nullable UndoResult undo() {

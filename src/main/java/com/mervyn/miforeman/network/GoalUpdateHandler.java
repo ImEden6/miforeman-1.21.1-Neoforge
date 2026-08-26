@@ -8,6 +8,7 @@ import com.mervyn.miforeman.goal.RecipeGraphTraverser;
 import com.mervyn.miforeman.registry.ModComponents;
 import com.mervyn.miforeman.registry.ModItems;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.GlobalPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
@@ -51,7 +52,7 @@ public class GoalUpdateHandler {
                 ProductionGoal.FactoryPlan plan = RecipeGraphTraverser.computePlan(level, newGoal);
 
                 ProductionGoal oldGoal = stack.get(ModComponents.PRODUCTION_GOAL.get());
-                List<BlockPos> validatedLinked = validateLinkedMachines(
+                List<GlobalPos> validatedLinked = validateLinkedMachines(
                         level, player.blockPosition(), Config.AUTOLINK_SCAN_RADIUS_CHUNKS.get(),
                         newGoal.linkedMachines(), oldGoal != null ? oldGoal.linkedMachines() : null);
 
@@ -65,21 +66,22 @@ public class GoalUpdateHandler {
 
     /**
      * Validates proposed linked machine positions on the server. Previously linked positions pass through,
-     * while new positions must be loaded, within scan radius, and contain a machine block entity.
+     * while new positions must be in the current dimension, loaded, within scan radius, and contain a machine block entity.
      */
-    private static List<BlockPos> validateLinkedMachines(
+    private static List<GlobalPos> validateLinkedMachines(
             ServerLevel level, BlockPos playerPos, int radiusChunks,
-            List<BlockPos> newLinked, @Nullable List<BlockPos> oldLinked) {
-        Set<BlockPos> alreadyKnown = oldLinked != null ? new HashSet<>(oldLinked) : Set.of();
-        List<BlockPos> validated = new ArrayList<>(newLinked.size());
-        for (BlockPos pos : newLinked) {
+            List<GlobalPos> newLinked, @Nullable List<GlobalPos> oldLinked) {
+        Set<GlobalPos> alreadyKnown = oldLinked != null ? new HashSet<>(oldLinked) : Set.of();
+        List<GlobalPos> validated = new ArrayList<>(newLinked.size());
+        for (GlobalPos pos : newLinked) {
             if (alreadyKnown.contains(pos)) {
                 validated.add(pos);
                 continue;
             }
-            if (level.isLoaded(pos)
-                    && MachineScanner.isWithinScanRadius(playerPos, pos, radiusChunks)
-                    && level.getBlockEntity(pos) instanceof MachineBlockEntity) {
+            if (pos.dimension().equals(level.dimension())
+                    && level.isLoaded(pos.pos())
+                    && MachineScanner.isWithinScanRadius(playerPos, pos.pos(), radiusChunks)
+                    && level.getBlockEntity(pos.pos()) instanceof MachineBlockEntity) {
                 validated.add(pos);
             }
         }

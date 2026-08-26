@@ -6,9 +6,8 @@ import com.mervyn.miforeman.goal.MachineLinkHistory;
 import com.mervyn.miforeman.goal.ProductionGoal;
 import com.mervyn.miforeman.goal.ProductionGoal.FactoryPlan;
 import com.mervyn.miforeman.goal.ProductionGoal.TargetType;
-import com.mervyn.miforeman.goal.RecipeGraph;
 import com.mervyn.miforeman.goal.RecipeGraphTraverser;
-import net.minecraft.core.BlockPos;
+import net.minecraft.core.GlobalPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.Level;
 
@@ -83,7 +82,7 @@ class GoalDraft {
         return this.rate / (this.perHour ? 60.0 : 1.0);
     }
 
-    void computePlan(Level level, List<BlockPos> linkedMachines) {
+    void computePlan(Level level, List<GlobalPos> linkedMachines) {
         this.errorMessage = null;
         ResourceLocation targetRes = ResourceLocation.tryParse(this.targetIdStr);
         if (targetRes == null) {
@@ -104,10 +103,8 @@ class GoalDraft {
                     linkedMachines
             );
             this.currentPlan = RecipeGraphTraverser.computePlan(level, tempGoal);
-            if (this.currentPlan != null) {
-                RecipeGraph graph = RecipeGraphTraverser.computeRecipeGraph(level, tempGoal);
-                this.currentPlan = this.currentPlan.withGraph(graph);
-                this.graphLayout = this.graphLayout.prunedTo(graph);
+            if (this.currentPlan != null && this.currentPlan.graph() != null) {
+                this.graphLayout = this.graphLayout.prunedTo(this.currentPlan.graph());
             }
         } catch (Exception e) {
             this.errorMessage = "Error calculating plan: " + e.getMessage();
@@ -115,8 +112,8 @@ class GoalDraft {
         }
     }
 
-    ProductionGoal buildGoal(List<BlockPos> linkedMachines, MachineLinkHistory machineLinkHistory,
-                              List<BlockPos> rejectedMachines) {
+    ProductionGoal buildGoal(List<GlobalPos> linkedMachines, MachineLinkHistory machineLinkHistory,
+                              List<GlobalPos> rejectedMachines) {
         ResourceLocation targetRes = ResourceLocation.tryParse(this.targetIdStr);
         return new ProductionGoal(
                 this.goalName, this.targetType, targetRes, adjustedRatePerMinute(), this.recipeSelections,

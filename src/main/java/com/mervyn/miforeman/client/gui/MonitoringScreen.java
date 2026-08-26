@@ -9,7 +9,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.core.BlockPos;
+import net.minecraft.core.GlobalPos;
 import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
@@ -87,7 +87,7 @@ public class MonitoringScreen extends Screen {
 
     /** Toggles locating a machine in-world when clicked. */
     private void handleLocate(MonitoringListPanel.MonitoringRow row) {
-        BlockPos pos = row.machine().pos();
+        GlobalPos pos = row.machine().pos();
         if (pos.equals(WorldHighlightRenderer.getSelected())) {
             WorldHighlightRenderer.setSelected(null);
         } else {

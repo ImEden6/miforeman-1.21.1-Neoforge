@@ -9,6 +9,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.GlobalPos;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -29,10 +30,10 @@ public class WorldHighlightRenderer {
     private static final float FILL_ALPHA = 0.6f;
 
     private static boolean enabled = false;
-    private static List<BlockPos> linkedPositions = List.of();
-    private static List<BlockPos> candidatePositions = List.of();
+    private static List<GlobalPos> linkedPositions = List.of();
+    private static List<GlobalPos> candidatePositions = List.of();
     /** The machine selected from the Monitoring screen, rendered in a distinct highlight color. */
-    private static @Nullable BlockPos selectedPosition = null;
+    private static @Nullable GlobalPos selectedPosition = null;
 
     public static void setEnabled(boolean value) {
         enabled = value;
@@ -42,15 +43,15 @@ public class WorldHighlightRenderer {
         return enabled;
     }
 
-    public static void setPositions(List<BlockPos> linked, List<BlockPos> candidates) {
+    public static void setPositions(List<GlobalPos> linked, List<GlobalPos> candidates) {
         linkedPositions = linked;
         candidatePositions = candidates;
         clearSelectionIfUntracked();
     }
 
     /** Adds or removes a position from the linked set. */
-    public static void setLinked(BlockPos pos, boolean linked) {
-        List<BlockPos> updated = new ArrayList<>(linkedPositions);
+    public static void setLinked(GlobalPos pos, boolean linked) {
+        List<GlobalPos> updated = new ArrayList<>(linkedPositions);
         if (linked) {
             if (!updated.contains(pos)) updated.add(pos);
         } else {
@@ -67,22 +68,26 @@ public class WorldHighlightRenderer {
         }
     }
 
-    public static void setSelected(@Nullable BlockPos pos) {
+    public static void setSelected(@Nullable GlobalPos pos) {
         selectedPosition = pos;
     }
 
-    public static @Nullable BlockPos getSelected() {
+    public static @Nullable GlobalPos getSelected() {
         return selectedPosition;
     }
 
     @SubscribeEvent
     public static void onRenderLevelStage(RenderLevelStageEvent event) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_ENTITIES) return;
+        var clientLevel = Minecraft.getInstance().level;
+        if (clientLevel == null) return;
+        var currentDim = clientLevel.dimension();
+
         // "Locate" is independent of the general Highlights on/off toggle -- a located machine
         // stays visible even with highlights off, and the linked/candidate sets stay hidden while
         // off even if something happens to be located.
         boolean showGeneral = enabled && (!linkedPositions.isEmpty() || !candidatePositions.isEmpty());
-        boolean showSelected = selectedPosition != null;
+        boolean showSelected = selectedPosition != null && selectedPosition.dimension().equals(currentDim);
         if (!showGeneral && !showSelected) return;
 
         PoseStack poseStack = event.getPoseStack();
@@ -104,17 +109,17 @@ public class WorldHighlightRenderer {
         VertexConsumer fillInside = bufferSource.getBuffer(MIForemanRenderTypes.FILL_INSIDE_BLOCKS);
         VertexConsumer fillOutside = bufferSource.getBuffer(MIForemanRenderTypes.FILL_OUTSIDE_BLOCKS);
         if (showGeneral) {
-            for (BlockPos pos : linkedPositions) {
-                if (pos.equals(selectedPosition)) continue;
-                drawFilledBoxBoth(poseStack, fillInside, fillOutside, pos, camPos, linkedRgb[0], linkedRgb[1], linkedRgb[2], fillAlpha);
+            for (GlobalPos pos : linkedPositions) {
+                if (!pos.dimension().equals(currentDim) || pos.equals(selectedPosition)) continue;
+                drawFilledBoxBoth(poseStack, fillInside, fillOutside, pos.pos(), camPos, linkedRgb[0], linkedRgb[1], linkedRgb[2], fillAlpha);
             }
-            for (BlockPos pos : candidatePositions) {
-                if (pos.equals(selectedPosition)) continue;
-                drawFilledBoxBoth(poseStack, fillInside, fillOutside, pos, camPos, candidateRgb[0], candidateRgb[1], candidateRgb[2], fillAlpha);
+            for (GlobalPos pos : candidatePositions) {
+                if (!pos.dimension().equals(currentDim) || pos.equals(selectedPosition)) continue;
+                drawFilledBoxBoth(poseStack, fillInside, fillOutside, pos.pos(), camPos, candidateRgb[0], candidateRgb[1], candidateRgb[2], fillAlpha);
             }
         }
         if (showSelected) {
-            drawFilledBoxBoth(poseStack, fillInside, fillOutside, selectedPosition, camPos, selectedRgb[0], selectedRgb[1], selectedRgb[2], fillAlpha);
+            drawFilledBoxBoth(poseStack, fillInside, fillOutside, selectedPosition.pos(), camPos, selectedRgb[0], selectedRgb[1], selectedRgb[2], fillAlpha);
         }
         bufferSource.endBatch(MIForemanRenderTypes.FILL_INSIDE_BLOCKS);
         bufferSource.endBatch(MIForemanRenderTypes.FILL_OUTSIDE_BLOCKS);
@@ -122,17 +127,17 @@ public class WorldHighlightRenderer {
         VertexConsumer lineInside = bufferSource.getBuffer(MIForemanRenderTypes.LINES_INSIDE_BLOCKS);
         VertexConsumer lineOutside = bufferSource.getBuffer(MIForemanRenderTypes.LINES_OUTSIDE_BLOCKS);
         if (showGeneral) {
-            for (BlockPos pos : linkedPositions) {
-                if (pos.equals(selectedPosition)) continue;
-                drawBoxOutlineBoth(poseStack, lineInside, lineOutside, pos, camPos, linkedRgb[0], linkedRgb[1], linkedRgb[2]);
+            for (GlobalPos pos : linkedPositions) {
+                if (!pos.dimension().equals(currentDim) || pos.equals(selectedPosition)) continue;
+                drawBoxOutlineBoth(poseStack, lineInside, lineOutside, pos.pos(), camPos, linkedRgb[0], linkedRgb[1], linkedRgb[2]);
             }
-            for (BlockPos pos : candidatePositions) {
-                if (pos.equals(selectedPosition)) continue;
-                drawBoxOutlineBoth(poseStack, lineInside, lineOutside, pos, camPos, candidateRgb[0], candidateRgb[1], candidateRgb[2]);
+            for (GlobalPos pos : candidatePositions) {
+                if (!pos.dimension().equals(currentDim) || pos.equals(selectedPosition)) continue;
+                drawBoxOutlineBoth(poseStack, lineInside, lineOutside, pos.pos(), camPos, candidateRgb[0], candidateRgb[1], candidateRgb[2]);
             }
         }
         if (showSelected) {
-            drawBoxOutlineBoth(poseStack, lineInside, lineOutside, selectedPosition, camPos, selectedRgb[0], selectedRgb[1], selectedRgb[2]);
+            drawBoxOutlineBoth(poseStack, lineInside, lineOutside, selectedPosition.pos(), camPos, selectedRgb[0], selectedRgb[1], selectedRgb[2]);
         }
         bufferSource.endBatch(MIForemanRenderTypes.LINES_INSIDE_BLOCKS);
         bufferSource.endBatch(MIForemanRenderTypes.LINES_OUTSIDE_BLOCKS);

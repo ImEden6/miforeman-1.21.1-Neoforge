@@ -10,7 +10,7 @@ import com.mervyn.miforeman.goal.ProductionGoal;
 import com.mervyn.miforeman.network.LiveMonitoringPayload;
 import com.mervyn.miforeman.network.ScanResultPayload;
 import net.minecraft.client.Minecraft;
-import net.minecraft.core.BlockPos;
+import net.minecraft.core.GlobalPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
@@ -26,8 +26,8 @@ import java.util.Set;
  * State container for machine review and live monitoring operations.
  */
 class MonitoringState {
-    final List<BlockPos> linkedMachines = new ArrayList<>();
-    final List<BlockPos> rejectedMachines = new ArrayList<>();
+    final List<GlobalPos> linkedMachines = new ArrayList<>();
+    final List<GlobalPos> rejectedMachines = new ArrayList<>();
     MachineLinkHistory machineLinkHistory = MachineLinkHistory.EMPTY;
     final List<LiveMonitoringPayload.MachineStatusData> liveData = new ArrayList<>();
     final List<ScanResultPayload.Candidate> lastScanResults = new ArrayList<>();
@@ -55,7 +55,7 @@ class MonitoringState {
         return new MonitoringState();
     }
 
-    void applyLink(BlockPos pos, Runnable onChange) {
+    void applyLink(GlobalPos pos, Runnable onChange) {
         boolean wasLinked = linkedMachines.contains(pos);
         if (!wasLinked) linkedMachines.add(pos);
         rejectedMachines.remove(pos); // linking always clears a sticky rejection
@@ -63,19 +63,19 @@ class MonitoringState {
         onChange.run();
     }
 
-    void applyUnlink(BlockPos pos, Runnable onChange) {
+    void applyUnlink(GlobalPos pos, Runnable onChange) {
         boolean wasLinked = linkedMachines.contains(pos);
         linkedMachines.remove(pos);
         machineLinkHistory = machineLinkHistory.withToggle(pos, wasLinked, false);
         onChange.run();
     }
 
-    void applyReject(BlockPos pos, Runnable onChange) {
+    void applyReject(GlobalPos pos, Runnable onChange) {
         if (!rejectedMachines.contains(pos)) rejectedMachines.add(pos);
         onChange.run();
     }
 
-    void applyUnreject(BlockPos pos, Runnable onChange) {
+    void applyUnreject(GlobalPos pos, Runnable onChange) {
         rejectedMachines.remove(pos);
         onChange.run();
     }
@@ -112,14 +112,14 @@ class MonitoringState {
 
     List<ReviewListPanel.ReviewRow> buildReviewRows() {
         List<ReviewListPanel.ReviewRow> rows = new ArrayList<>();
-        Set<BlockPos> seen = new HashSet<>();
+        Set<GlobalPos> seen = new HashSet<>();
 
-        Map<BlockPos, LiveMonitoringPayload.MachineStatusData> liveByPos = new HashMap<>();
+        Map<GlobalPos, LiveMonitoringPayload.MachineStatusData> liveByPos = new HashMap<>();
         for (LiveMonitoringPayload.MachineStatusData entry : liveData) {
             liveByPos.put(entry.pos(), entry);
         }
 
-        for (BlockPos pos : linkedMachines) {
+        for (GlobalPos pos : linkedMachines) {
             ResourceLocation machineId = resolveMachineId(pos);
             LiveMonitoringPayload.MachineStatusData live = liveByPos.get(pos);
             String productLabel = live == null ? null : live.recipeId().map(MonitoringState::resolveProductLabel).orElse(null);
@@ -140,8 +140,8 @@ class MonitoringState {
     }
 
     void updateWorldHighlightPositions(List<ReviewListPanel.ReviewRow> rows) {
-        List<BlockPos> linked = new ArrayList<>();
-        List<BlockPos> candidates = new ArrayList<>();
+        List<GlobalPos> linked = new ArrayList<>();
+        List<GlobalPos> candidates = new ArrayList<>();
         for (ReviewListPanel.ReviewRow row : rows) {
             if (row.linked()) linked.add(row.pos());
             else if (row.isNewCandidate()) candidates.add(row.pos());
@@ -149,12 +149,12 @@ class MonitoringState {
         WorldHighlightRenderer.setPositions(linked, candidates);
     }
 
-    private static ResourceLocation resolveMachineId(BlockPos pos) {
+    private static ResourceLocation resolveMachineId(GlobalPos pos) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.level != null && mc.level.isLoaded(pos)) {
-            var be = mc.level.getBlockEntity(pos);
+        if (mc.level != null && mc.level.dimension().equals(pos.dimension()) && mc.level.isLoaded(pos.pos())) {
+            var be = mc.level.getBlockEntity(pos.pos());
             if (be != null) {
-                return BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(pos).getBlock());
+                return BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(pos.pos()).getBlock());
             }
         }
         return ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "unknown");

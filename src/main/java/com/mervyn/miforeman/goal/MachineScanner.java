@@ -4,6 +4,7 @@ import aztech.modern_industrialization.machines.MachineBlockEntity;
 import aztech.modern_industrialization.machines.components.CrafterComponent;
 import aztech.modern_industrialization.machines.recipe.MachineRecipe;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.GlobalPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -23,7 +24,7 @@ import java.util.Set;
  * Query utility that reuses {@link ServerMonitoringManager} helpers.
  */
 public class MachineScanner {
-    public record ScanCandidate(BlockPos pos, ResourceLocation machineId, @Nullable ResourceLocation recipeId) {}
+    public record ScanCandidate(GlobalPos pos, ResourceLocation machineId, @Nullable ResourceLocation recipeId) {}
 
     /**
      * Extracts recipe IDs from all machine nodes in the graph.
@@ -67,7 +68,7 @@ public class MachineScanner {
                     // window, player can re-scan. Revisit only if this proves annoying in practice.
                     if (recipeId == null || !recipeIndex.contains(recipeId)) continue;
                     ResourceLocation machineId = BuiltInRegistries.BLOCK.getKey(machine.getBlockState().getBlock());
-                    found.add(new ScanCandidate(be.getBlockPos(), machineId, recipeId));
+                    found.add(new ScanCandidate(GlobalPos.of(level.dimension(), be.getBlockPos()), machineId, recipeId));
                 }
             }
         }

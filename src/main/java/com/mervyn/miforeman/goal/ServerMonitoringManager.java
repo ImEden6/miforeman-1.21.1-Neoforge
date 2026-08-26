@@ -89,8 +89,12 @@ public class ServerMonitoringManager {
         return GlobalPos.of(level.dimension(), pos);
     }
 
+    public static MachineTracker trackerFor(GlobalPos key) {
+        return TRACKERS.computeIfAbsent(key, k -> new MachineTracker(k.pos()));
+    }
+
     public static MachineTracker trackerFor(ServerLevel level, BlockPos pos) {
-        return TRACKERS.computeIfAbsent(key(level, pos), k -> new MachineTracker(pos));
+        return trackerFor(key(level, pos));
     }
 
     /**
@@ -120,36 +124,31 @@ public class ServerMonitoringManager {
             return;
         }
 
-        // Pass 1: collect this tick's monitored set across ALL levels x players x hands. Keys are
-        // GlobalPos so same-coordinate machines in different dimensions never share tracker state.
-        Map<ServerLevel, Set<BlockPos>> activeByLevel = new HashMap<>();
+        // Pass 1: collect this tick's monitored set across all players and hands.
         Set<GlobalPos> activeKeys = new HashSet<>();
-        for (ServerLevel level : event.getServer().getAllLevels()) {
-            Set<BlockPos> positions = new HashSet<>();
-            for (ServerPlayer player : level.players()) {
-                for (var hand : net.minecraft.world.InteractionHand.values()) {
-                    ItemStack stack = player.getItemInHand(hand);
-                    if (stack.is(com.mervyn.miforeman.registry.ModItems.FOREMAN_CLIPBOARD_ITEM.get())) {
-                        ProductionGoal goal = stack.get(com.mervyn.miforeman.registry.ModComponents.PRODUCTION_GOAL.get());
-                        if (goal != null) {
-                            positions.addAll(goal.linkedMachines());
-                        }
+        for (ServerPlayer player : event.getServer().getPlayerList().getPlayers()) {
+            for (var hand : net.minecraft.world.InteractionHand.values()) {
+                ItemStack stack = player.getItemInHand(hand);
+                if (stack.is(com.mervyn.miforeman.registry.ModItems.FOREMAN_CLIPBOARD_ITEM.get())) {
+                    ProductionGoal goal = stack.get(com.mervyn.miforeman.registry.ModComponents.PRODUCTION_GOAL.get());
+                    if (goal != null) {
+                        activeKeys.addAll(goal.linkedMachines());
                     }
-                }
-            }
-            if (!positions.isEmpty()) {
-                activeByLevel.put(level, positions);
-                for (BlockPos pos : positions) {
-                    activeKeys.add(key(level, pos));
                 }
             }
         }
 
-        // Pass 2: update trackers for active machines.
-        for (Map.Entry<ServerLevel, Set<BlockPos>> levelEntry : activeByLevel.entrySet()) {
-            ServerLevel level = levelEntry.getKey();
+        // Pass 2: group active keys by dimension and update trackers for loaded machines.
+        Map<net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>, List<BlockPos>> byDimension = new HashMap<>();
+        for (GlobalPos gp : activeKeys) {
+            byDimension.computeIfAbsent(gp.dimension(), k -> new ArrayList<>()).add(gp.pos());
+        }
+
+        for (Map.Entry<net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>, List<BlockPos>> entry : byDimension.entrySet()) {
+            ServerLevel level = event.getServer().getLevel(entry.getKey());
+            if (level == null) continue;
             long tick = level.getGameTime();
-            for (BlockPos pos : levelEntry.getValue()) {
+            for (BlockPos pos : entry.getValue()) {
                 if (!level.isLoaded(pos)) {
                     continue;
                 }
@@ -158,7 +157,7 @@ public class ServerMonitoringManager {
                     CrafterComponent crafter = getCrafter(machine);
                     if (crafter == null) continue;
 
-                    MachineTracker tracker = trackerFor(level, pos);
+                    MachineTracker tracker = trackerFor(GlobalPos.of(entry.getKey(), pos));
                     boolean hasActive = crafter.hasActiveRecipe();
 
                     if (hasActive) {

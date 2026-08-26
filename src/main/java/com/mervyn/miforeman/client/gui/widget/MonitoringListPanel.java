@@ -8,7 +8,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
-import net.minecraft.core.BlockPos;
+import net.minecraft.core.GlobalPos;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.Nullable;
 
@@ -37,12 +37,12 @@ public class MonitoringListPanel extends AbstractWidget {
 
     private final List<MonitoringRow> rows;
     private final boolean perHour;
-    private final @Nullable BlockPos selectedPos;
+    private final @Nullable GlobalPos selectedPos;
     private final Consumer<MonitoringRow> onLocate;
     private final ListScroll scroll;
 
     public MonitoringListPanel(int x, int y, int width, int height,
-                                List<MonitoringRow> rows, boolean perHour, @Nullable BlockPos selectedPos,
+                                List<MonitoringRow> rows, boolean perHour, @Nullable GlobalPos selectedPos,
                                 Consumer<MonitoringRow> onLocate,
                                 int initialScrollOffset, IntConsumer onScrollChange) {
         super(x, y, width, height, Component.literal("Machine Monitoring List"));

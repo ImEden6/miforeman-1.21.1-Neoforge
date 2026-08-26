@@ -5,7 +5,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
-import net.minecraft.core.BlockPos;
+import net.minecraft.core.GlobalPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
@@ -18,7 +18,7 @@ import java.util.function.IntConsumer;
  * Presentational scrollable list displaying linked machines and detected candidates for review.
  */
 public class ReviewListPanel extends AbstractWidget {
-    public record ReviewRow(BlockPos pos, ResourceLocation machineId, boolean linked, boolean rejected,
+    public record ReviewRow(GlobalPos pos, ResourceLocation machineId, boolean linked, boolean rejected,
                              boolean isNewCandidate, @Nullable String productLabel) {}
 
     private static final int ROW_HEIGHT = 34;
@@ -58,21 +58,26 @@ public class ReviewListPanel extends AbstractWidget {
     }
 
     private int actionButtonY(int rowY) {
-        return rowY + (ROW_HEIGHT - ACTION_BUTTON_HEIGHT) / 2;
+        return rowY + 4;
     }
 
     @Override
     protected void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        guiGraphics.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(), 0x113A2A18);
+        Minecraft mc = Minecraft.getInstance();
+
+        // 1. Background
+        guiGraphics.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(), 0x18000000);
         guiGraphics.renderOutline(getX(), getY(), getWidth(), getHeight(), COLOUR_BORDER);
 
-        scroll.clampForRender(rows.size(), getHeight());
+        if (rows.isEmpty()) {
+            guiGraphics.drawString(mc.font, "No machines found.", getX() + 6, getY() + 6, COLOUR_MUTED, false);
+            return;
+        }
 
+        // 2. Scissored Row Rendering
         guiGraphics.enableScissor(getX() + 1, getY() + 1, getX() + getWidth() - 1, getY() + getHeight() - 1);
 
-        Minecraft mc = Minecraft.getInstance();
         int currentY = getY() + 2 - scroll.offset();
-
         for (ReviewRow row : rows) {
             if (currentY + ROW_HEIGHT > getY() && currentY < getY() + getHeight()) {
                 boolean isHovered = mouseX >= getX() + 1 && mouseX < getX() + getWidth() - 1 &&
@@ -81,9 +86,9 @@ public class ReviewListPanel extends AbstractWidget {
                     guiGraphics.fill(getX() + 2, currentY, getX() + getWidth() - 2, currentY + ROW_HEIGHT, COLOUR_HOVER);
                 }
 
-                boolean showUnreject = row.rejected() && !row.linked();
                 int checkboxX = getX() + 6;
-                int checkboxY = currentY + (ROW_HEIGHT - CHECKBOX_SIZE) / 2;
+                int checkboxY = currentY + 4;
+                boolean showUnreject = row.rejected();
 
                 if (!showUnreject) {
                     guiGraphics.renderOutline(checkboxX, checkboxY, CHECKBOX_SIZE, CHECKBOX_SIZE, COLOUR_BORDER);
@@ -106,7 +111,7 @@ public class ReviewListPanel extends AbstractWidget {
                 }
                 guiGraphics.drawString(mc.font, name, textX, currentY + 4, colour, false);
 
-                String posText = row.pos().toShortString();
+                String posText = row.pos().pos().toShortString();
                 guiGraphics.drawString(mc.font, posText, textX, currentY + 4 + 9, COLOUR_MUTED, false);
 
                 if (row.productLabel() != null) {
