@@ -27,7 +27,10 @@ class ListScroll {
         return Math.max(0, rowCount * rowHeight - viewHeight + 4);
     }
 
-    /** Clamps the scroll offset to fit within current view height and row count bounds. */
+    /**
+     * Clamps the scroll offset to fit within current view height and row count
+     * bounds.
+     */
     void clampForRender(int rowCount, int viewHeight) {
         int clamped = Mth.clamp(offset, 0, maxScroll(rowCount, viewHeight));
         if (clamped != offset) {
@@ -46,13 +49,17 @@ class ListScroll {
         return false;
     }
 
+    static final int SCROLLBAR_WIDTH = 4;
+    static final int SCROLLBAR_MARGIN = 2;
+
     void drawScrollbar(GuiGraphics guiGraphics, int x, int y, int width, int height, int rowCount, int colour) {
         int maxScroll = maxScroll(rowCount, height);
-        if (maxScroll <= 0) return;
+        if (maxScroll <= 0)
+            return;
         int totalHeight = rowCount * rowHeight;
-        int scrollbarWidth = 4;
+        int scrollbarWidth = SCROLLBAR_WIDTH;
         int scrollbarHeight = Math.max(10, (int) (((double) height / totalHeight) * height));
-        int scrollbarX = x + width - scrollbarWidth - 2;
+        int scrollbarX = x + width - scrollbarWidth - SCROLLBAR_MARGIN;
         int scrollbarY = y + 2 + (int) (((double) offset / maxScroll) * (height - scrollbarHeight - 4));
         guiGraphics.fill(scrollbarX, scrollbarY, scrollbarX + scrollbarWidth, scrollbarY + scrollbarHeight, colour);
     }

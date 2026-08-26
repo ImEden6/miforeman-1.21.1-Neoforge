@@ -54,7 +54,7 @@ public class MonitoringListPanel extends AbstractWidget {
     }
 
     private int actionButtonX() {
-        return getX() + getWidth() - ACTION_BUTTON_WIDTH - 6;
+        return getX() + getWidth() - ACTION_BUTTON_WIDTH - 6 - ListScroll.SCROLLBAR_WIDTH;
     }
 
     private int actionButtonY(int rowY) {
