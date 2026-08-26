@@ -73,32 +73,38 @@ public class ForemanGameTests {
                 12.5,
                 Map.of(ResourceLocation.parse("minecraft:stone"), ResourceLocation.parse("minecraft:cobblestone")),
                 java.util.Optional.of(new ProductionGoal.FactoryPlan(
-                        List.of(new ProductionGoal.MachineRequirement(ResourceLocation.parse("modern_industrialization:assembler"), 3.0, 32L, 96L)),
-                        List.of(new ProductionGoal.MaterialFlow(ProductionGoal.TargetType.ITEM, ResourceLocation.parse("minecraft:iron_ingot"), 4.0)),
+                        List.of(new ProductionGoal.MachineRequirement(
+                                ResourceLocation.parse("modern_industrialization:assembler"), 3.0, 32L, 96L)),
+                        List.of(new ProductionGoal.MaterialFlow(ProductionGoal.TargetType.ITEM,
+                                ResourceLocation.parse("minecraft:iron_ingot"), 4.0)),
                         List.of(),
-                        List.of(new ProductionGoal.Ambiguity(ResourceLocation.parse("minecraft:dye"), List.of(ResourceLocation.parse("minecraft:red_dye"))))
-                )),
+                        List.of(new ProductionGoal.Ambiguity(ResourceLocation.parse("minecraft:dye"),
+                                List.of(ResourceLocation.parse("minecraft:red_dye")))))),
                 true,
                 0.6,
                 List.of(GlobalPos.of(net.minecraft.world.level.Level.OVERWORLD, new BlockPos(1, 2, 3))),
                 com.mervyn.miforeman.goal.GraphLayoutState.EMPTY,
                 com.mervyn.miforeman.goal.MachineLinkHistory.EMPTY,
                 List.of(GlobalPos.of(net.minecraft.world.level.Level.OVERWORLD, new BlockPos(4, 5, 6))),
-                new com.mervyn.miforeman.goal.ClipboardUiState(1, 12.5, -3.0, 2.0f, com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.MACHINES_ONLY, false, true, true, false)
-        );
+                new com.mervyn.miforeman.goal.ClipboardUiState(1, 12.5, -3.0, 2.0f,
+                        com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.MACHINES_ONLY, false, true, true,
+                        false));
 
         @SuppressWarnings("deprecation")
-        var buf = new net.minecraft.network.RegistryFriendlyByteBuf(io.netty.buffer.Unpooled.buffer(), level.registryAccess());
+        var buf = new net.minecraft.network.RegistryFriendlyByteBuf(io.netty.buffer.Unpooled.buffer(),
+                level.registryAccess());
         ProductionGoal.STREAM_CODEC.encode(buf, goal);
         ProductionGoal decoded = ProductionGoal.STREAM_CODEC.decode(buf);
 
         if (!decoded.equals(goal)) {
             helper.fail("STREAM_CODEC round-trip does not match original ProductionGoal -- a field was likely "
-                    + "added to CODEC without updating STREAM_CODEC (or vice versa). Original: " + goal + ", decoded: " + decoded);
+                    + "added to CODEC without updating STREAM_CODEC (or vice versa). Original: " + goal + ", decoded: "
+                    + decoded);
             return;
         }
 
-        // Verify that ProductionGoal.GLOBAL_POS_LIST_CODEC deserializes legacy BlockPos lists into Overworld GlobalPos
+        // Verify that ProductionGoal.GLOBAL_POS_LIST_CODEC deserializes legacy BlockPos
+        // lists into Overworld GlobalPos
         var legacyJson = new com.google.gson.JsonArray();
         var blockPosArray = new com.google.gson.JsonArray();
         blockPosArray.add(10);
@@ -106,24 +112,30 @@ public class ForemanGameTests {
         blockPosArray.add(30);
         legacyJson.add(blockPosArray);
 
-        var decodedLegacy = ProductionGoal.GLOBAL_POS_LIST_CODEC.parse(com.mojang.serialization.JsonOps.INSTANCE, legacyJson);
+        var decodedLegacy = ProductionGoal.GLOBAL_POS_LIST_CODEC.parse(com.mojang.serialization.JsonOps.INSTANCE,
+                legacyJson);
         if (decodedLegacy.isError()) {
-            helper.fail("GLOBAL_POS_LIST_CODEC failed to parse legacy BlockPos list: " + decodedLegacy.error().get().message());
+            helper.fail("GLOBAL_POS_LIST_CODEC failed to parse legacy BlockPos list: "
+                    + decodedLegacy.error().get().message());
             return;
         }
         var expectedLegacy = List.of(GlobalPos.of(net.minecraft.world.level.Level.OVERWORLD, new BlockPos(10, 20, 30)));
         if (!decodedLegacy.result().get().equals(expectedLegacy)) {
-            helper.fail("GLOBAL_POS_LIST_CODEC decoded legacy BlockPos incorrectly. Expected: " + expectedLegacy + ", got: " + decodedLegacy.result().get());
+            helper.fail("GLOBAL_POS_LIST_CODEC decoded legacy BlockPos incorrectly. Expected: " + expectedLegacy
+                    + ", got: " + decodedLegacy.result().get());
             return;
         }
 
-        // Explicitly verify all GraphViewMode enum values round-trip through both CODEC and STREAM_CODEC
-        for (com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode mode : com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.values()) {
+        // Explicitly verify all GraphViewMode enum values round-trip through both CODEC
+        // and STREAM_CODEC
+        for (com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode mode : com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode
+                .values()) {
             @SuppressWarnings("deprecation")
-            var modeBuf = new net.minecraft.network.RegistryFriendlyByteBuf(io.netty.buffer.Unpooled.buffer(), level.registryAccess());
+            var modeBuf = new net.minecraft.network.RegistryFriendlyByteBuf(io.netty.buffer.Unpooled.buffer(),
+                    level.registryAccess());
             com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.STREAM_CODEC.encode(modeBuf, mode);
-            com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode decodedMode =
-                    com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.STREAM_CODEC.decode(modeBuf);
+            com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode decodedMode = com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.STREAM_CODEC
+                    .decode(modeBuf);
             if (decodedMode != mode) {
                 helper.fail("GraphViewMode.STREAM_CODEC failed round-trip for " + mode + ", got: " + decodedMode);
                 return;
@@ -141,7 +153,8 @@ public class ForemanGameTests {
 
         MIForeman.LOGGER.info("Starting MI Recipe Registry Extraction feasibility spike in GameTest...");
 
-        Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> byType = RecipeGraphTraverser.groupMachineRecipesByType(recipeManager);
+        Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> byType = RecipeGraphTraverser
+                .groupMachineRecipesByType(recipeManager);
 
         for (var entry : byType.entrySet()) {
             var recipes = entry.getValue();
@@ -149,7 +162,8 @@ public class ForemanGameTests {
             totalRecipes += recipes.size();
             for (var recipeHolder : recipes) {
                 var recipe = recipeHolder.value();
-                MIForeman.LOGGER.info("  Recipe: {} ({} ticks, {} EU/t)", recipeHolder.id(), recipe.duration, recipe.eu);
+                MIForeman.LOGGER.info("  Recipe: {} ({} ticks, {} EU/t)", recipeHolder.id(), recipe.duration,
+                        recipe.eu);
             }
         }
 
@@ -178,7 +192,8 @@ public class ForemanGameTests {
 
         MIForeman.LOGGER.info("Machines calculated in plan:");
         for (var req : plan.machines()) {
-            MIForeman.LOGGER.info("  - {}: count={}, baseEu={}, totalEu={}", req.machineId(), req.count(), req.baseEuPerTick(), req.totalEuPerTick());
+            MIForeman.LOGGER.info("  - {}: count={}, baseEu={}, totalEu={}", req.machineId(), req.count(),
+                    req.baseEuPerTick(), req.totalEuPerTick());
         }
 
         MIForeman.LOGGER.info("Raw inputs calculated in plan:");
@@ -193,7 +208,8 @@ public class ForemanGameTests {
                 .sum();
 
         if (assemblerCount < 210.0) {
-            helper.fail("Expected at least 210.0 assemblers for quantum_upgrade plan, but calculated: " + assemblerCount);
+            helper.fail(
+                    "Expected at least 210.0 assemblers for quantum_upgrade plan, but calculated: " + assemblerCount);
             return;
         }
 
@@ -214,8 +230,10 @@ public class ForemanGameTests {
             return;
         }
 
-        // polyvinyl_chloride rate now matches exactly between computePlan() rawInputs and
-        // computeRecipeGraph() graph node (437500.0) after resolving the cycle-detection memoization bug.
+        // polyvinyl_chloride rate now matches exactly between computePlan() rawInputs
+        // and
+        // computeRecipeGraph() graph node (437500.0) after resolving the
+        // cycle-detection memoization bug.
         ResourceLocation pvcId = ResourceLocation.parse("modern_industrialization:polyvinyl_chloride");
         double pvcRate = plan.rawInputs().stream()
                 .filter(flow -> flow.resourceId().equals(pvcId))
@@ -243,8 +261,7 @@ public class ForemanGameTests {
         var level = helper.getLevel();
 
         var compressorBlock = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
-                ResourceLocation.parse("modern_industrialization:bronze_compressor")
-        );
+                ResourceLocation.parse("modern_industrialization:bronze_compressor"));
         BlockPos relativePos = new BlockPos(1, 2, 1);
         BlockPos absolutePos = helper.absolutePos(relativePos);
 
@@ -275,13 +292,16 @@ public class ForemanGameTests {
         inputSlot.setKey(aztech.modern_industrialization.thirdparty.fabrictransfer.api.item.ItemVariant.of(ironIngot));
         inputSlot.setAmount(1);
 
-        var outputSlot = ((UnifiedCrafter.StandardCrafterAdapter) crafter).getUnderlying().getInventory().getItemOutputs().get(0);
-        outputSlot.setKey(aztech.modern_industrialization.thirdparty.fabrictransfer.api.item.ItemVariant.of(net.minecraft.world.item.Items.GLASS));
+        var outputSlot = ((UnifiedCrafter.StandardCrafterAdapter) crafter).getUnderlying().getInventory()
+                .getItemOutputs().get(0);
+        outputSlot.setKey(aztech.modern_industrialization.thirdparty.fabrictransfer.api.item.ItemVariant
+                .of(net.minecraft.world.item.Items.GLASS));
         outputSlot.setAmount(64);
 
         String statusSaturating = ServerMonitoringManager.getMachinePassiveStatus(crafter, level);
         if (!"ORANGE".equals(statusSaturating)) {
-            helper.fail("Expected machine with matched inputs but blocked outputs to be SATURATING (ORANGE), but got: " + statusSaturating);
+            helper.fail("Expected machine with matched inputs but blocked outputs to be SATURATING (ORANGE), but got: "
+                    + statusSaturating);
             return;
         }
 
@@ -289,7 +309,9 @@ public class ForemanGameTests {
         outputSlot.empty();
         String statusReady = ServerMonitoringManager.getMachinePassiveStatus(crafter, level);
         if (!"ORANGE".equals(statusReady)) {
-            helper.fail("Expected ready-to-craft machine to return ORANGE (since it can start but is not currently active), but got: " + statusReady);
+            helper.fail(
+                    "Expected ready-to-craft machine to return ORANGE (since it can start but is not currently active), but got: "
+                            + statusReady);
             return;
         }
 
@@ -307,7 +329,8 @@ public class ForemanGameTests {
 
         // Find an ambiguous resource node with at least 2 options
         var ambiguousNode = initialGraph.nodes().values().stream()
-                .filter(node -> node.getType() != com.mervyn.miforeman.goal.NodeType.MACHINE && node.getAmbiguityOptions().size() > 1)
+                .filter(node -> node.getType() != com.mervyn.miforeman.goal.NodeType.MACHINE
+                        && node.getAmbiguityOptions().size() > 1)
                 .findFirst()
                 .orElse(null);
 
@@ -322,7 +345,8 @@ public class ForemanGameTests {
 
         // Verify initial selection matches first option
         if (!firstRecipe.equals(ambiguousNode.getSelectedAmbiguity())) {
-            helper.fail("Expected initial ambiguity selection to be " + firstRecipe + ", but was: " + ambiguousNode.getSelectedAmbiguity());
+            helper.fail("Expected initial ambiguity selection to be " + firstRecipe + ", but was: "
+                    + ambiguousNode.getSelectedAmbiguity());
             return;
         }
 
@@ -331,10 +355,9 @@ public class ForemanGameTests {
         selections.put(ambiguousNode.getAmbiguityOwnerId(), secondRecipe);
 
         ProductionGoal updatedGoal = new ProductionGoal(
-            goal.name(), goal.type(), goal.targetId(), goal.rate(),
-            selections, java.util.Optional.empty(), goal.perHour(),
-            goal.threshold(), goal.linkedMachines()
-        );
+                goal.name(), goal.type(), goal.targetId(), goal.rate(),
+                selections, java.util.Optional.empty(), goal.perHour(),
+                goal.threshold(), goal.linkedMachines());
         var updatedGraph = RecipeGraphTraverser.computeRecipeGraph(level, updatedGoal);
 
         // Verify that the new recipe exists in the graph and the old one does not
@@ -342,12 +365,14 @@ public class ForemanGameTests {
         boolean hasSecondRecipe = updatedGraph.nodes().containsKey(secondRecipe);
 
         if (hasFirstRecipe) {
-            helper.fail("After cycling recipe to " + secondRecipe + ", the graph still contained the default recipe " + firstRecipe);
+            helper.fail("After cycling recipe to " + secondRecipe + ", the graph still contained the default recipe "
+                    + firstRecipe);
             return;
         }
 
         if (!hasSecondRecipe) {
-            helper.fail("After cycling recipe to " + secondRecipe + ", the graph did not contain the selected recipe node.");
+            helper.fail("After cycling recipe to " + secondRecipe
+                    + ", the graph did not contain the selected recipe node.");
             return;
         }
 
@@ -359,7 +384,8 @@ public class ForemanGameTests {
         }
 
         if (!secondRecipe.equals(updatedResNode.getSelectedAmbiguity())) {
-            helper.fail("Expected selected ambiguity to be " + secondRecipe + ", but got: " + updatedResNode.getSelectedAmbiguity());
+            helper.fail("Expected selected ambiguity to be " + secondRecipe + ", but got: "
+                    + updatedResNode.getSelectedAmbiguity());
             return;
         }
 
@@ -403,8 +429,10 @@ public class ForemanGameTests {
     }
 
     /**
-     * Verifies that {@code RecipeGraphTraverser} produces deduplicated edges per (from, to) pair.
-     * Validates node and edge counts against a regression snapshot of the quantum_upgrade graph.
+     * Verifies that {@code RecipeGraphTraverser} produces deduplicated edges per
+     * (from, to) pair.
+     * Validates node and edge counts against a regression snapshot of the
+     * quantum_upgrade graph.
      */
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testRecipeGraphEdgesAreDeduped(GameTestHelper helper) {
@@ -438,7 +466,8 @@ public class ForemanGameTests {
     }
 
     /**
-     * Verifies that {@code RecipeGraphNode.ambiguityOwnerId} consistently identifies the resource ID
+     * Verifies that {@code RecipeGraphNode.ambiguityOwnerId} consistently
+     * identifies the resource ID
      * describing a node's ambiguity options.
      */
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
@@ -451,7 +480,8 @@ public class ForemanGameTests {
         for (var node : graph.nodes().values()) {
             if (node.getAmbiguityOptions().isEmpty()) {
                 // RAW nodes and any resource/machine with only one candidate producer carry no
-                // ambiguity data, so ambiguityOwnerId is null and there's nothing to check here.
+                // ambiguity data, so ambiguityOwnerId is null and there's nothing to check
+                // here.
                 continue;
             }
 
@@ -487,7 +517,8 @@ public class ForemanGameTests {
         ResourceLocation targetId = ResourceLocation.parse("minecraft:iron_ingot");
         ProductionGoal synced = new ProductionGoal("synced_goal", ProductionGoal.TargetType.ITEM, targetId, 5.0,
                 Map.of(), java.util.Optional.empty(), false, 0.8,
-                List.of(GlobalPos.of(net.minecraft.world.level.Level.OVERWORLD, new BlockPos(1, 2, 3))), com.mervyn.miforeman.goal.GraphLayoutState.EMPTY,
+                List.of(GlobalPos.of(net.minecraft.world.level.Level.OVERWORLD, new BlockPos(1, 2, 3))),
+                com.mervyn.miforeman.goal.GraphLayoutState.EMPTY,
                 com.mervyn.miforeman.goal.MachineLinkHistory.EMPTY, List.of());
 
         // No change at all: nothing to persist.
@@ -497,8 +528,10 @@ public class ForemanGameTests {
             return;
         }
 
-        // UI state changed only. This is the actual regression case: the persisted goal should
-        // keep synced's other fields (linkedMachines survives) with just the new ui state on top.
+        // UI state changed only. This is the actual regression case: the persisted goal
+        // should
+        // keep synced's other fields (linkedMachines survives) with just the new ui
+        // state on top.
         var newUiState = new com.mervyn.miforeman.goal.ClipboardUiState(1, 9.0, 9.0, 2.0f, false, false, true, true);
         var afterUiChange = com.mervyn.miforeman.goal.ClipboardCloseSync.computeCloseSyncGoal(
                 synced, newUiState, synced.graphLayout());
@@ -567,8 +600,10 @@ public class ForemanGameTests {
     }
 
     /**
-     * Verifies {@code FactoryPlan.totalPowerDemandEu()} stays consistent with the sum of its own
-     * machine requirements, and that a machine shared by two demand paths accumulates EU from both
+     * Verifies {@code FactoryPlan.totalPowerDemandEu()} stays consistent with the
+     * sum of its own
+     * machine requirements, and that a machine shared by two demand paths
+     * accumulates EU from both
      * (not just the larger/last one written) -- see the additive accumulation in
      * {@code RecipeGraphTraverser}'s {@code MachineStats.totalEu}.
      */
@@ -595,11 +630,16 @@ public class ForemanGameTests {
             return;
         }
 
-        // Every machine requirement's totalEuPerTick must be a positive multiple of its own
-        // presence in the plan -- NOT necessarily ceil(count * baseEuPerTick), since a single
-        // machineId can be fed by multiple recipes with different EU costs (baseEuPerTick here
-        // reflects only the last-recorded recipe for that machine type, while count/totalEuPerTick
-        // are independently accumulated sums across every recipe that uses this machine). See
+        // Every machine requirement's totalEuPerTick must be a positive multiple of its
+        // own
+        // presence in the plan -- NOT necessarily ceil(count * baseEuPerTick), since a
+        // single
+        // machineId can be fed by multiple recipes with different EU costs
+        // (baseEuPerTick here
+        // reflects only the last-recorded recipe for that machine type, while
+        // count/totalEuPerTick
+        // are independently accumulated sums across every recipe that uses this
+        // machine). See
         // RecipeGraphTraverser.computePlan's MachineStats accumulation.
         for (var req : plan.machines()) {
             if (req.totalEuPerTick() <= 0) {
@@ -616,8 +656,10 @@ public class ForemanGameTests {
     }
 
     /**
-     * Verifies a FLUID-target {@code ProductionGoal} produces a valid, non-empty plan and graph,
-     * exercising the traverser's fluid-recipe indexing path (not just the {@code ITEM} path every
+     * Verifies a FLUID-target {@code ProductionGoal} produces a valid, non-empty
+     * plan and graph,
+     * exercising the traverser's fluid-recipe indexing path (not just the
+     * {@code ITEM} path every
      * other test in this file uses).
      */
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
@@ -661,16 +703,19 @@ public class ForemanGameTests {
     }
 
     /**
-     * Verifies {@code RecipeGraphTraverser.GRAPH_CACHE} returns the exact same {@code RecipeGraph}
+     * Verifies {@code RecipeGraphTraverser.GRAPH_CACHE} returns the exact same
+     * {@code RecipeGraph}
      * reference for identical goal queries, produces a fresh reference after
-     * {@code clearGraphCache()}, and keys entries independently by {@code recipeSelections}.
+     * {@code clearGraphCache()}, and keys entries independently by
+     * {@code recipeSelections}.
      */
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testGraphCacheHitAndInvalidation(GameTestHelper helper) {
         var level = helper.getLevel();
         ResourceLocation targetId = ResourceLocation.parse("modern_industrialization:quantum_upgrade");
 
-        // Isolate from any caching side effects other tests in this file may have left behind.
+        // Isolate from any caching side effects other tests in this file may have left
+        // behind.
         RecipeGraphTraverser.clearGraphCache();
 
         ProductionGoal goal = new ProductionGoal("cache_test", ProductionGoal.TargetType.ITEM, targetId, 1.0);
@@ -691,10 +736,12 @@ public class ForemanGameTests {
             return;
         }
 
-        // A different recipeSelections map must be an isolated cache entry, not a hit on the
+        // A different recipeSelections map must be an isolated cache entry, not a hit
+        // on the
         // existing one, and must not evict/overwrite it.
         var ambiguousNode = afterClear.nodes().values().stream()
-                .filter(node -> node.getType() != com.mervyn.miforeman.goal.NodeType.MACHINE && node.getAmbiguityOptions().size() > 1)
+                .filter(node -> node.getType() != com.mervyn.miforeman.goal.NodeType.MACHINE
+                        && node.getAmbiguityOptions().size() > 1)
                 .findFirst()
                 .orElse(null);
         if (ambiguousNode == null) {
@@ -725,15 +772,18 @@ public class ForemanGameTests {
     }
 
     /**
-     * Unit-style coverage for {@code PacketRateLimiter.tryAcquire}: throttling within
-     * {@code minIntervalTicks}, allowance once the interval elapses, and independent per-player
-     * tracking with no cross-contamination. No Level/network state is needed for this logic, so
-     * it's wrapped as a trivial GameTest purely to match this repo's existing test conventions.
+     * Unit-style coverage for {@code PacketRateLimiter.tryAcquire}: throttling
+     * within
+     * {@code minIntervalTicks}, allowance once the interval elapses, and
+     * independent per-player
+     * tracking with no cross-contamination. No Level/network state is needed for
+     * this logic, so
+     * it's wrapped as a trivial GameTest purely to match this repo's existing test
+     * conventions.
      */
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testPacketRateLimiterThrottling(GameTestHelper helper) {
-        com.mervyn.miforeman.network.PacketRateLimiter limiter =
-                new com.mervyn.miforeman.network.PacketRateLimiter(10);
+        com.mervyn.miforeman.network.PacketRateLimiter limiter = new com.mervyn.miforeman.network.PacketRateLimiter(10);
 
         java.util.UUID playerA = java.util.UUID.randomUUID();
         java.util.UUID playerB = java.util.UUID.randomUUID();
@@ -751,7 +801,8 @@ public class ForemanGameTests {
             return;
         }
 
-        // A second player must not be throttled by the first player's usage, even at the same tick.
+        // A second player must not be throttled by the first player's usage, even at
+        // the same tick.
         if (!limiter.tryAcquire(playerB, 10L)) {
             helper.fail("Expected a different player's first tryAcquire to be allowed independently "
                     + "of another player's throttling state.");
@@ -762,7 +813,8 @@ public class ForemanGameTests {
             return;
         }
 
-        // playerA being ready again must not be affected by playerB's independent throttling.
+        // playerA being ready again must not be affected by playerB's independent
+        // throttling.
         if (!limiter.tryAcquire(playerA, 20L)) {
             helper.fail("Expected playerA to be allowed again after its own interval elapsed, "
                     + "independent of playerB's state.");
@@ -773,9 +825,12 @@ public class ForemanGameTests {
     }
 
     /**
-     * Extends {@code testCycleRecipePlan}'s coverage to a resource with 3+ alternative recipes:
-     * cycling through every option and back to the start must leave the graph structurally
-     * identical to where it began, with no orphaned nodes or stale edges left behind.
+     * Extends {@code testCycleRecipePlan}'s coverage to a resource with 3+
+     * alternative recipes:
+     * cycling through every option and back to the start must leave the graph
+     * structurally
+     * identical to where it began, with no orphaned nodes or stale edges left
+     * behind.
      */
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testAmbiguityWrapAroundCycling(GameTestHelper helper) {
@@ -787,7 +842,8 @@ public class ForemanGameTests {
         var initialGraph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
 
         var ambiguousNode = initialGraph.nodes().values().stream()
-                .filter(node -> node.getType() != com.mervyn.miforeman.goal.NodeType.MACHINE && node.getAmbiguityOptions().size() >= 3)
+                .filter(node -> node.getType() != com.mervyn.miforeman.goal.NodeType.MACHINE
+                        && node.getAmbiguityOptions().size() >= 3)
                 .findFirst()
                 .orElse(null);
 
@@ -848,24 +904,31 @@ public class ForemanGameTests {
     }
 
     /**
-     * Verifies a real machine's {@code MachineTracker.status} transitions across server ticks:
-     * empty inputs (RED) -> valid inputs + power actually crafting (GREEN) -> blocked output
-     * saturation (ORANGE). Unlike {@code testIdentifyBottlenecks} (which only calls the passive
-     * status check directly, never letting the machine actually craft), this drives the real
-     * {@code ServerMonitoringManager.onServerTick} path by linking a mock player's clipboard to
+     * Verifies a real machine's {@code MachineTracker.status} transitions across
+     * server ticks:
+     * empty inputs (RED) -> valid inputs + power actually crafting (GREEN) ->
+     * blocked output
+     * saturation (ORANGE). Unlike {@code testIdentifyBottlenecks} (which only calls
+     * the passive
+     * status check directly, never letting the machine actually craft), this drives
+     * the real
+     * {@code ServerMonitoringManager.onServerTick} path by linking a mock player's
+     * clipboard to
      * the machine and letting the block entity's own ticker run.
      */
     @SuppressWarnings("removal") // GameTestHelper#makeMockServerPlayerInLevel is deprecated-for-removal
-                                 // upstream but remains the only vanilla API for a real ServerPlayer in a GameTest.
+                                 // upstream but remains the only vanilla API for a real ServerPlayer in a
+                                 // GameTest.
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID, timeoutTicks = 200)
     public static void testMachineStatusDynamicTransitions(GameTestHelper helper) {
         var level = helper.getLevel();
 
-        // Unlike testIdentifyBottlenecks's bronze_compressor (a steam machine with no EnergyComponent),
-        // this needs the electric-tier compressor so an EU buffer can actually be filled.
+        // Unlike testIdentifyBottlenecks's bronze_compressor (a steam machine with no
+        // EnergyComponent),
+        // this needs the electric-tier compressor so an EU buffer can actually be
+        // filled.
         var compressorBlock = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
-                ResourceLocation.parse("modern_industrialization:electric_compressor")
-        );
+                ResourceLocation.parse("modern_industrialization:electric_compressor"));
         BlockPos relativePos = new BlockPos(1, 2, 1);
         BlockPos absolutePos = helper.absolutePos(relativePos);
         helper.setBlock(relativePos, compressorBlock);
@@ -882,12 +945,15 @@ public class ForemanGameTests {
             return;
         }
 
-        // Trackers are global static state; start clean so a leftover entry from another test
+        // Trackers are global static state; start clean so a leftover entry from
+        // another test
         // can't be mistaken for one this test created.
         ServerMonitoringManager.TRACKERS.clear();
 
-        // onServerTick only tracks positions reachable via a held clipboard's linkedMachines, so
-        // a real (mock) player holding a linked clipboard is required to exercise it at all.
+        // onServerTick only tracks positions reachable via a held clipboard's
+        // linkedMachines, so
+        // a real (mock) player holding a linked clipboard is required to exercise it at
+        // all.
         net.minecraft.server.level.ServerPlayer mockPlayer = helper.makeMockServerPlayerInLevel();
         GlobalPos key = ServerMonitoringManager.key(level, absolutePos);
 
@@ -895,14 +961,14 @@ public class ForemanGameTests {
                 "dynamic_status_test",
                 ProductionGoal.TargetType.ITEM,
                 ResourceLocation.parse("modern_industrialization:iron_plate"),
-                1.0
-        ).withLinkedMachines(List.of(key), com.mervyn.miforeman.goal.MachineLinkHistory.EMPTY);
+                1.0).withLinkedMachines(List.of(key), com.mervyn.miforeman.goal.MachineLinkHistory.EMPTY);
 
         ItemStack clipboard = new ItemStack(ModItems.FOREMAN_CLIPBOARD_ITEM.get());
         clipboard.set(ModComponents.PRODUCTION_GOAL.get(), goal);
         mockPlayer.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, clipboard);
 
-        // Phase 1: empty inputs -> RED, once onServerTick has had a chance to create the tracker.
+        // Phase 1: empty inputs -> RED, once onServerTick has had a chance to create
+        // the tracker.
         helper.runAfterDelay(3, () -> {
             var tracker = ServerMonitoringManager.TRACKERS.get(key);
             if (tracker == null) {
@@ -914,15 +980,18 @@ public class ForemanGameTests {
                 return;
             }
 
-            // Phase 2: supply a valid input item and fill the energy buffer directly (bypassing
-            // generator/cable infrastructure, same as MI's own EnergyComponent API allows) so the
+            // Phase 2: supply a valid input item and fill the energy buffer directly
+            // (bypassing
+            // generator/cable infrastructure, same as MI's own EnergyComponent API allows)
+            // so the
             // machine's own ticker actually starts crafting.
             var inputSlot = crafter.getItemInputs().get(0);
-            inputSlot.setKey(aztech.modern_industrialization.thirdparty.fabrictransfer.api.item.ItemVariant.of(net.minecraft.world.item.Items.IRON_INGOT));
+            inputSlot.setKey(aztech.modern_industrialization.thirdparty.fabrictransfer.api.item.ItemVariant
+                    .of(net.minecraft.world.item.Items.IRON_INGOT));
             inputSlot.setAmount(4);
 
-            var energyComponent = (aztech.modern_industrialization.machines.components.EnergyComponent)
-                    ((aztech.modern_industrialization.api.machine.holder.EnergyComponentHolder) machine).getEnergyComponent();
+            var energyComponent = (aztech.modern_industrialization.machines.components.EnergyComponent) ((aztech.modern_industrialization.api.machine.holder.EnergyComponentHolder) machine)
+                    .getEnergyComponent();
             energyComponent.insertEu(Long.MAX_VALUE, aztech.modern_industrialization.util.Simulation.ACT);
 
             helper.runAfterDelay(5, () -> {
@@ -937,10 +1006,13 @@ public class ForemanGameTests {
                     return;
                 }
 
-                // Phase 3: block the output with a mismatched item -> saturation (ORANGE) once the
+                // Phase 3: block the output with a mismatched item -> saturation (ORANGE) once
+                // the
                 // machine can no longer deposit its crafted output.
-                var outputSlot = ((UnifiedCrafter.StandardCrafterAdapter) crafter).getUnderlying().getInventory().getItemOutputs().get(0);
-                outputSlot.setKey(aztech.modern_industrialization.thirdparty.fabrictransfer.api.item.ItemVariant.of(net.minecraft.world.item.Items.GLASS));
+                var outputSlot = ((UnifiedCrafter.StandardCrafterAdapter) crafter).getUnderlying().getInventory()
+                        .getItemOutputs().get(0);
+                outputSlot.setKey(aztech.modern_industrialization.thirdparty.fabrictransfer.api.item.ItemVariant
+                        .of(net.minecraft.world.item.Items.GLASS));
                 outputSlot.setAmount(64);
 
                 helper.succeedWhen(() -> {
@@ -955,17 +1027,26 @@ public class ForemanGameTests {
     }
 
     /**
-     * Verifies {@code Config.INCLUDE_PROXIED_RECIPE_TYPES} defaults to off (so existing plans/graphs
-     * are byte-for-byte unaffected by default), and that toggling it on produces a valid non-empty
+     * Verifies {@code Config.INCLUDE_PROXIED_RECIPE_TYPES} defaults to off (so
+     * existing plans/graphs
+     * are byte-for-byte unaffected by default), and that toggling it on produces a
+     * valid non-empty
      * result rather than throwing or corrupting state.
      * <p>
-     * Does NOT assert identical output before/after: base MI's own {@code FurnaceMachineRecipeType},
-     * {@code CuttingMachineRecipeType}, and {@code CentrifugeMachineRecipeType} are themselves
-     * {@code ProxyableMachineRecipeType}s, and {@code FurnaceMachineRecipeType.fillRecipeList}
-     * synthesizes a {@code MachineRecipe} for every vanilla {@code RecipeType.SMELTING} recipe via
-     * {@code RecipeConversions.ofSmelting} on top of whatever's already in the RecipeManager. So
-     * enabling this config changes candidate recipe sets, and therefore default ambiguous recipe
-     * selection, even with zero addons installed -- measured directly: quantum_upgrade's graph goes
+     * Does NOT assert identical output before/after: base MI's own
+     * {@code FurnaceMachineRecipeType},
+     * {@code CuttingMachineRecipeType}, and {@code CentrifugeMachineRecipeType} are
+     * themselves
+     * {@code ProxyableMachineRecipeType}s, and
+     * {@code FurnaceMachineRecipeType.fillRecipeList}
+     * synthesizes a {@code MachineRecipe} for every vanilla
+     * {@code RecipeType.SMELTING} recipe via
+     * {@code RecipeConversions.ofSmelting} on top of whatever's already in the
+     * RecipeManager. So
+     * enabling this config changes candidate recipe sets, and therefore default
+     * ambiguous recipe
+     * selection, even with zero addons installed -- measured directly:
+     * quantum_upgrade's graph goes
      * from 97/158 nodes/edges to 89/149 with the flag on. Expected, not a bug.
      */
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
@@ -999,8 +1080,10 @@ public class ForemanGameTests {
             RecipeGraphTraverser.clearGraphCache();
         }
 
-        // Confirm the flag going back off restores exactly today's pinned snapshot -- proves the
-        // toggle has no lingering side effect on the shared static GRAPH_CACHE or recipe indexing.
+        // Confirm the flag going back off restores exactly today's pinned snapshot --
+        // proves the
+        // toggle has no lingering side effect on the shared static GRAPH_CACHE or
+        // recipe indexing.
         var graphRestored = RecipeGraphTraverser.computeRecipeGraph(level, goal);
         if (graphRestored.nodes().size() != 588 || graphRestored.edges().size() != 864) {
             helper.fail("Expected graph to return to the pinned 588 nodes/864 edges after disabling "
@@ -1068,8 +1151,7 @@ public class ForemanGameTests {
     public static void testUnifiedCrafterStandardParity(GameTestHelper helper) {
         BlockPos machinePos = new BlockPos(1, 1, 1);
         var compressorBlock = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
-                ResourceLocation.parse("modern_industrialization:bronze_compressor")
-        );
+                ResourceLocation.parse("modern_industrialization:bronze_compressor"));
         helper.setBlock(machinePos, compressorBlock);
 
         BlockEntity be = helper.getBlockEntity(machinePos);
@@ -1085,7 +1167,8 @@ public class ForemanGameTests {
         }
 
         if (!(crafter instanceof UnifiedCrafter.StandardCrafterAdapter)) {
-            helper.fail("Expected StandardCrafterAdapter for standard MI machine, got: " + crafter.getClass().getName());
+            helper.fail(
+                    "Expected StandardCrafterAdapter for standard MI machine, got: " + crafter.getClass().getName());
             return;
         }
 
@@ -1135,7 +1218,8 @@ public class ForemanGameTests {
 
         RecipeHolder<MachineRecipe> extracted = unified.getActiveRecipe();
         if (extracted == null || !extracted.id().equals(testHolder.id())) {
-            helper.fail("Expected active recipe ID " + testHolder.id() + ", got: " + (extracted != null ? extracted.id() : "null"));
+            helper.fail("Expected active recipe ID " + testHolder.id() + ", got: "
+                    + (extracted != null ? extracted.id() : "null"));
             return;
         }
 
@@ -1179,7 +1263,8 @@ public class ForemanGameTests {
             return;
         }
         for (ResourceLocation matchId : state.getMatches()) {
-            String formatted = com.mervyn.miforeman.client.DisplayFormat.formatId(matchId).toLowerCase(java.util.Locale.ROOT);
+            String formatted = com.mervyn.miforeman.client.DisplayFormat.formatId(matchId)
+                    .toLowerCase(java.util.Locale.ROOT);
             String raw = matchId.toString().toLowerCase(java.util.Locale.ROOT);
             if (!formatted.contains("assembler") && !raw.contains("assembler")) {
                 helper.fail("Match " + matchId + " does not contain query 'assembler'");
@@ -1194,7 +1279,8 @@ public class ForemanGameTests {
             return;
         }
         if (!state.getMatches().get(0).equals(ResourceLocation.parse("modern_industrialization:quantum_upgrade"))) {
-            helper.fail("Expected match to be modern_industrialization:quantum_upgrade, got: " + state.getMatches().get(0));
+            helper.fail(
+                    "Expected match to be modern_industrialization:quantum_upgrade, got: " + state.getMatches().get(0));
             return;
         }
 
@@ -1238,7 +1324,8 @@ public class ForemanGameTests {
 
         // Wrap around backwards from 0 -> count - 1
         ResourceLocation lastMatch = state.prevMatch();
-        if (state.getCurrentIndex() != count - 1 || lastMatch == null || !lastMatch.equals(state.getMatches().get(count - 1))) {
+        if (state.getCurrentIndex() != count - 1 || lastMatch == null
+                || !lastMatch.equals(state.getMatches().get(count - 1))) {
             helper.fail("Expected wrap-around backwards to index " + (count - 1) + ", got: " + state.getCurrentIndex());
             return;
         }
@@ -1258,7 +1345,8 @@ public class ForemanGameTests {
         // Node at (200, 100) with size 96x26 -> center is (248, 113)
         // Canvas size 400x300 -> center is (200, 150)
         // At zoom 1.0: panX = 200 - 248*1 = -48, panY = 150 - 113*1 = 37
-        com.mervyn.miforeman.client.gui.widget.GraphCamera camera1 = new com.mervyn.miforeman.client.gui.widget.GraphCamera(0, 0, 1.0f);
+        com.mervyn.miforeman.client.gui.widget.GraphCamera camera1 = new com.mervyn.miforeman.client.gui.widget.GraphCamera(
+                0, 0, 1.0f);
         camera1.centerOn(400, 300, 200, 100, 96, 26);
 
         if (Math.abs(camera1.panX() - (-48.0)) > 0.001 || Math.abs(camera1.panY() - 37.0) > 0.001) {
@@ -1267,7 +1355,8 @@ public class ForemanGameTests {
         }
 
         // At zoom 2.0: panX = 200 - 248*2 = -296, panY = 150 - 113*2 = -76
-        com.mervyn.miforeman.client.gui.widget.GraphCamera camera2 = new com.mervyn.miforeman.client.gui.widget.GraphCamera(0, 0, 2.0f);
+        com.mervyn.miforeman.client.gui.widget.GraphCamera camera2 = new com.mervyn.miforeman.client.gui.widget.GraphCamera(
+                0, 0, 2.0f);
         camera2.centerOn(400, 300, 200, 100, 96, 26);
 
         if (Math.abs(camera2.panX() - (-296.0)) > 0.001 || Math.abs(camera2.panY() - (-76.0)) > 0.001) {
@@ -1277,5 +1366,46 @@ public class ForemanGameTests {
 
         helper.succeed();
     }
-}
 
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testGraphLayoutStateHiddenNodes(GameTestHelper helper) {
+        ResourceLocation nodeA = ResourceLocation.parse("minecraft:iron_ingot");
+        ResourceLocation nodeB = ResourceLocation.parse("minecraft:iron_ore");
+        com.mervyn.miforeman.goal.GraphLayoutState state = com.mervyn.miforeman.goal.GraphLayoutState.EMPTY;
+
+        if (state.isHidden(nodeA)) {
+            helper.fail("Initial state should not have nodeA hidden");
+            return;
+        }
+
+        // Toggle nodeA to hidden
+        state = state.withToggledNodeVisibility(nodeA);
+        if (!state.isHidden(nodeA) || state.isHidden(nodeB)) {
+            helper.fail("Expected nodeA to be hidden and nodeB to be visible");
+            return;
+        }
+
+        // Toggle nodeB to hidden
+        state = state.withToggledNodeVisibility(nodeB);
+        if (!state.isHidden(nodeA) || !state.isHidden(nodeB)) {
+            helper.fail("Expected both nodeA and nodeB to be hidden");
+            return;
+        }
+
+        // Toggle nodeA back to visible
+        state = state.withToggledNodeVisibility(nodeA);
+        if (state.isHidden(nodeA) || !state.isHidden(nodeB)) {
+            helper.fail("Expected nodeA visible and nodeB hidden");
+            return;
+        }
+
+        // Unhide all
+        state = state.withUnhideAll();
+        if (state.isHidden(nodeA) || state.isHidden(nodeB) || !state.hiddenNodes().isEmpty()) {
+            helper.fail("Expected hiddenNodes to be empty after withUnhideAll");
+            return;
+        }
+
+        helper.succeed();
+    }
+}

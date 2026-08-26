@@ -17,9 +17,11 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Consumer;
 
@@ -65,17 +67,16 @@ public class GraphCanvas extends AbstractWidget {
 
     private final RecipeGraph graph;
     private GraphLayoutState layoutState;
-    private final com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode viewMode;
-    private final boolean dragEnabled;
+    private final GraphCamera camera;
     private final Map<ResourceLocation, RecipeGraphNode> visibleNodes = new LinkedHashMap<>();
     private final List<GraphEdge> visibleEdges = new ArrayList<>();
     private final Map<ResourceLocation, NodePosition> autoLayout = new HashMap<>();
-    private ResourceLocation selectedNodeId;
+    private @Nullable ResourceLocation selectedNodeId;
     private final Consumer<ResourceLocation> onSelect;
     private final Consumer<GraphLayoutState> onLayoutChange;
     private final CameraChangeListener onCameraChange;
-
-    private final GraphCamera camera;
+    private final com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode viewMode;
+    private final boolean dragEnabled;
     private final GraphSearchState searchState = new GraphSearchState();
     private final GraphSearchBar searchBar;
 
@@ -104,55 +105,48 @@ public class GraphCanvas extends AbstractWidget {
     }
 
     /**
-     * Filters visible nodes and bridges edges according to {@link #viewMode}:
+     * Filters visible nodes and bridges edges according to {@link #viewMode} and {@link GraphLayoutState#hiddenNodes()}:
      * <ul>
-     *   <li>{@code ALL}: Displays every resource and machine node directly.</li>
-     *   <li>{@code ITEMS_ONLY}: Displays only item/fluid nodes, bridging inputs across machines to outputs.</li>
-     *   <li>{@code MACHINES_ONLY}: Displays only MACHINE nodes, bridging producer machines directly to consumer machines.</li>
+     *   <li>{@code ALL}: Displays all unhidden resource and machine nodes.</li>
+     *   <li>{@code ITEMS_ONLY}: Displays only unhidden item/fluid nodes, bridging across machines.</li>
+     *   <li>{@code MACHINES_ONLY}: Displays only unhidden MACHINE nodes, bridging across intermediate items.</li>
      * </ul>
+     * Any intermediate non-visible nodes are bridged so that upstream visible nodes connect directly to downstream visible nodes.
      */
     private void computeFilteredView() {
-        if (viewMode == com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.ALL) {
-            visibleNodes.putAll(graph.nodes());
-            visibleEdges.addAll(graph.edges());
+        for (RecipeGraphNode node : graph.nodes().values()) {
+            if (layoutState.isHidden(node.getId())) continue;
+            if (viewMode == com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.ITEMS_ONLY && node.getType() == NodeType.MACHINE) continue;
+            if (viewMode == com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.MACHINES_ONLY && node.getType() != NodeType.MACHINE) continue;
+            visibleNodes.put(node.getId(), node);
+        }
+
+        Set<String> addedEdgeKeys = new HashSet<>();
+        for (RecipeGraphNode sourceNode : visibleNodes.values()) {
+            for (GraphEdge out : sourceNode.getOutputs()) {
+                collectBridgedEdges(sourceNode.getId(), out.to(), out.rate(), new HashSet<>(), addedEdgeKeys);
+            }
+        }
+    }
+
+    private void collectBridgedEdges(ResourceLocation sourceId, ResourceLocation currentTargetId, double rate,
+                                     Set<ResourceLocation> visited, Set<String> addedEdgeKeys) {
+        if (sourceId.equals(currentTargetId) || !visited.add(currentTargetId)) {
             return;
         }
 
-        if (viewMode == com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.ITEMS_ONLY) {
-            for (RecipeGraphNode node : graph.nodes().values()) {
-                if (node.getType() != NodeType.MACHINE) {
-                    visibleNodes.put(node.getId(), node);
-                }
+        if (visibleNodes.containsKey(currentTargetId)) {
+            String key = sourceId + "->" + currentTargetId;
+            if (addedEdgeKeys.add(key)) {
+                visibleEdges.add(new GraphEdge(sourceId, currentTargetId, rate));
             }
-            for (RecipeGraphNode node : graph.nodes().values()) {
-                if (node.getType() != NodeType.MACHINE) continue;
-                List<GraphEdge> inputs = node.getInputs();
-                List<GraphEdge> outputs = node.getOutputs();
-                if (inputs.isEmpty() || outputs.isEmpty()) continue;
-                for (GraphEdge in : inputs) {
-                    for (GraphEdge out : outputs) {
-                        if (in.from().equals(out.to())) continue;
-                        visibleEdges.add(new GraphEdge(in.from(), out.to(), in.rate()));
-                    }
-                }
-            }
-        } else if (viewMode == com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.MACHINES_ONLY) {
-            for (RecipeGraphNode node : graph.nodes().values()) {
-                if (node.getType() == NodeType.MACHINE) {
-                    visibleNodes.put(node.getId(), node);
-                }
-            }
-            for (RecipeGraphNode node : graph.nodes().values()) {
-                if (node.getType() == NodeType.MACHINE) continue;
-                List<GraphEdge> inputs = node.getInputs();
-                List<GraphEdge> outputs = node.getOutputs();
-                if (inputs.isEmpty() || outputs.isEmpty()) continue;
-                for (GraphEdge in : inputs) {
-                    for (GraphEdge out : outputs) {
-                        if (in.from().equals(out.to())) continue;
-                        visibleEdges.add(new GraphEdge(in.from(), out.to(), out.rate()));
-                    }
-                }
+            return;
+        }
+
+        RecipeGraphNode intermediate = graph.node(currentTargetId);
+        if (intermediate != null) {
+            for (GraphEdge nextOut : intermediate.getOutputs()) {
+                collectBridgedEdges(sourceId, nextOut.to(), rate, visited, addedEdgeKeys);
             }
         }
     }
@@ -281,10 +275,49 @@ public class GraphCanvas extends AbstractWidget {
         return searchState;
     }
 
+    public void toggleNodeVisibility(ResourceLocation nodeId) {
+        layoutState = layoutState.withToggledNodeVisibility(nodeId);
+        if (layoutState.isHidden(nodeId) && nodeId.equals(selectedNodeId)) {
+            selectedNodeId = null;
+            onSelect.accept(null);
+        }
+        recalculateVisibility();
+        onLayoutChange.accept(layoutState);
+    }
+
+    public void unhideAll() {
+        if (layoutState.hiddenNodes().isEmpty()) return;
+        layoutState = layoutState.withUnhideAll();
+        recalculateVisibility();
+        onLayoutChange.accept(layoutState);
+    }
+
+    public boolean hasHiddenNodes() {
+        return !layoutState.hiddenNodes().isEmpty();
+    }
+
+    public boolean isNodeHidden(ResourceLocation nodeId) {
+        return layoutState.isHidden(nodeId);
+    }
+
+    public GraphLayoutState getLayoutState() {
+        return layoutState;
+    }
+
+    public void recalculateVisibility() {
+        visibleNodes.clear();
+        visibleEdges.clear();
+        computeFilteredView();
+        autoLayout.clear();
+        computeAutoLayout();
+        searchState.setQuery(searchBar.getValue(), visibleNodes.values());
+    }
+
     public void undo() {
         GraphLayoutState next = layoutState.undo();
         if (next != layoutState) {
             layoutState = next;
+            recalculateVisibility();
             onLayoutChange.accept(layoutState);
         }
     }
@@ -293,14 +326,16 @@ public class GraphCanvas extends AbstractWidget {
         GraphLayoutState next = layoutState.redo();
         if (next != layoutState) {
             layoutState = next;
+            recalculateVisibility();
             onLayoutChange.accept(layoutState);
         }
     }
 
-    /** Resets all node positions to automatic layout defaults. */
+    /** Resets all node positions to automatic layout defaults and unhides all nodes. */
     public void resetLayout() {
         if (!layoutState.equals(GraphLayoutState.EMPTY)) {
             layoutState = GraphLayoutState.EMPTY;
+            recalculateVisibility();
             onLayoutChange.accept(layoutState);
         }
     }
@@ -476,6 +511,18 @@ public class GraphCanvas extends AbstractWidget {
         // Give floating search bar priority on mouse click
         if (searchBar.mouseClicked(mouseX, mouseY, button)) {
             return true;
+        }
+
+        if (button == 1) {
+            if (mouseX < getX() || mouseX >= getX() + getWidth() || mouseY < getY() || mouseY >= getY() + getHeight()) {
+                return false;
+            }
+            RecipeGraphNode hit = nodeAt(mouseX, mouseY);
+            if (hit != null) {
+                toggleNodeVisibility(hit.getId());
+                return true;
+            }
+            return false;
         }
 
         if (button != 0) return false;

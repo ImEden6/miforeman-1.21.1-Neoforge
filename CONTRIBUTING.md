@@ -32,22 +32,22 @@
 | | `client/gui/MonitoringScreen.java` | Step 3 live monitoring dashboard screen |
 | | `client/gui/ColourPickerScreen.java` | In-game RGBA/HSB color picker screen for highlights and UI elements |
 | | `client/gui/blockui/DefineGoalWindow.java` | Step 0 modal popup to configure target item/fluid, rate, and units |
-| GUI widgets | `client/gui/widget/GraphCanvas.java`, `GraphCamera.java` | Interactive pan/zoom DAG canvas rendering recipe nodes and bezier edges |
+| GUI widgets | `client/gui/widget/GraphCanvas.java`, `GraphCamera.java` | Interactive pan/zoom DAG canvas rendering recipe nodes, transitive edge bridging, and right-click visibility toggle |
 | | `client/gui/widget/GraphSearchBar.java`, `GraphSearchState.java` | Floating search overlay widget, query matching, match cycling, and camera centering |
-| | `client/gui/widget/DetailCard.java` | Contextual inspector card for selected node, material flows, and ambiguity cycling |
+| | `client/gui/widget/DetailCard.java` | Contextual inspector card for selected node, material flows, ambiguity cycling, and node visibility checklist |
 | | `client/gui/widget/MonitoringListPanel.java`, `ReviewListPanel.java` | Scrollable panels for machine lists, status badges, and batch actions |
 | Goal model | `goal/ProductionGoal.java` | Immutable record with `CODEC`/`STREAM_CODEC` — target, rate, plan, layout, history, uiState |
 | Recipe traversal | `goal/RecipeGraphTraverser.java` | Recursive BFS through MI recipe graph; cycle handling, ambiguity resolution, DAG construction |
 | Graph model | `goal/RecipeGraph.java`, `RecipeGraphNode.java`, `NodeType.java`, `GraphEdge.java` | DAG data model for factory planning & node canvas |
 | Crafter adapter | `goal/UnifiedCrafter.java` | Unified crafter abstraction supporting base MI `CrafterComponent` and duck-typed modular multiblock crafters |
 | Machine scanner | `goal/MachineScanner.java` | Server-side sphere/area scanning for unlinked MI & custom multiblock machines matching active graph |
-| State tracking & sync | `goal/MachineLinkHistory.java`, `ClipboardUiState.java`, `GraphLayoutState.java`, `ClipboardCloseSync.java` | Persistence & undo/redo tracking for machine links, canvas positions, and UI state |
+| State tracking & sync | `goal/MachineLinkHistory.java`, `ClipboardUiState.java`, `GraphLayoutState.java`, `ClipboardCloseSync.java` | Persistence & undo/redo tracking for machine links, canvas positions, hidden nodes, and UI state |
 | Server monitoring | `goal/ServerMonitoringManager.java` | Server-side tracker & `@SubscribeEvent` tick handler — tracks `UnifiedCrafter` energy, status (GREEN/YELLOW/ORANGE/RED) |
 | Commands | `command/ForemanCommands.java` | `/miforeman goal create\|print\|plan\|select` and `/miforeman recipes print` |
 | Packets | `network/*.java` | 6 network packets for client-server communication (see below) |
 | Rate limiting | `network/PacketRateLimiter.java` | Server-side rate limiter guarding network payloads |
 | Mixins | `mixin/CrafterComponentAccessor.java` | Accessor mixin for `CrafterComponent.activeRecipe` |
-| Game tests | `test/ForemanGameTests.java` | 23 `@GameTest`s verifying core logic (see below) |
+| Game tests | `test/ForemanGameTests.java` | 24 `@GameTest`s verifying core logic (see below) |
 
 ### Network packets (registered in `MIForeman.java:75-107`)
 
@@ -96,6 +96,7 @@
 | `testGraphSearchMatchingLogic` | Search matching against formatted display names, namespace IDs, case-insensitivity, and empty queries |
 | `testGraphSearchMatchCycling` | Match selection indexing, forward/backward navigation, and cyclic wrap-around boundaries |
 | `testGraphCameraCenteringMath` | `GraphCamera.centerOn` coordinate calculations across zoom levels and canvas viewport dimensions |
+| `testGraphLayoutStateHiddenNodes` | Hidden node set immutability, single/batch toggling, and unhide-all reset |
 
 Tests use `@PrefixGameTestTemplate(false)` + `template="empty"` — no structure files needed.
 

@@ -17,9 +17,12 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.function.IntConsumer;
+import java.util.function.Predicate;
 
 public class DetailCard extends AbstractWidget {
     private static final int COLOUR_BORDER = 0xFF6B5030;
@@ -39,6 +42,9 @@ public class DetailCard extends AbstractWidget {
     private final boolean showNumbers;
     private final BiConsumer<ResourceLocation, ResourceLocation> onAmbiguity;
     private final Runnable onToggleNumbers;
+    private final @Nullable Consumer<ResourceLocation> onToggleVisibility;
+    private final @Nullable Runnable onUnhideAll;
+    private final @Nullable Predicate<ResourceLocation> isHiddenPredicate;
     private final IntConsumer onScrollChange;
     private int scrollOffset;
     private int totalContentHeight = 0;
@@ -57,10 +63,30 @@ public class DetailCard extends AbstractWidget {
     private int numToggleBoxH = 0;
     private boolean isNumToggleHovered = false;
 
+    // Boundaries of the unhide all box in summary mode
+    private int unhideAllBoxX = 0;
+    private int unhideAllBoxY = 0;
+    private int unhideAllBoxW = 0;
+    private int unhideAllBoxH = 0;
+    private boolean isUnhideAllHovered = false;
+
+    // Boundaries of the single node visibility toggle in node details mode
+    private int nodeVisBoxX = 0;
+    private int nodeVisBoxY = 0;
+    private int nodeVisBoxW = 0;
+    private int nodeVisBoxH = 0;
+    private boolean isNodeVisHovered = false;
+
+    private record VisibilityClickTarget(int x, int y, int w, int h, ResourceLocation nodeId) {}
+    private final List<VisibilityClickTarget> visibilityTargets = new ArrayList<>();
+
     public DetailCard(int x, int y, int width, int height, @Nullable RecipeGraphNode node,
                       FactoryPlan plan, boolean perHour, boolean showNumbers,
                       BiConsumer<ResourceLocation, ResourceLocation> onAmbiguity,
                       Runnable onToggleNumbers,
+                      @Nullable Consumer<ResourceLocation> onToggleVisibility,
+                      @Nullable Runnable onUnhideAll,
+                      @Nullable Predicate<ResourceLocation> isHiddenPredicate,
                       int initialScrollOffset, IntConsumer onScrollChange) {
         super(x, y, width, height, Component.literal("Detail Card"));
         this.node = node;
@@ -69,8 +95,19 @@ public class DetailCard extends AbstractWidget {
         this.showNumbers = showNumbers;
         this.onAmbiguity = onAmbiguity;
         this.onToggleNumbers = onToggleNumbers;
+        this.onToggleVisibility = onToggleVisibility;
+        this.onUnhideAll = onUnhideAll;
+        this.isHiddenPredicate = isHiddenPredicate;
         this.scrollOffset = initialScrollOffset;
         this.onScrollChange = onScrollChange;
+    }
+
+    public DetailCard(int x, int y, int width, int height, @Nullable RecipeGraphNode node,
+                      FactoryPlan plan, boolean perHour, boolean showNumbers,
+                      BiConsumer<ResourceLocation, ResourceLocation> onAmbiguity,
+                      Runnable onToggleNumbers,
+                      int initialScrollOffset, IntConsumer onScrollChange) {
+        this(x, y, width, height, node, plan, perHour, showNumbers, onAmbiguity, onToggleNumbers, null, null, null, initialScrollOffset, onScrollChange);
     }
 
     public void setNode(@Nullable RecipeGraphNode node) {
@@ -81,18 +118,9 @@ public class DetailCard extends AbstractWidget {
 
     @Override
     protected void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        // No border/fill of its own -- ClipboardScreen's own main panel is already the
-        // background here (drawn before widgets, in Screen.render()); a second bordered panel
-        // read as a nested "clipboard within the clipboard" rather than one continuous surface.
-        // Just a thin divider on the shared edge with GraphCanvas, hinting at the boundary
-        // between the two content areas without drawing a second frame.
         guiGraphics.fill(getX(), getY(), getX() + 1, getY() + getHeight(), COLOUR_BORDER);
 
         int maxScroll = Math.max(0, totalContentHeight - getHeight() + 8);
-        // totalContentHeight is only known after a render pass has measured it (set at the end of
-        // this method) -- on a freshly-constructed instance it's still 0, so skip the clamp on that
-        // first frame or it would immediately zero out a restored initialScrollOffset before the
-        // real content height is ever known.
         if (totalContentHeight > 0) {
             scrollOffset = Mth.clamp(scrollOffset, 0, maxScroll);
         }
@@ -108,6 +136,13 @@ public class DetailCard extends AbstractWidget {
         isNumToggleHovered = false;
         numToggleBoxW = 0;
         numToggleBoxH = 0;
+        isUnhideAllHovered = false;
+        unhideAllBoxW = 0;
+        unhideAllBoxH = 0;
+        isNodeVisHovered = false;
+        nodeVisBoxW = 0;
+        nodeVisBoxH = 0;
+        visibilityTargets.clear();
 
         if (node == null) {
             // Summary Mode
@@ -188,6 +223,63 @@ public class DetailCard extends AbstractWidget {
                     currentY += 10;
                 }
             }
+
+            // Node Visibility Checklist
+            currentY += 8;
+            guiGraphics.drawString(fontSource.font, "Node Visibility:", getX() + 6, currentY + 1, COLOUR_TITLE, false);
+
+            boolean anyHidden = false;
+            if (plan.graph() != null && isHiddenPredicate != null) {
+                for (RecipeGraphNode n : plan.graph().nodes().values()) {
+                    if (isHiddenPredicate.test(n.getId())) {
+                        anyHidden = true;
+                        break;
+                    }
+                }
+            }
+            if (anyHidden && onUnhideAll != null) {
+                String unhideText = "Unhide All";
+                int unhideTextW = fontSource.font.width(unhideText);
+                int headerW = fontSource.font.width("Node Visibility:");
+                unhideAllBoxX = getX() + 6 + headerW + 6;
+                unhideAllBoxY = currentY;
+                unhideAllBoxW = unhideTextW + 6;
+                unhideAllBoxH = 10;
+                isUnhideAllHovered = mouseX >= unhideAllBoxX && mouseX < unhideAllBoxX + unhideAllBoxW &&
+                                     mouseY >= unhideAllBoxY && mouseY < unhideAllBoxY + unhideAllBoxH;
+                int unhideBg = isUnhideAllHovered ? COLOUR_CYCLE_HOVER : COLOUR_CYCLE_BOX;
+                guiGraphics.fill(unhideAllBoxX, unhideAllBoxY, unhideAllBoxX + unhideAllBoxW, unhideAllBoxY + unhideAllBoxH, unhideBg);
+                guiGraphics.renderOutline(unhideAllBoxX, unhideAllBoxY, unhideAllBoxW, unhideAllBoxH, COLOUR_BORDER);
+                guiGraphics.drawString(fontSource.font, unhideText, unhideAllBoxX + 3, unhideAllBoxY + 1, COLOUR_TEXT, false);
+            }
+
+            currentY += 13;
+            if (plan.graph() != null) {
+                List<RecipeGraphNode> allNodes = plan.graph().flatten();
+                for (RecipeGraphNode graphNode : allNodes) {
+                    boolean hidden = isHiddenPredicate != null && isHiddenPredicate.test(graphNode.getId());
+                    String icon = hidden ? "[x]" : "[o]";
+                    int iconW = fontSource.font.width(icon);
+                    int pillX = getX() + 6;
+                    int pillY = currentY;
+                    int pillW = iconW + 4;
+                    int pillH = 10;
+
+                    boolean hovered = mouseX >= pillX && mouseX < pillX + pillW &&
+                                      mouseY >= pillY && mouseY < pillY + pillH;
+                    int itemPillBg = hovered ? COLOUR_CYCLE_HOVER : COLOUR_CYCLE_BOX;
+                    guiGraphics.fill(pillX, pillY, pillX + pillW, pillY + pillH, itemPillBg);
+                    guiGraphics.renderOutline(pillX, pillY, pillW, pillH, COLOUR_BORDER);
+                    int iconColor = hidden ? COLOUR_MUTED : COLOUR_GREEN;
+                    guiGraphics.drawString(fontSource.font, icon, pillX + 2, pillY + 1, iconColor, false);
+                    visibilityTargets.add(new VisibilityClickTarget(pillX, pillY, pillW, pillH, graphNode.getId()));
+
+                    String label = (graphNode.getType() == NodeType.MACHINE ? "Recipe: " : "") + DisplayFormat.formatId(graphNode.getId());
+                    int labelColor = hidden ? COLOUR_MUTED : COLOUR_TEXT;
+                    guiGraphics.drawString(fontSource.font, label, pillX + pillW + 4, currentY + 1, labelColor, false);
+                    currentY += 12;
+                }
+            }
         } else {
             // Node Details Mode
             String title = DisplayFormat.formatId(node.getId());
@@ -195,6 +287,22 @@ public class DetailCard extends AbstractWidget {
                 title = "Recipe: " + title;
             }
             guiGraphics.drawString(fontSource.font, title, getX() + 6, currentY, COLOUR_TITLE, false);
+            currentY += 13;
+
+            // Visibility Toggle for Selected Node
+            boolean isHidden = isHiddenPredicate != null && isHiddenPredicate.test(node.getId());
+            String visText = isHidden ? "Unhide from Canvas" : "Hide from Canvas";
+            int visTextW = fontSource.font.width(visText);
+            nodeVisBoxX = getX() + 6;
+            nodeVisBoxY = currentY;
+            nodeVisBoxW = visTextW + 6;
+            nodeVisBoxH = 10;
+            isNodeVisHovered = mouseX >= nodeVisBoxX && mouseX < nodeVisBoxX + nodeVisBoxW &&
+                               mouseY >= nodeVisBoxY && mouseY < nodeVisBoxY + nodeVisBoxH;
+            int visBg = isNodeVisHovered ? COLOUR_CYCLE_HOVER : COLOUR_CYCLE_BOX;
+            guiGraphics.fill(nodeVisBoxX, nodeVisBoxY, nodeVisBoxX + nodeVisBoxW, nodeVisBoxY + nodeVisBoxH, visBg);
+            guiGraphics.renderOutline(nodeVisBoxX, nodeVisBoxY, nodeVisBoxW, nodeVisBoxH, COLOUR_BORDER);
+            guiGraphics.drawString(fontSource.font, visText, nodeVisBoxX + 3, nodeVisBoxY + 1, isHidden ? COLOUR_MUTED : COLOUR_TEXT, false);
             currentY += 15;
 
             if (node.getType() == NodeType.MACHINE) {
@@ -217,10 +325,7 @@ public class DetailCard extends AbstractWidget {
                     currentY += 24;
                 }
 
-                // Process conditions (voltage tier, open water, nearby entity, etc. -- e.g. from
-                // MI-Tweaks) gate whether this recipe can actually run beyond its item/fluid/EU
-                // requirements. Reuse each condition's own appendDescription() instead of trying to
-                // describe arbitrary third-party condition types ourselves.
+                // Process conditions
                 if (recipe != null && !recipe.conditions.isEmpty()) {
                     guiGraphics.drawString(fontSource.font, "Requirements:", getX() + 6, currentY, COLOUR_AMBER, false);
                     currentY += 10;
@@ -302,7 +407,7 @@ public class DetailCard extends AbstractWidget {
                 }
             }
 
-            // Recipe Ambiguity Cycle Button (Rendered for any node having ambiguity options)
+            // Recipe Ambiguity Cycle Button
             if (!node.getAmbiguityOptions().isEmpty()) {
                 currentY += 8;
                 guiGraphics.drawString(fontSource.font, "Alternative Recipes:", getX() + 6, currentY, COLOUR_AMBER, false);
@@ -357,6 +462,29 @@ public class DetailCard extends AbstractWidget {
             return true;
         }
 
+        if (button == 0 && node == null && isUnhideAllHovered && onUnhideAll != null) {
+            onUnhideAll.run();
+            this.playDownSound(Minecraft.getInstance().getSoundManager());
+            return true;
+        }
+
+        if (button == 0 && node == null && onToggleVisibility != null) {
+            for (VisibilityClickTarget target : visibilityTargets) {
+                if (mouseX >= target.x() && mouseX < target.x() + target.w() &&
+                    mouseY >= target.y() && mouseY < target.y() + target.h()) {
+                    onToggleVisibility.accept(target.nodeId());
+                    this.playDownSound(Minecraft.getInstance().getSoundManager());
+                    return true;
+                }
+            }
+        }
+
+        if (button == 0 && node != null && isNodeVisHovered && onToggleVisibility != null) {
+            onToggleVisibility.accept(node.getId());
+            this.playDownSound(Minecraft.getInstance().getSoundManager());
+            return true;
+        }
+
         if (node != null && !node.getAmbiguityOptions().isEmpty()) {
             if (mouseX >= cycleBoxX && mouseX < cycleBoxX + cycleBoxW &&
                 mouseY >= cycleBoxY && mouseY < cycleBoxY + cycleBoxH) {
@@ -366,10 +494,6 @@ public class DetailCard extends AbstractWidget {
                 int nextIdx = (idx + 1) % options.size();
                 ResourceLocation nextSel = options.get(nextIdx);
 
-                // A MACHINE node's ambiguityOptions/selectedAmbiguity describe whichever resourceId
-                // first finalized it (see RecipeGraphTraverser.finalizeResourceNode), not necessarily
-                // its first output edge -- for a multi-output recipe those two "firsts" can differ,
-                // so the click must target ambiguityOwnerId, not outputs.get(0).
                 ResourceLocation resourceId = node.getType() == NodeType.MACHINE
                         ? node.getAmbiguityOwnerId()
                         : node.getId();
@@ -397,7 +521,6 @@ public class DetailCard extends AbstractWidget {
         }
         return false;
     }
-
 
     @Override
     protected void updateWidgetNarration(NarrationElementOutput narrationElementOutput) {

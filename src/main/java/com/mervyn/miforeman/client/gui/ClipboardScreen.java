@@ -438,6 +438,20 @@ public class ClipboardScreen extends Screen {
                         }, () -> {
                             this.showMachineNumbers = !this.showMachineNumbers;
                             rebuildStep(STEP_REVIEW_PLAN);
+                        }, nodeId -> {
+                            if (graphCanvas != null) {
+                                graphCanvas.toggleNodeVisibility(nodeId);
+                                this.goalDraft.graphLayout = graphCanvas.getLayoutState();
+                                rebuildStep(STEP_REVIEW_PLAN);
+                            }
+                        }, () -> {
+                            if (graphCanvas != null) {
+                                graphCanvas.unhideAll();
+                                this.goalDraft.graphLayout = graphCanvas.getLayoutState();
+                                rebuildStep(STEP_REVIEW_PLAN);
+                            }
+                        }, resId -> {
+                            return this.goalDraft.graphLayout != null && this.goalDraft.graphLayout.isHidden(resId);
                         }, detailScrollOffset, v -> this.detailScrollOffset = v);
                 this.addRenderableWidget(detailCard);
             } else {
