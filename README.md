@@ -1,25 +1,38 @@
-
-Installation information
-=======
-
-This template repository can be directly cloned to get you started with a new
-mod. Simply create a new repository cloned from this one, by following the
-instructions provided by [GitHub](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template).
-
-Once you have your clone, simply open the repository in the IDE of your choice. The usual recommendation for an IDE is either IntelliJ IDEA or Eclipse.
-
-If at any point you are missing libraries in your IDE, or you've run into problems you can
-run `gradlew --refresh-dependencies` to refresh the local cache. `gradlew clean` to reset everything 
-{this does not affect your code} and then start the process again.
-
-Mapping Names:
-============
-By default, the MDK is configured to use the official mapping names from Mojang for methods and fields 
-in the Minecraft codebase. These names are covered by a specific license. All modders should be aware of this
-license. For the latest license text, refer to the mapping file itself, or the reference copy here:
-https://github.com/NeoForged/NeoForm/blob/main/Mojang.md
-
-Additional Resources: 
+MI Foreman
 ==========
-Community Documentation: https://docs.neoforged.net/  
-NeoForged Discord: https://discord.neoforged.net/
+
+MI Foreman is an in-game planning and monitoring tool for [Modern Industrialization](https://www.curseforge.com/minecraft/mc-mods/modern-industrialization) on NeoForge 1.21.1. It lets players define production goals, auto-calculate the machines and resources needed, lay out factory designs in a visual node graph, and monitor live factory performance to spot bottlenecks — all without leaving the game.
+
+Features
+--------
+- **Production goals** — specify a target item and desired output rate as a baseline for planning.
+- **Machine requirement calculation** — traverses MI's recipe graph to work out required machines, quantities, and input rates, prompting the player when multiple valid recipe paths exist.
+- **Node graph editor** — auto-generates an editable graph of machines and item/fluid flows, persisted on an in-game item that can be shared between players.
+- **Live monitoring** — link real in-world machines to a goal and track averaged input/output rates over a configurable window.
+- **Bottleneck detection** — passively flags underperforming nodes while the graph or monitoring screen is open.
+
+Dependencies
+------------
+- NeoForge (see [gradle.properties](gradle.properties) for the pinned version)
+- Minecraft 1.21.1
+- [Modern Industrialization](https://www.curseforge.com/minecraft/mc-mods/modern-industrialization) (required)
+- [EMI](https://www.curseforge.com/minecraft/mc-mods/emi) (optional, for drag-drop recipe picking)
+
+Development
+-----------
+This project is built from the NeoForge MDK template. Open it in IntelliJ IDEA or Eclipse, and if you run into missing libraries or dependency issues, run:
+
+```bash
+./gradlew --refresh-dependencies
+```
+
+`./gradlew clean` resets the build without affecting your code.
+
+Mapping Names
+--------------
+By default, the project uses the official Mojang mapping names for methods and fields in the Minecraft codebase. These names are covered by a specific license — see the mapping file itself or the reference copy at https://github.com/NeoForged/NeoForm/blob/main/Mojang.md.
+
+Additional Resources
+---------------------
+- NeoForge Documentation: https://docs.neoforged.net/
+- NeoForged Discord: https://discord.neoforged.net/
