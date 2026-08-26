@@ -36,7 +36,9 @@ public class DetailCard extends AbstractWidget {
     private @Nullable RecipeGraphNode node;
     private final FactoryPlan plan;
     private final boolean perHour;
+    private final boolean showNumbers;
     private final BiConsumer<ResourceLocation, ResourceLocation> onAmbiguity;
+    private final Runnable onToggleNumbers;
     private final IntConsumer onScrollChange;
     private int scrollOffset;
     private int totalContentHeight = 0;
@@ -48,15 +50,25 @@ public class DetailCard extends AbstractWidget {
     private int cycleBoxH = 0;
     private boolean isCycleBoxHovered = false;
 
+    // Boundaries of the inline numbers toggle box
+    private int numToggleBoxX = 0;
+    private int numToggleBoxY = 0;
+    private int numToggleBoxW = 0;
+    private int numToggleBoxH = 0;
+    private boolean isNumToggleHovered = false;
+
     public DetailCard(int x, int y, int width, int height, @Nullable RecipeGraphNode node,
-                      FactoryPlan plan, boolean perHour,
+                      FactoryPlan plan, boolean perHour, boolean showNumbers,
                       BiConsumer<ResourceLocation, ResourceLocation> onAmbiguity,
+                      Runnable onToggleNumbers,
                       int initialScrollOffset, IntConsumer onScrollChange) {
         super(x, y, width, height, Component.literal("Detail Card"));
         this.node = node;
         this.plan = plan;
         this.perHour = perHour;
+        this.showNumbers = showNumbers;
         this.onAmbiguity = onAmbiguity;
+        this.onToggleNumbers = onToggleNumbers;
         this.scrollOffset = initialScrollOffset;
         this.onScrollChange = onScrollChange;
     }
@@ -91,6 +103,11 @@ public class DetailCard extends AbstractWidget {
         Minecraft fontSource = Minecraft.getInstance();
 
         isCycleBoxHovered = false;
+        cycleBoxW = 0;
+        cycleBoxH = 0;
+        isNumToggleHovered = false;
+        numToggleBoxW = 0;
+        numToggleBoxH = 0;
 
         if (node == null) {
             // Summary Mode
@@ -115,18 +132,41 @@ public class DetailCard extends AbstractWidget {
                 currentY += 14;
             }
 
-            // Machines Needed
-            guiGraphics.drawString(fontSource.font, "Machines Needed:", getX() + 6, currentY, COLOUR_GREEN, false);
-            currentY += 10;
+            // Machines Needed Header + Toggle Pill
+            String header = "Machines Needed:";
+            guiGraphics.drawString(fontSource.font, header, getX() + 6, currentY + 1, COLOUR_GREEN, false);
+
+            String toggleText = showNumbers ? "# On" : "# Off";
+            int toggleTextW = fontSource.font.width(toggleText);
+            int headerWidth = fontSource.font.width(header);
+            numToggleBoxX = getX() + 6 + headerWidth + 6;
+            numToggleBoxY = currentY;
+            numToggleBoxW = toggleTextW + 6;
+            numToggleBoxH = 10;
+
+            isNumToggleHovered = mouseX >= numToggleBoxX && mouseX < numToggleBoxX + numToggleBoxW &&
+                                 mouseY >= numToggleBoxY && mouseY < numToggleBoxY + numToggleBoxH;
+
+            int pillBg = isNumToggleHovered ? COLOUR_CYCLE_HOVER : COLOUR_CYCLE_BOX;
+            guiGraphics.fill(numToggleBoxX, numToggleBoxY, numToggleBoxX + numToggleBoxW, numToggleBoxY + numToggleBoxH, pillBg);
+            guiGraphics.renderOutline(numToggleBoxX, numToggleBoxY, numToggleBoxW, numToggleBoxH, COLOUR_BORDER);
+            guiGraphics.drawString(fontSource.font, toggleText, numToggleBoxX + 3, numToggleBoxY + 1, COLOUR_TEXT, false);
+
+            currentY += 13;
             List<MachineRequirement> machines = plan.machines();
             if (machines.isEmpty()) {
                 guiGraphics.drawString(fontSource.font, " - None", getX() + 10, currentY, COLOUR_MUTED, false);
                 currentY += 10;
             } else {
                 for (MachineRequirement req : machines) {
-                    String machLine = req.totalEuPerTick() > 0
-                            ? String.format(" - %.1f x %s (%d EU/t)", req.count(), DisplayFormat.formatId(req.machineId()), req.totalEuPerTick())
-                            : String.format(" - %.1f x %s", req.count(), DisplayFormat.formatId(req.machineId()));
+                    String machLine;
+                    if (showNumbers) {
+                        machLine = req.totalEuPerTick() > 0
+                                ? String.format(" - %.1f x %s (%d EU/t)", req.count(), DisplayFormat.formatId(req.machineId()), req.totalEuPerTick())
+                                : String.format(" - %.1f x %s", req.count(), DisplayFormat.formatId(req.machineId()));
+                    } else {
+                        machLine = String.format(" - %s", DisplayFormat.formatId(req.machineId()));
+                    }
                     guiGraphics.drawString(fontSource.font, machLine, getX() + 10, currentY, COLOUR_TEXT, false);
                     currentY += 10;
                 }
@@ -309,6 +349,12 @@ public class DetailCard extends AbstractWidget {
         if (!visible || !active) return false;
         if (mouseX < getX() || mouseX >= getX() + getWidth() || mouseY < getY() || mouseY >= getY() + getHeight()) {
             return false;
+        }
+
+        if (button == 0 && node == null && isNumToggleHovered && onToggleNumbers != null) {
+            onToggleNumbers.run();
+            this.playDownSound(Minecraft.getInstance().getSoundManager());
+            return true;
         }
 
         if (node != null && !node.getAmbiguityOptions().isEmpty()) {

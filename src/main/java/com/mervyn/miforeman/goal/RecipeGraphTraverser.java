@@ -19,217 +19,75 @@ import java.util.*;
 
 public final class RecipeGraphTraverser {
 
-    private static class MachineStats {
+    public static FactoryPlan computePlan(Level level, ProductionGoal goal) {
+        RecipeGraph graph = computeRecipeGraph(level, goal);
+        return planFromGraph(graph);
+    }
+
+    /**
+     * Derives a {@link FactoryPlan} directly from a resolved {@link RecipeGraph}.
+     */
+    public static FactoryPlan planFromGraph(RecipeGraph graph) {
+        Map<ResourceLocation, MachineRequirementAccumulator> machineMap = new LinkedHashMap<>();
+        List<MaterialFlow> rawInputs = new ArrayList<>();
+        List<MaterialFlow> intermediateFlows = new ArrayList<>();
+        List<Ambiguity> ambiguities = new ArrayList<>();
+        Set<ResourceLocation> seenAmbiguityOwners = new HashSet<>();
+
+        for (RecipeGraphNode node : graph.nodes().values()) {
+            if (node.getType() == NodeType.MACHINE) {
+                ResourceLocation typeId = node.getMachineType();
+                if (typeId != null) {
+                    machineMap.computeIfAbsent(typeId, MachineRequirementAccumulator::new)
+                            .add(node.getMachineCount(), node.getBaseEuPerTick(), node.getTotalEuPerTick());
+                }
+            } else if (node.getType() == NodeType.RAW) {
+                rawInputs.add(new MaterialFlow(getItemOrFluidType(node.getId()), node.getId(), node.getRequiredRate()));
+            } else {
+                intermediateFlows.add(new MaterialFlow(getItemOrFluidType(node.getId()), node.getId(), node.getRequiredRate()));
+            }
+
+            if (node.getType() != NodeType.MACHINE && node.getAmbiguityOptions().size() > 1) {
+                ResourceLocation ownerId = node.getAmbiguityOwnerId() != null ? node.getAmbiguityOwnerId() : node.getId();
+                if (seenAmbiguityOwners.add(ownerId)) {
+                    ambiguities.add(new Ambiguity(ownerId, node.getAmbiguityOptions()));
+                }
+            }
+        }
+
+        List<MachineRequirement> machines = machineMap.values().stream()
+                .map(MachineRequirementAccumulator::toRequirement)
+                .toList();
+
+        return new FactoryPlan(machines, rawInputs, intermediateFlows, ambiguities, graph);
+    }
+
+    private static class MachineRequirementAccumulator {
+        final ResourceLocation machineId;
         double count;
         long baseEu;
-        double totalEu;
+        long totalEu;
 
-        MachineStats(double count, long baseEu, double totalEu) {
-            this.count = count;
-            this.baseEu = baseEu;
-            this.totalEu = totalEu;
+        MachineRequirementAccumulator(ResourceLocation machineId) {
+            this.machineId = machineId;
+        }
+
+        void add(double machineCount, long baseEu, long totalEu) {
+            this.count += machineCount;
+            this.baseEu = Math.max(this.baseEu, baseEu);
+            this.totalEu += totalEu;
+        }
+
+        MachineRequirement toRequirement() {
+            return new MachineRequirement(machineId, count, baseEu, totalEu);
         }
     }
 
-    private static class SubPlan {
-        final Map<ResourceLocation, MachineStats> machineStats = new HashMap<>();
-        final Map<ResourceLocation, Double> rawInputs = new HashMap<>();
-        final Map<ResourceLocation, Double> intermediates = new HashMap<>();
-        final Map<ResourceLocation, List<ResourceLocation>> ambiguities = new LinkedHashMap<>();
-    }
-
-    public static FactoryPlan computePlan(Level level, ProductionGoal goal) {
-        RecipeManager recipeManager = level.getRecipeManager();
-
-        // Index all machine recipes by item and fluid outputs
-        Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> itemRecipes = new HashMap<>();
-        Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> fluidRecipes = new HashMap<>();
-        indexMachineRecipes(level, recipeManager, itemRecipes, fluidRecipes);
-
-        Map<ResourceLocation, SubPlan> memo = new HashMap<>();
-        Set<ResourceLocation> visited = new HashSet<>();
-
-        SubPlan mainPlan = getSubPlan(
-                recipeManager,
-                itemRecipes,
-                fluidRecipes,
-                goal.type(),
-                goal.targetId(),
-                goal.recipeSelections(),
-                visited,
-                memo);
-
-        // Scale the entire plan by the desired target rate
-        double desiredRate = goal.rate();
-
-        List<MachineRequirement> machinesList = mainPlan.machineStats.entrySet().stream()
-                .map(e -> new MachineRequirement(
-                        e.getKey(),
-                        e.getValue().count * desiredRate,
-                        e.getValue().baseEu,
-                        (long) Math.ceil(e.getValue().totalEu * desiredRate)
-                ))
-                .toList();
-
-        List<MaterialFlow> rawInputsList = mainPlan.rawInputs.entrySet().stream()
-                .map(e -> new MaterialFlow(
-                        getItemOrFluidType(e.getKey()),
-                        e.getKey(),
-                        e.getValue() * desiredRate))
-                .toList();
-
-        List<MaterialFlow> intermediatesList = mainPlan.intermediates.entrySet().stream()
-                .map(e -> new MaterialFlow(
-                        getItemOrFluidType(e.getKey()),
-                        e.getKey(),
-                        e.getValue() * desiredRate))
-                .toList();
-
-        List<Ambiguity> ambiguitiesList = mainPlan.ambiguities.entrySet().stream()
-                .map(e -> new Ambiguity(e.getKey(), e.getValue()))
-                .toList();
-
-        return new FactoryPlan(machinesList, rawInputsList, intermediatesList, ambiguitiesList);
-    }
-
-    private static TargetType getItemOrFluidType(ResourceLocation id) {
+    public static TargetType getItemOrFluidType(ResourceLocation id) {
         if (BuiltInRegistries.FLUID.containsKey(id)) {
             return TargetType.FLUID;
         }
         return TargetType.ITEM;
-    }
-
-    private static SubPlan getSubPlan(
-            RecipeManager recipeManager,
-            Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> itemRecipes,
-            Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> fluidRecipes,
-            TargetType type,
-            ResourceLocation resourceId,
-            Map<ResourceLocation, ResourceLocation> selections,
-            Set<ResourceLocation> visited,
-            Map<ResourceLocation, SubPlan> memo) {
-        if (memo.containsKey(resourceId)) {
-            return memo.get(resourceId);
-        }
-
-        SubPlan plan = new SubPlan();
-        if (visited.contains(resourceId)) {
-            // Cycle detected: return empty plan to prevent infinite recursion
-            return plan;
-        }
-
-        visited.add(resourceId);
-
-        List<RecipeHolder<MachineRecipe>> candidates = type == TargetType.ITEM
-                ? itemRecipes.getOrDefault(resourceId, Collections.emptyList())
-                : fluidRecipes.getOrDefault(resourceId, Collections.emptyList());
-
-        if (candidates.isEmpty()) {
-            // Raw input
-            plan.rawInputs.put(resourceId, 1.0);
-            visited.remove(resourceId);
-            memo.put(resourceId, plan);
-            return plan;
-        }
-
-        // Add itself to intermediates
-        plan.intermediates.put(resourceId, 1.0);
-
-        // Resolve chosen recipe
-        RecipeHolder<MachineRecipe> chosenHolder = null;
-        if (candidates.size() > 1) {
-            ResourceLocation selectedRecipeId = selections.get(resourceId);
-            if (selectedRecipeId != null) {
-                for (var candidate : candidates) {
-                    if (candidate.id().equals(selectedRecipeId)) {
-                        chosenHolder = candidate;
-                        break;
-                    }
-                }
-            }
-
-            List<ResourceLocation> recipeIds = candidates.stream().map(RecipeHolder::id).toList();
-            plan.ambiguities.put(resourceId, recipeIds);
-        }
-
-        if (chosenHolder == null) {
-            chosenHolder = candidates.get(0);
-        }
-
-        MachineRecipe chosenRecipe = chosenHolder.value();
-        double outputAmount = 0.0;
-        double outputProbability = 1.0;
-
-        if (type == TargetType.ITEM) {
-            for (var output : chosenRecipe.itemOutputs) {
-                if (BuiltInRegistries.ITEM.getKey(output.variant().getItem()).equals(resourceId)) {
-                    outputAmount = output.amount();
-                    outputProbability = output.probability();
-                    break;
-                }
-            }
-        } else if (type == TargetType.FLUID) {
-            for (var output : chosenRecipe.fluidOutputs) {
-                if (BuiltInRegistries.FLUID.getKey(output.fluid()).equals(resourceId)) {
-                    outputAmount = output.amount();
-                    outputProbability = output.probability();
-                    break;
-                }
-            }
-        }
-
-        if (outputAmount <= 0.0 || outputProbability <= 0.0) {
-            visited.remove(resourceId);
-            return plan;
-        }
-
-        // Calculations for 1.0 units of resourceId
-        double runsPerSecond = 1.0 / (outputAmount * outputProbability);
-        double machineCount = (runsPerSecond * chosenRecipe.duration) / 20.0;
-        long baseEu = chosenRecipe.eu;
-        double nodeEu = machineCount * baseEu;
-
-        ResourceLocation machineId = BuiltInRegistries.RECIPE_TYPE.getKey(chosenRecipe.getType());
-        plan.machineStats.merge(machineId, new MachineStats(machineCount, baseEu, nodeEu), (oldStats, newStats) ->
-                new MachineStats(oldStats.count + newStats.count, Math.max(oldStats.baseEu, newStats.baseEu), oldStats.totalEu + newStats.totalEu)
-        );
-
-        // Recurse into item inputs
-        for (var input : chosenRecipe.itemInputs) {
-            List<Item> inputItems = input.getInputItems();
-            if (!inputItems.isEmpty()) {
-                Item firstItem = inputItems.get(0);
-                ResourceLocation inputItemId = BuiltInRegistries.ITEM.getKey(firstItem);
-                double neededInputRate = runsPerSecond * input.amount() * input.probability();
-
-                SubPlan sub = getSubPlan(
-                        recipeManager,
-                        itemRecipes,
-                        fluidRecipes,
-                        TargetType.ITEM,
-                        inputItemId,
-                        selections,
-                        visited,
-                        memo);
-                mergeScaled(plan, sub, neededInputRate);
-            }
-        }
-
-        // Treat fluid inputs as raw inputs directly (do not recursively traverse them)
-        for (var input : chosenRecipe.fluidInputs) {
-            List<Fluid> inputFluids = input.getInputFluids();
-            if (!inputFluids.isEmpty()) {
-                Fluid firstFluid = inputFluids.get(0);
-                ResourceLocation inputFluidId = BuiltInRegistries.FLUID.getKey(firstFluid);
-                double neededInputRate = runsPerSecond * input.amount() * input.probability();
-
-                plan.rawInputs.merge(inputFluidId, neededInputRate, Double::sum);
-            }
-        }
-
-        visited.remove(resourceId);
-        memo.put(resourceId, plan);
-        return plan;
     }
 
     /**
@@ -327,24 +185,6 @@ public final class RecipeGraphTraverser {
         return byType;
     }
 
-    private static void mergeScaled(SubPlan target, SubPlan source, double scale) {
-        for (var entry : source.machineStats.entrySet()) {
-            MachineStats s = entry.getValue();
-            target.machineStats.merge(entry.getKey(),
-                    new MachineStats(s.count * scale, s.baseEu, s.totalEu * scale),
-                    (oldStats, newStats) -> new MachineStats(oldStats.count + newStats.count, Math.max(oldStats.baseEu, newStats.baseEu), oldStats.totalEu + newStats.totalEu)
-            );
-        }
-        for (var entry : source.rawInputs.entrySet()) {
-            target.rawInputs.merge(entry.getKey(), entry.getValue() * scale, Double::sum);
-        }
-        for (var entry : source.intermediates.entrySet()) {
-            target.intermediates.merge(entry.getKey(), entry.getValue() * scale, Double::sum);
-        }
-        for (var entry : source.ambiguities.entrySet()) {
-            target.ambiguities.put(entry.getKey(), entry.getValue());
-        }
-    }
 
     private record GraphCacheKey(
             TargetType type,
@@ -565,11 +405,14 @@ public final class RecipeGraphTraverser {
             Map<ResourceLocation, RecipeGraphNode> nodes,
             Map<EdgeKey, GraphEdge> edges) {
 
-        // Step 1: Discover reachable subgraph and acyclic edges (breaking cycles via visited stack)
+        // Step 1: Discover reachable subgraph and acyclic edges (breaking cycles via an
+        // onStack/done two-color DFS -- see collectDag's own doc comment for why both sets
+        // are required, not just onStack).
         Map<ResourceLocation, Set<ResourceLocation>> forwardEdges = new HashMap<>();
         Map<ResourceLocation, Integer> inDegree = new HashMap<>();
-        Set<ResourceLocation> visited = new HashSet<>();
-        collectDag(rootId, structNodes, forwardEdges, inDegree, visited);
+        Set<ResourceLocation> onStack = new HashSet<>();
+        Set<ResourceLocation> done = new HashSet<>();
+        collectDag(rootId, structNodes, forwardEdges, inDegree, onStack, done);
 
         // Step 2: Kahn's algorithm over the guaranteed DAG
         Map<ResourceLocation, Double> totalRate = new HashMap<>();
@@ -612,22 +455,48 @@ public final class RecipeGraphTraverser {
         }
     }
 
+    /**
+     * Standard white/gray/black DFS cycle detection over the (already fully-resolved)
+     * {@code structNodes} graph. {@code onStack} is the gray set -- the current recursion
+     * path -- so an edge into an onStack node is a genuine back-edge (a real structural
+     * cycle, e.g. many MI ingot/nugget or plate/gear pairs each independently choosing the
+     * other as their default producer) and gets dropped, exactly like resolveStructure's
+     * own cycle guard.
+     * <p>
+     * {@code done} is the black set: resourceIds whose entire subtree has already been
+     * walked to completion via some earlier parent. Without it, a resourceId shared by many
+     * ancestors (i.e. almost every common material, since this graph is diamond-heavy, not
+     * tree-shaped) gets re-descended into from scratch by every single parent that reaches
+     * it, and each of those redundant re-walks re-runs the cycle check against whatever
+     * unrelated ancestors happen to be on the CURRENT branch's stack -- so the same edge can
+     * be kept on one re-walk and spuriously dropped on another, and the total work is
+     * combinatorial in the number of shared paths rather than linear in graph size. (Measured
+     * on quantum_upgrade: ~150k redundant cycle-checks across just 63 distinct edges before
+     * this fix, several minutes of wall time instead of low single-digit seconds.) Checking
+     * {@code done} up front makes every node's forwardEdges/inDegree contribution final the
+     * first time it's computed -- later parents just link to it without re-deriving anything,
+     * which is also what resolveStructure's memo-before-cycle-check ordering already gives
+     * {@code getSubPlan}/{@code computePlan} for free.
+     */
     private static void collectDag(
             ResourceLocation curr,
             Map<ResourceLocation, StructuralNode> structNodes,
             Map<ResourceLocation, Set<ResourceLocation>> forwardEdges,
             Map<ResourceLocation, Integer> inDegree,
-            Set<ResourceLocation> visited) {
+            Set<ResourceLocation> onStack,
+            Set<ResourceLocation> done) {
+
+        if (done.contains(curr)) return;
 
         StructuralNode node = structNodes.get(curr);
         if (node == null) return;
 
-        visited.add(curr);
+        onStack.add(curr);
         for (StructInputEdge edge : node.itemInputs()) {
             ResourceLocation child = edge.childId();
             if (!structNodes.containsKey(child)) continue;
 
-            if (visited.contains(child)) {
+            if (onStack.contains(child)) {
                 // Cycle detected: ignore this back-edge in DAG
                 continue;
             }
@@ -636,9 +505,10 @@ public final class RecipeGraphTraverser {
                 inDegree.merge(child, 1, Integer::sum);
             }
 
-            collectDag(child, structNodes, forwardEdges, inDegree, visited);
+            collectDag(child, structNodes, forwardEdges, inDegree, onStack, done);
         }
-        visited.remove(curr);
+        onStack.remove(curr);
+        done.add(curr);
     }
 
     private static void finalizeResourceNode(

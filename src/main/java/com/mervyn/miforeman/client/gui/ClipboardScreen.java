@@ -32,8 +32,10 @@ import java.util.*;
 
 public class ClipboardScreen extends Screen {
     // --- Layout Constants ---
-    // The wizard fills the window down to ClipboardChrome.SCREEN_MARGIN on each side, never
-    // shrinking below the original MIN_GUI_WIDTH/MIN_GUI_HEIGHT design size on tiny windows.
+    // The wizard fills the window down to ClipboardChrome.SCREEN_MARGIN on each
+    // side, never
+    // shrinking below the original MIN_GUI_WIDTH/MIN_GUI_HEIGHT design size on tiny
+    // windows.
     // Widened/flattened from the old 380x280 so the board reads as a landscape
     // clipboard rather than a stretched portrait one.
     private static final int MIN_GUI_WIDTH = 440;
@@ -41,7 +43,8 @@ public class ClipboardScreen extends Screen {
     private static final int PADDING = 8;
     private static final int FIELD_HEIGHT = 14;
 
-    // --- "From EMI" button, shown next to the target-ID field only when EmiCompat.isLoaded() ---
+    // --- "From EMI" button, shown next to the target-ID field only when
+    // EmiCompat.isLoaded() ---
     private static final int EMI_PICK_BUTTON_WIDTH = 70;
     private static final int EMI_PICK_BUTTON_GAP = 4;
 
@@ -79,8 +82,9 @@ public class ClipboardScreen extends Screen {
     private float cameraZoom;
     private int detailScrollOffset = 0;
     private boolean detailCardCollapsed;
-    private boolean showMachineNodes;
+    private com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode graphViewMode;
     private boolean graphDragEnabled;
+    private boolean showMachineNumbers;
     private Button toggleDetailButton;
     private Button toggleMachineViewButton;
     private Button toggleDragModeButton;
@@ -93,7 +97,10 @@ public class ClipboardScreen extends Screen {
     private boolean isMinimized;
     private Button toggleModeButton;
 
-    /** Goal state at screen opening. Used by {@link #init()} to determine initial wizard step. */
+    /**
+     * Goal state at screen opening. Used by {@link #init()} to determine initial
+     * wizard step.
+     */
     private final ProductionGoal openedGoal;
 
     /** The most recent goal state synchronized to the server. */
@@ -113,10 +120,11 @@ public class ClipboardScreen extends Screen {
         this.cameraX = ui.cameraX();
         this.cameraY = ui.cameraY();
         this.cameraZoom = ui.cameraZoom();
-        this.showMachineNodes = ui.showMachineNodes();
+        this.graphViewMode = ui.graphViewMode();
         this.graphDragEnabled = ui.graphDragEnabled();
         this.detailCardCollapsed = ui.detailCardCollapsed();
         this.isMinimized = ui.isMinimized();
+        this.showMachineNumbers = ui.showMachineNumbers();
     }
 
     @Override
@@ -124,11 +132,13 @@ public class ClipboardScreen extends Screen {
         super.removed();
         ClipboardUiState snapshot = new ClipboardUiState(
                 currentStep, cameraX, cameraY, cameraZoom,
-                showMachineNodes, graphDragEnabled, detailCardCollapsed, isMinimized
-        );
-        // goalDraft.graphLayout tracks node drags live (see the onLayoutChange callback in
-        // buildStepReviewPlan) but is otherwise only sent to the server via an explicit save
-        // action -- layer it on here too so a drag survives a plain close, same as the ui state.
+                graphViewMode, graphDragEnabled, detailCardCollapsed, isMinimized, showMachineNumbers);
+        // goalDraft.graphLayout tracks node drags live (see the onLayoutChange callback
+        // in
+        // buildStepReviewPlan) but is otherwise only sent to the server via an explicit
+        // save
+        // action -- layer it on here too so a drag survives a plain close, same as the
+        // ui state.
         ClipboardCloseSync.computeCloseSyncGoal(lastSyncedGoal, snapshot, goalDraft.graphLayout)
                 .ifPresent(toPersist -> new GoalUpdatePayload(toPersist).sendToServer());
     }
@@ -148,7 +158,8 @@ public class ClipboardScreen extends Screen {
             this.currentStep = hasExistingGoal
                     ? Math.max(STEP_DEFINE_GOAL, Math.min(STEP_MONITOR, openedGoal.uiState().lastStep()))
                     : STEP_DEFINE_GOAL;
-            // FactoryPlan.graph is deliberately excluded from FactoryPlan.CODEC/STREAM_CODEC
+            // FactoryPlan.graph is deliberately excluded from
+            // FactoryPlan.CODEC/STREAM_CODEC
             // (see ProductionGoal.java), so a plan loaded from a saved goal always decodes
             // with graph == null even though currentPlan itself is non-null. Recompute
             // whenever the graph is missing, not just when the whole plan is, or
@@ -171,12 +182,11 @@ public class ClipboardScreen extends Screen {
         int top = (this.height - guiHeight) / 2;
 
         toggleModeButton = new ClipboardButton(left + guiWidth - 54, top + 8, 46, 14,
-            Component.literal(this.isMinimized ? "Edit" : "View"),
-            b -> {
-                this.isMinimized = !this.isMinimized;
-                rebuildStep(this.currentStep);
-            }
-        );
+                Component.literal(this.isMinimized ? "Edit" : "View"),
+                b -> {
+                    this.isMinimized = !this.isMinimized;
+                    rebuildStep(this.currentStep);
+                });
         this.addRenderableWidget(toggleModeButton);
 
         Button coloursButton = new ClipboardButton(left + guiWidth - 54 - 54, top + 8, 50, 14,
@@ -204,7 +214,8 @@ public class ClipboardScreen extends Screen {
 
         int y = contentY + 16;
 
-        EditBox nameField = new EditBox(this.font, contentX, y + 10, contentW, FIELD_HEIGHT, Component.literal("Goal Name"));
+        EditBox nameField = new EditBox(this.font, contentX, y + 10, contentW, FIELD_HEIGHT,
+                Component.literal("Goal Name"));
         nameField.setMaxLength(64);
         nameField.setValue(this.goalDraft.goalName == null ? "" : this.goalDraft.goalName);
         nameField.setResponder(val -> {
@@ -216,7 +227,8 @@ public class ClipboardScreen extends Screen {
 
         Button typeButton = new ClipboardButton(contentX, y + 10, 55, FIELD_HEIGHT,
                 Component.literal(this.goalDraft.targetType.name()), b -> {
-                    this.goalDraft.targetType = this.goalDraft.targetType == TargetType.ITEM ? TargetType.FLUID : TargetType.ITEM;
+                    this.goalDraft.targetType = this.goalDraft.targetType == TargetType.ITEM ? TargetType.FLUID
+                            : TargetType.ITEM;
                     b.setMessage(Component.literal(this.goalDraft.targetType.name()));
                     revalidateDefineGoal();
                 });
@@ -226,7 +238,8 @@ public class ClipboardScreen extends Screen {
         int emiButtonWidth = emiLoaded ? EMI_PICK_BUTTON_WIDTH + EMI_PICK_BUTTON_GAP : 0;
 
         int targetIdWidth = contentW - 60 - emiButtonWidth;
-        EditBox targetIdField = new EditBox(this.font, contentX + 60, y + 10, targetIdWidth, FIELD_HEIGHT, Component.literal("Target ID"));
+        EditBox targetIdField = new EditBox(this.font, contentX + 60, y + 10, targetIdWidth, FIELD_HEIGHT,
+                Component.literal("Target ID"));
         targetIdField.setMaxLength(256);
         targetIdField.setValue(this.goalDraft.targetIdStr == null ? "" : this.goalDraft.targetIdStr);
         targetIdField.setResponder(val -> {
@@ -243,7 +256,8 @@ public class ClipboardScreen extends Screen {
         }
         y += 10 + FIELD_HEIGHT + 8;
 
-        EditBox rateField = new EditBox(this.font, contentX, y + 10, contentW - 80, FIELD_HEIGHT, Component.literal("Rate"));
+        EditBox rateField = new EditBox(this.font, contentX, y + 10, contentW - 80, FIELD_HEIGHT,
+                Component.literal("Rate"));
         rateField.setValue(String.valueOf(this.goalDraft.rate));
         rateField.setResponder(val -> {
             try {
@@ -264,7 +278,8 @@ public class ClipboardScreen extends Screen {
         this.addRenderableWidget(unitButton);
         y += 10 + FIELD_HEIGHT + 8;
 
-        EditBox thresholdField = new EditBox(this.font, contentX, y + 10, contentW, FIELD_HEIGHT, Component.literal("Threshold"));
+        EditBox thresholdField = new EditBox(this.font, contentX, y + 10, contentW, FIELD_HEIGHT,
+                Component.literal("Threshold"));
         thresholdField.setValue(String.valueOf((int) (this.goalDraft.threshold * 100)));
         thresholdField.setResponder(val -> {
             try {
@@ -279,36 +294,40 @@ public class ClipboardScreen extends Screen {
 
         int btnY = top + guiHeight() - PADDING - ClipboardChrome.MAIN_BORDER - 22;
 
-        Button cancelButton = new ClipboardButton(contentX, btnY, 80, 16, Component.literal("Cancel"), b -> this.onClose());
+        Button cancelButton = new ClipboardButton(contentX, btnY, 80, 16, Component.literal("Cancel"),
+                b -> this.onClose());
         this.addRenderableWidget(cancelButton);
 
-        defineNextButton = new ClipboardButton(contentX + contentW - 80, btnY, 80, 16, Component.literal("Next ->"), b -> {
-            GoalFormResult result = new GoalFormResult(
-                    this.goalDraft.goalName, this.goalDraft.targetType, this.goalDraft.targetIdStr,
-                    this.goalDraft.rate, this.goalDraft.perHour, this.goalDraft.threshold);
-            this.goalDraft.applyFormResult(result);
-            computePlan();
-            if (this.goalDraft.errorMessage == null && this.goalDraft.currentPlan != null) {
-                this.selectedNodeId = null;
-                goToStep(STEP_REVIEW_PLAN);
-            } else {
-                String serverError = this.goalDraft.errorMessage;
-                rebuildStep(STEP_DEFINE_GOAL);
-                if (serverError != null) {
-                    this.goalDraft.errorMessage = serverError;
-                    defineNextButton.active = false;
-                }
-            }
-        });
+        defineNextButton = new ClipboardButton(contentX + contentW - 80, btnY, 80, 16, Component.literal("Next ->"),
+                b -> {
+                    GoalFormResult result = new GoalFormResult(
+                            this.goalDraft.goalName, this.goalDraft.targetType, this.goalDraft.targetIdStr,
+                            this.goalDraft.rate, this.goalDraft.perHour, this.goalDraft.threshold);
+                    this.goalDraft.applyFormResult(result);
+                    computePlan();
+                    if (this.goalDraft.errorMessage == null && this.goalDraft.currentPlan != null) {
+                        this.selectedNodeId = null;
+                        goToStep(STEP_REVIEW_PLAN);
+                    } else {
+                        String serverError = this.goalDraft.errorMessage;
+                        rebuildStep(STEP_DEFINE_GOAL);
+                        if (serverError != null) {
+                            this.goalDraft.errorMessage = serverError;
+                            defineNextButton.active = false;
+                        }
+                    }
+                });
         this.addRenderableWidget(defineNextButton);
 
         revalidateDefineGoal();
     }
 
     /**
-     * Applies a stack dragged onto {@link EmiTargetPickerScreen} as the goal target, the same as
+     * Applies a stack dragged onto {@link EmiTargetPickerScreen} as the goal
+     * target, the same as
      * typing an ID by hand. Public so that screen (and, transitively, {@code
-     * com.mervyn.miforeman.compat.emi}) can call back into this one without it needing to import
+     * com.mervyn.miforeman.compat.emi}) can call back into this one without it
+     * needing to import
      * anything from {@code dev.emi} itself.
      */
     public void applyDroppedTarget(TargetType type, String idStr) {
@@ -317,7 +336,10 @@ public class ClipboardScreen extends Screen {
         rebuildStep(STEP_DEFINE_GOAL);
     }
 
-    /** Client-side revalidation of the Define Goal form, run on every field/toggle change. */
+    /**
+     * Client-side revalidation of the Define Goal form, run on every field/toggle
+     * change.
+     */
     private void revalidateDefineGoal() {
         Optional<String> error = GoalFormValidation.validateGoalInputs(
                 this.goalDraft.goalName, this.goalDraft.targetIdStr, this.goalDraft.targetType,
@@ -341,9 +363,11 @@ public class ClipboardScreen extends Screen {
         int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
         int contentW = guiWidth() - (PADDING + ClipboardChrome.MAIN_BORDER) * 2 - 4;
 
-        // Top-down layout, derived from actual row heights rather than hardcoded offsets that can
-        // drift out of sync (title/button-row and button-row/canvas overlaps both traced back to
-        // exactly that -- see .claude/plans/3-things-define-goal-flickering-starlight.md).
+        // Top-down layout, derived from actual row heights rather than hardcoded
+        // offsets that can
+        // drift out of sync (title/button-row and button-row/canvas overlaps both
+        // traced back to
+        // exactly that.)
         int titleRowHeight = 16; // matches the "+16" gap already used after the title in renderStepMonitor
         int topButtonRowHeight = 12;
         int rowGap = 4;
@@ -368,41 +392,53 @@ public class ClipboardScreen extends Screen {
                     },
                     layout -> {
                         this.goalDraft.graphLayout = layout;
-                        if (undoLayoutButton != null) undoLayoutButton.active = graphCanvas.canUndo();
-                        if (redoLayoutButton != null) redoLayoutButton.active = graphCanvas.canRedo();
+                        if (undoLayoutButton != null)
+                            undoLayoutButton.active = graphCanvas.canUndo();
+                        if (redoLayoutButton != null)
+                            redoLayoutButton.active = graphCanvas.canRedo();
                     },
                     (panX, panY, zoomLevel) -> {
                         this.cameraX = panX;
                         this.cameraY = panY;
                         this.cameraZoom = zoomLevel;
                     },
-                    showMachineNodes,
-                    graphDragEnabled
-            );
+                    graphViewMode,
+                    graphDragEnabled);
             this.addRenderableWidget(graphCanvas);
 
             if (!detailCardCollapsed) {
-                RecipeGraphNode selectedNode = selectedNodeId != null ? this.goalDraft.currentPlan.graph().node(selectedNodeId) : null;
-                detailCard = new DetailCard(contentX + canvasWidth + 6, canvasY, detailWidth, contentH, selectedNode, this.goalDraft.currentPlan, this.goalDraft.perHour, (resId, choiceRecipeId) -> {
-                    this.goalDraft.recipeSelections.put(resId, choiceRecipeId);
-                    // A MACHINE node's own id IS its recipe id, so cycling the recipe of the
-                    // currently-selected machine node makes that id vanish from the rebuilt graph.
-                    // Look the node up live by selectedNodeId (not a captured local -- GraphCanvas's
-                    // onSelect only calls detailCard.setNode(), it doesn't rebuild this step, so a
-                    // closed-over node reference here can be stale) and follow the selection onto
-                    // the newly-chosen recipe's node instead of losing it.
-                    RecipeGraphNode cyclingNode = selectedNodeId != null && this.goalDraft.currentPlan != null && this.goalDraft.currentPlan.graph() != null
-                            ? this.goalDraft.currentPlan.graph().node(selectedNodeId)
-                            : null;
-                    boolean cyclingSelectedMachine = cyclingNode != null && cyclingNode.getType() == NodeType.MACHINE;
-                    computePlan();
-                    if (this.goalDraft.currentPlan != null && selectedNodeId != null && this.goalDraft.currentPlan.graph().node(selectedNodeId) == null) {
-                        selectedNodeId = cyclingSelectedMachine && this.goalDraft.currentPlan.graph().node(choiceRecipeId) != null
-                                ? choiceRecipeId
-                                : null;
-                    }
-                    rebuildStep(STEP_REVIEW_PLAN);
-                }, detailScrollOffset, v -> this.detailScrollOffset = v);
+                RecipeGraphNode selectedNode = selectedNodeId != null
+                        ? this.goalDraft.currentPlan.graph().node(selectedNodeId)
+                        : null;
+                detailCard = new DetailCard(contentX + canvasWidth + 6, canvasY, detailWidth, contentH, selectedNode,
+                        this.goalDraft.currentPlan, this.goalDraft.perHour, showMachineNumbers, (resId, choiceRecipeId) -> {
+                            this.goalDraft.recipeSelections.put(resId, choiceRecipeId);
+                            // A MACHINE node's own id IS its recipe id, so cycling the recipe of the
+                            // currently-selected machine node makes that id vanish from the rebuilt graph.
+                            // Look the node up live by selectedNodeId (not a captured local --
+                            // GraphCanvas's
+                            // onSelect only calls detailCard.setNode(), it doesn't rebuild this step, so a
+                            // closed-over node reference here can be stale) and follow the selection onto
+                            // the newly-chosen recipe's node instead of losing it.
+                            RecipeGraphNode cyclingNode = selectedNodeId != null && this.goalDraft.currentPlan != null
+                                    && this.goalDraft.currentPlan.graph() != null
+                                            ? this.goalDraft.currentPlan.graph().node(selectedNodeId)
+                                            : null;
+                            boolean cyclingSelectedMachine = cyclingNode != null
+                                    && cyclingNode.getType() == NodeType.MACHINE;
+                            computePlan();
+                            if (this.goalDraft.currentPlan != null && selectedNodeId != null
+                                    && this.goalDraft.currentPlan.graph().node(selectedNodeId) == null) {
+                                selectedNodeId = cyclingSelectedMachine
+                                        && this.goalDraft.currentPlan.graph().node(choiceRecipeId) != null
+                                                ? choiceRecipeId
+                                                : null;
+                            }
+                            rebuildStep(STEP_REVIEW_PLAN);
+                        }, () -> {
+                            this.showMachineNumbers = !this.showMachineNumbers;
+                            rebuildStep(STEP_REVIEW_PLAN);
+                        }, detailScrollOffset, v -> this.detailScrollOffset = v);
                 this.addRenderableWidget(detailCard);
             } else {
                 detailCard = null;
@@ -430,21 +466,32 @@ public class ClipboardScreen extends Screen {
                     Component.literal("Reset"), b -> graphCanvas.resetLayout());
             this.addRenderableWidget(resetLayoutButton);
 
+            String viewLabel = switch (graphViewMode) {
+                case ALL -> "View: All";
+                case ITEMS_ONLY -> "View: Items";
+                case MACHINES_ONLY -> "View: Machines";
+            };
             toggleMachineViewButton = new ClipboardButton(contentX + 132, topButtonRowY, 86, 12,
-                    Component.literal(showMachineNodes ? "Items Only" : "Show Machines"),
+                    Component.literal(viewLabel),
                     b -> {
-                        showMachineNodes = !showMachineNodes;
-                        // The canvas can no longer highlight a now-hidden machine node -- clear
+                        graphViewMode = graphViewMode.next();
+                        // The canvas can no longer highlight a now-hidden node -- clear
                         // the selection so DetailCard doesn't keep showing stale details for it.
-                        if (!showMachineNodes && selectedNodeId != null) {
+                        if (selectedNodeId != null && this.goalDraft.currentPlan != null
+                                && this.goalDraft.currentPlan.graph() != null) {
                             RecipeGraphNode selected = this.goalDraft.currentPlan.graph().node(selectedNodeId);
-                            if (selected != null && selected.getType() == NodeType.MACHINE) {
-                                selectedNodeId = null;
+                            if (selected != null) {
+                                if (graphViewMode == com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.ITEMS_ONLY
+                                        && selected.getType() == NodeType.MACHINE) {
+                                    selectedNodeId = null;
+                                } else if (graphViewMode == com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.MACHINES_ONLY
+                                        && selected.getType() != NodeType.MACHINE) {
+                                    selectedNodeId = null;
+                                }
                             }
                         }
                         rebuildStep(STEP_REVIEW_PLAN);
-                    }
-            );
+                    });
             this.addRenderableWidget(toggleMachineViewButton);
 
             toggleDragModeButton = new ClipboardButton(contentX + 222, topButtonRowY, 86, 12,
@@ -452,8 +499,7 @@ public class ClipboardScreen extends Screen {
                     b -> {
                         graphDragEnabled = !graphDragEnabled;
                         rebuildStep(STEP_REVIEW_PLAN);
-                    }
-            );
+                    });
             this.addRenderableWidget(toggleDragModeButton);
         }
 
@@ -463,9 +509,9 @@ public class ClipboardScreen extends Screen {
 
         nextButton = new ClipboardButton(contentX + contentW - 110, btnY, 110, 16,
                 Component.literal("Save & Monitor"), b -> {
-            save();
-            goToStep(STEP_MONITOR);
-        });
+                    save();
+                    goToStep(STEP_MONITOR);
+                });
         this.addRenderableWidget(nextButton);
     }
 
@@ -497,15 +543,13 @@ public class ClipboardScreen extends Screen {
         Button reviewButton = new ClipboardButton(contentX, contentY + 46, halfW, 16,
                 Component.literal("Review Machines (" + rows.size() + ")"),
                 b -> Minecraft.getInstance().setScreen(new ReviewMachinesScreen(
-                        monitoringState, this::onMonitoringStateChanged, this))
-        );
+                        monitoringState, this::onMonitoringStateChanged, this)));
         this.addRenderableWidget(reviewButton);
 
         Button monitoringButton = new ClipboardButton(contentX + halfW + 6, contentY + 46, halfW, 16,
                 Component.literal("View Monitoring (" + monitoringState.liveData.size() + ")"),
                 b -> Minecraft.getInstance().setScreen(new MonitoringScreen(
-                        monitoringState, goalDraft.perHour, this))
-        );
+                        monitoringState, goalDraft.perHour, this)));
         this.addRenderableWidget(monitoringButton);
 
         int btnY = top + guiHeight() - PADDING - ClipboardChrome.MAIN_BORDER - 22;
@@ -520,22 +564,27 @@ public class ClipboardScreen extends Screen {
         new RequestMonitoringUpdatePayload().sendToServer();
     }
 
-    /** Wired into {@link MonitoringState}'s apply* mutators as the {@code onChange} callback --
-     *  matches what each of those methods did inline before the split. */
+    /**
+     * Wired into {@link MonitoringState}'s apply* mutators as the {@code onChange}
+     * callback --
+     * matches what each of those methods did inline before the split.
+     */
     private void onMonitoringStateChanged() {
         syncGoal();
         rebuildStep(STEP_MONITOR);
     }
 
     private void triggerScan() {
-        if (this.goalDraft.currentPlan == null) return;
+        if (this.goalDraft.currentPlan == null)
+            return;
         ProductionGoal goal = buildCurrentGoal();
         new ScanRequestPayload(goal).sendToServer();
     }
 
     public void updateScanResults(List<ScanResultPayload.Candidate> candidates) {
         monitoringState.setScanResults(candidates);
-        if (currentStep == STEP_MONITOR) rebuildStep(STEP_MONITOR);
+        if (currentStep == STEP_MONITOR)
+            rebuildStep(STEP_MONITOR);
     }
 
     private ProductionGoal buildCurrentGoal() {
@@ -544,7 +593,8 @@ public class ClipboardScreen extends Screen {
     }
 
     private void syncGoal() {
-        if (!goalDraft.isReadyToSave()) return;
+        if (!goalDraft.isReadyToSave())
+            return;
         lastSyncedGoal = buildCurrentGoal();
         new GoalUpdatePayload(lastSyncedGoal).sendToServer();
     }
@@ -562,7 +612,7 @@ public class ClipboardScreen extends Screen {
             int dx = startX + i * STEP_DOT_GAP;
             int dotColour = (i == currentStep) ? COLOUR_TITLE : COLOUR_MUTED;
             guiGraphics.fill(dx - STEP_DOT_RADIUS, dotY - STEP_DOT_RADIUS,
-                             dx + STEP_DOT_RADIUS, dotY + STEP_DOT_RADIUS, dotColour);
+                    dx + STEP_DOT_RADIUS, dotY + STEP_DOT_RADIUS, dotColour);
         }
     }
 
@@ -580,10 +630,14 @@ public class ClipboardScreen extends Screen {
 
     @Override
     public void renderBackground(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        // Deliberately no dimming/vignette here. renderTransparentBackground draws a full-window
-        // dark gradient (see vanilla Screen.renderTransparentBackground) -- the same darkening
-        // technique the pause/options menus use -- which read as "everything looks like the esc
-        // menu" rather than a lightweight tool held up over the still-visible game world.
+        // Deliberately no dimming/vignette here. renderTransparentBackground draws a
+        // full-window
+        // dark gradient (see vanilla Screen.renderTransparentBackground) -- the same
+        // darkening
+        // technique the pause/options menus use -- which read as "everything looks like
+        // the esc
+        // menu" rather than a lightweight tool held up over the still-visible game
+        // world.
     }
 
     @Override
@@ -621,20 +675,24 @@ public class ClipboardScreen extends Screen {
         int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
         int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
 
-        guiGraphics.drawString(this.font, Component.literal("Production Goal Summary"), contentX, contentY, COLOUR_TITLE);
+        guiGraphics.drawString(this.font, Component.literal("Production Goal Summary"), contentX, contentY,
+                COLOUR_TITLE);
 
         int currentY = contentY + 20;
 
         guiGraphics.drawString(this.font, Component.literal("Goal Name:"), contentX, currentY, COLOUR_LABEL, false);
-        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.goalName), contentX + 80, currentY, COLOUR_TEXT, false);
+        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.goalName), contentX + 80, currentY,
+                COLOUR_TEXT, false);
         currentY += 15;
 
         guiGraphics.drawString(this.font, Component.literal("Target ID:"), contentX, currentY, COLOUR_LABEL, false);
-        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.targetIdStr), contentX + 80, currentY, COLOUR_TEXT, false);
+        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.targetIdStr), contentX + 80, currentY,
+                COLOUR_TEXT, false);
         currentY += 15;
 
         guiGraphics.drawString(this.font, Component.literal("Target Type:"), contentX, currentY, COLOUR_LABEL, false);
-        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.targetType.name()), contentX + 80, currentY, COLOUR_TEXT, false);
+        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.targetType.name()), contentX + 80, currentY,
+                COLOUR_TEXT, false);
         currentY += 15;
 
         String rateStr = String.format("%.2f units/%s", this.goalDraft.rate, this.goalDraft.perHour ? "hour" : "min");
@@ -670,13 +728,16 @@ public class ClipboardScreen extends Screen {
         y += 10 + FIELD_HEIGHT + 8;
         guiGraphics.drawString(this.font, Component.literal("Target Type & ID"), contentX, y, COLOUR_LABEL, false);
         y += 10 + FIELD_HEIGHT + 8;
-        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.perHour ? "Rate (units/hour)" : "Rate (units/min)"), contentX, y, COLOUR_LABEL, false);
+        guiGraphics.drawString(this.font,
+                Component.literal(this.goalDraft.perHour ? "Rate (units/hour)" : "Rate (units/min)"), contentX, y,
+                COLOUR_LABEL, false);
         y += 10 + FIELD_HEIGHT + 8;
         guiGraphics.drawString(this.font, Component.literal("Threshold (%)"), contentX, y, COLOUR_LABEL, false);
         y += 10 + FIELD_HEIGHT + 6;
 
         if (this.goalDraft.errorMessage != null) {
-            guiGraphics.drawString(this.font, Component.literal(this.goalDraft.errorMessage), contentX, y, COLOUR_ERROR, false);
+            guiGraphics.drawString(this.font, Component.literal(this.goalDraft.errorMessage), contentX, y, COLOUR_ERROR,
+                    false);
         }
     }
 
@@ -694,7 +755,8 @@ public class ClipboardScreen extends Screen {
 
         int currentY = contentY + 16;
         if (this.monitoringState.liveData.isEmpty()) {
-            guiGraphics.drawString(this.font, Component.literal(" - None linked yet"), contentX + 4, currentY, COLOUR_MUTED, false);
+            guiGraphics.drawString(this.font, Component.literal(" - None linked yet"), contentX + 4, currentY,
+                    COLOUR_MUTED, false);
             return;
         }
 
@@ -709,7 +771,8 @@ public class ClipboardScreen extends Screen {
             }
         }
 
-        // Counts lead with RED/ORANGE (what actually needs attention), not machine order.
+        // Counts lead with RED/ORANGE (what actually needs attention), not machine
+        // order.
         String prefix = this.monitoringState.liveData.size() + " machines: ";
         guiGraphics.drawString(this.font, Component.literal(prefix), contentX + 4, currentY, COLOUR_TEXT, false);
         int segX = contentX + 4 + this.font.width(prefix);
@@ -721,14 +784,16 @@ public class ClipboardScreen extends Screen {
     }
 
     private int drawStatusCount(GuiGraphics guiGraphics, int x, int y, int count, String label, int colour) {
-        if (count == 0) return x;
+        if (count == 0)
+            return x;
         String segment = count + " " + label + "  ";
         guiGraphics.drawString(this.font, Component.literal(segment), x, y, colour, false);
         return x + this.font.width(segment);
     }
 
     private void save() {
-        if (!goalDraft.isReadyToSave()) return;
+        if (!goalDraft.isReadyToSave())
+            return;
         lastSyncedGoal = buildCurrentGoal();
         new GoalUpdatePayload(lastSyncedGoal).sendToServer();
     }

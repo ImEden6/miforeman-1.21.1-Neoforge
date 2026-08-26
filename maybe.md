@@ -21,11 +21,10 @@ correctness fixes, feature ideas, and docs debt.
   overlap would help.
 
 ## Monitoring & correctness
-
-- **Consolidate `computePlan()` into `planFromGraph()`** — Now that the traversal discrepancy
-  has been resolved (Kahn's algorithm cycle deadlocks fixed via reachable acyclic `collectDag` and
-  PVC rate reconciled at 28000.0/s), derive `computePlan()` directly from `computeRecipeGraph()`'s
-  resolved nodes to unify the pipeline into a single source of truth.
+ 
+- [x] **Consolidate `computePlan()` into `planFromGraph()`** — Derived `computePlan()` directly
+  from `computeRecipeGraph()`'s resolved nodes (`planFromGraph()`), eliminating `SubPlan`,
+  `MachineStats`, `getSubPlan`, and `mergeScaled` into a unified single source of truth.
 
 ## Feature ideas
 
@@ -55,13 +54,8 @@ correctness fixes, feature ideas, and docs debt.
   doesn't route/plan around it.
 
 ## Code health
-
-- **`RecipeGraphTraverser.java` complexity** — per Omen (`omen tdg`), this is
-  the lowest-graded file in the repo: TDG grade B-, cyclomatic complexity 77,
-  6 levels of nesting, 24.6% internal duplication. Unlike the `ClipboardScreen`/
-  `GraphCanvas` cohesion split or the `formatId`/list-scroll dedup (both
-  mechanical extractions), this is a real algorithmic-complexity problem in
-  the recipe-traversal logic itself — reducing it means restructuring how the
-  graph traversal branches, not just moving code around. Needs its own
-  focused pass with test coverage before touching it, not an opportunistic
-  cleanup.
+ 
+- [x] **`RecipeGraphTraverser.java` complexity & unification** — Resolved duplication and complexity
+  by consolidating `computePlan()` onto `computeRecipeGraph()` via `planFromGraph()`, fixing cycle
+  traversal memoization with white/gray/black DFS (`collectDag`), and removing the duplicate `getSubPlan`
+  traversal pipeline. Validated across all 18 GameTests.

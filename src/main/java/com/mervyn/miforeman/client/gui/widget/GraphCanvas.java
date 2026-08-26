@@ -56,7 +56,7 @@ public class GraphCanvas extends AbstractWidget {
 
     private final RecipeGraph graph;
     private GraphLayoutState layoutState;
-    private final boolean showMachineNodes;
+    private final com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode viewMode;
     private final boolean dragEnabled;
     private final Map<ResourceLocation, RecipeGraphNode> visibleNodes = new LinkedHashMap<>();
     private final List<GraphEdge> visibleEdges = new ArrayList<>();
@@ -74,7 +74,7 @@ public class GraphCanvas extends AbstractWidget {
                         Consumer<ResourceLocation> onSelect,
                         Consumer<GraphLayoutState> onLayoutChange,
                         CameraChangeListener onCameraChange,
-                        boolean showMachineNodes,
+                        com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode viewMode,
                         boolean dragEnabled) {
         super(x, y, width, height, Component.literal("Recipe Graph"));
         this.graph = graph;
@@ -84,38 +84,61 @@ public class GraphCanvas extends AbstractWidget {
         this.onSelect = onSelect;
         this.onLayoutChange = onLayoutChange;
         this.onCameraChange = onCameraChange;
-        this.showMachineNodes = showMachineNodes;
+        this.viewMode = viewMode;
         this.dragEnabled = dragEnabled;
         computeFilteredView();
         computeAutoLayout();
     }
 
     /**
-     * Resource nodes and MACHINE (recipe) nodes alternate at every depth in {@link #graph}
-     * (see RecipeGraphTraverser.buildGraph) -- visually two graphs merged into one tree. When
-     * machines are hidden, bridge each hidden machine's inputs directly to its outputs (full
-     * cross-product, since a recipe run consumes/produces all of them together in one batch)
-     * so item-to-item dependencies stay visible without the recipe node in between.
+     * Filters visible nodes and bridges edges according to {@link #viewMode}:
+     * <ul>
+     *   <li>{@code ALL}: Displays every resource and machine node directly.</li>
+     *   <li>{@code ITEMS_ONLY}: Displays only item/fluid nodes, bridging inputs across machines to outputs.</li>
+     *   <li>{@code MACHINES_ONLY}: Displays only MACHINE nodes, bridging producer machines directly to consumer machines.</li>
+     * </ul>
      */
     private void computeFilteredView() {
-        if (showMachineNodes) {
+        if (viewMode == com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.ALL) {
             visibleNodes.putAll(graph.nodes());
             visibleEdges.addAll(graph.edges());
             return;
         }
-        for (RecipeGraphNode node : graph.nodes().values()) {
-            if (node.getType() != NodeType.MACHINE) {
-                visibleNodes.put(node.getId(), node);
+
+        if (viewMode == com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.ITEMS_ONLY) {
+            for (RecipeGraphNode node : graph.nodes().values()) {
+                if (node.getType() != NodeType.MACHINE) {
+                    visibleNodes.put(node.getId(), node);
+                }
             }
-        }
-        for (RecipeGraphNode node : graph.nodes().values()) {
-            if (node.getType() != NodeType.MACHINE) continue;
-            List<GraphEdge> inputs = node.getInputs();
-            List<GraphEdge> outputs = node.getOutputs();
-            if (inputs.isEmpty() || outputs.isEmpty()) continue;
-            for (GraphEdge in : inputs) {
-                for (GraphEdge out : outputs) {
-                    visibleEdges.add(new GraphEdge(in.from(), out.to(), in.rate()));
+            for (RecipeGraphNode node : graph.nodes().values()) {
+                if (node.getType() != NodeType.MACHINE) continue;
+                List<GraphEdge> inputs = node.getInputs();
+                List<GraphEdge> outputs = node.getOutputs();
+                if (inputs.isEmpty() || outputs.isEmpty()) continue;
+                for (GraphEdge in : inputs) {
+                    for (GraphEdge out : outputs) {
+                        if (in.from().equals(out.to())) continue;
+                        visibleEdges.add(new GraphEdge(in.from(), out.to(), in.rate()));
+                    }
+                }
+            }
+        } else if (viewMode == com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.MACHINES_ONLY) {
+            for (RecipeGraphNode node : graph.nodes().values()) {
+                if (node.getType() == NodeType.MACHINE) {
+                    visibleNodes.put(node.getId(), node);
+                }
+            }
+            for (RecipeGraphNode node : graph.nodes().values()) {
+                if (node.getType() == NodeType.MACHINE) continue;
+                List<GraphEdge> inputs = node.getInputs();
+                List<GraphEdge> outputs = node.getOutputs();
+                if (inputs.isEmpty() || outputs.isEmpty()) continue;
+                for (GraphEdge in : inputs) {
+                    for (GraphEdge out : outputs) {
+                        if (in.from().equals(out.to())) continue;
+                        visibleEdges.add(new GraphEdge(in.from(), out.to(), out.rate()));
+                    }
                 }
             }
         }
@@ -126,7 +149,9 @@ public class GraphCanvas extends AbstractWidget {
         TreeMap<Integer, List<RecipeGraphNode>> byDepth = new TreeMap<>();
         for (RecipeGraphNode node : visitOrder) {
             if (!visibleNodes.containsKey(node.getId())) continue;
-            int column = showMachineNodes ? node.getDepth() : node.getDepth() / 2;
+            int column = (viewMode == com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.ALL)
+                    ? node.getDepth()
+                    : node.getDepth() / 2;
             byDepth.computeIfAbsent(column, d -> new java.util.ArrayList<>()).add(node);
         }
         for (Map.Entry<Integer, List<RecipeGraphNode>> entry : byDepth.entrySet()) {

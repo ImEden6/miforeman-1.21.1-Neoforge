@@ -91,7 +91,7 @@ config="${mod_id}.mixins.json"
 [[dependencies.${mod_id}]]
     modId="modern_industrialization"
     type="required"
-    versionRange=""
+    versionRange="*"
     ordering="NONE"
     side="BOTH"
 
