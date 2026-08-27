@@ -7,6 +7,7 @@ import com.mervyn.miforeman.goal.NodeType;
 import com.mervyn.miforeman.goal.ProductionGoal.FactoryPlan;
 import com.mervyn.miforeman.goal.ProductionGoal.MachineRequirement;
 import com.mervyn.miforeman.goal.ProductionGoal.MaterialFlow;
+import com.mervyn.miforeman.goal.RecipeGraphTraverser;
 import aztech.modern_industrialization.machines.recipe.MachineRecipe;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -70,6 +71,13 @@ public class DetailCard extends AbstractWidget {
     private int nodeVisBoxH = 0;
     private boolean isNodeVisHovered = false;
 
+    // Boundaries of the "Expand Material" box for raw-material leaf nodes
+    private int expandBoxX = 0;
+    private int expandBoxY = 0;
+    private int expandBoxW = 0;
+    private int expandBoxH = 0;
+    private boolean isExpandBoxHovered = false;
+
     public DetailCard(int x, int y, int width, int height, @Nullable RecipeGraphNode node,
                       FactoryPlan plan, boolean perHour, boolean showNumbers,
                       BiConsumer<ResourceLocation, ResourceLocation> onAmbiguity,
@@ -108,6 +116,15 @@ public class DetailCard extends AbstractWidget {
         this.onScrollChange.accept(0);
     }
 
+    private boolean hasMaterialCandidates() {
+        return node != null
+                && node.getType() != NodeType.MACHINE
+                && node.getInputs().isEmpty()
+                && onExpandMaterial != null
+                && Minecraft.getInstance().level != null
+                && !RecipeGraphTraverser.getCandidateRecipes(Minecraft.getInstance().level, node.getId()).isEmpty();
+    }
+
     @Override
     protected void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         guiGraphics.fill(getX(), getY(), getX() + 1, getY() + getHeight(), COLOUR_BORDER);
@@ -131,6 +148,9 @@ public class DetailCard extends AbstractWidget {
         isNodeVisHovered = false;
         nodeVisBoxW = 0;
         nodeVisBoxH = 0;
+        isExpandBoxHovered = false;
+        expandBoxW = 0;
+        expandBoxH = 0;
 
         if (node == null) {
             // Summary Mode
@@ -316,6 +336,20 @@ public class DetailCard extends AbstractWidget {
                 if (node.getInputs().isEmpty()) {
                     guiGraphics.drawString(fontSource.font, " - Raw Material Input", getX() + 10, currentY, COLOUR_MUTED, false);
                     currentY += 10;
+                    if (hasMaterialCandidates()) {
+                        String expandText = "Expand Material";
+                        int expandTextW = fontSource.font.width(expandText);
+                        expandBoxX = getX() + 10;
+                        expandBoxY = currentY;
+                        expandBoxW = expandTextW + 6;
+                        expandBoxH = 10;
+                        isExpandBoxHovered = GuiMath.contains(expandBoxX, expandBoxY, expandBoxW, expandBoxH, mouseX, mouseY);
+                        int expandBg = isExpandBoxHovered ? COLOUR_CYCLE_HOVER : COLOUR_CYCLE_BOX;
+                        guiGraphics.fill(expandBoxX, expandBoxY, expandBoxX + expandBoxW, expandBoxY + expandBoxH, expandBg);
+                        guiGraphics.renderOutline(expandBoxX, expandBoxY, expandBoxW, expandBoxH, COLOUR_BORDER);
+                        guiGraphics.drawString(fontSource.font, expandText, expandBoxX + 3, expandBoxY + 1, COLOUR_TEXT, false);
+                        currentY += 12;
+                    }
                 } else {
                     for (GraphEdge edge : node.getInputs()) {
                         guiGraphics.drawString(fontSource.font, " - " + DisplayFormat.formatId(edge.from()), getX() + 10, currentY, COLOUR_TEXT, false);
@@ -387,14 +421,25 @@ public class DetailCard extends AbstractWidget {
             return false;
         }
 
-        if (button == 0 && node == null && isNumToggleHovered && onToggleNumbers != null) {
+        if (button == 0 && node == null && onToggleNumbers != null &&
+                mouseX >= numToggleBoxX && mouseX < numToggleBoxX + numToggleBoxW &&
+                mouseY >= numToggleBoxY && mouseY < numToggleBoxY + numToggleBoxH) {
             onToggleNumbers.run();
             this.playDownSound(Minecraft.getInstance().getSoundManager());
             return true;
         }
 
-        if (button == 0 && node != null && isNodeVisHovered && onToggleVisibility != null) {
+        if (button == 0 && node != null && onToggleVisibility != null &&
+                mouseX >= nodeVisBoxX && mouseX < nodeVisBoxX + nodeVisBoxW &&
+                mouseY >= nodeVisBoxY && mouseY < nodeVisBoxY + nodeVisBoxH) {
             onToggleVisibility.accept(node.getId());
+            this.playDownSound(Minecraft.getInstance().getSoundManager());
+            return true;
+        }
+
+        if (button == 0 && node != null && onExpandMaterial != null &&
+                GuiMath.contains(expandBoxX, expandBoxY, expandBoxW, expandBoxH, mouseX, mouseY)) {
+            onExpandMaterial.accept(node.getId());
             this.playDownSound(Minecraft.getInstance().getSoundManager());
             return true;
         }

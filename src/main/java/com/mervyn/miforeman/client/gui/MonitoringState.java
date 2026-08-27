@@ -90,6 +90,7 @@ class MonitoringState {
         if (result.linked()) {
             if (!linkedMachines.contains(result.pos()))
                 linkedMachines.add(result.pos());
+            rejectedMachines.remove(result.pos()); // linking always clears a sticky rejection, same as applyLink
         } else {
             linkedMachines.remove(result.pos());
         }

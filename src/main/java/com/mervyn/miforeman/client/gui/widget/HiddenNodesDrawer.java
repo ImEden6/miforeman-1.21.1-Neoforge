@@ -35,9 +35,11 @@ public class HiddenNodesDrawer {
     private static final int COLOUR_PILL_BG = 0xFFD8C3A5;
     private static final int COLOUR_PILL_HOVER = 0xFFEAE7D9;
 
-    public static final int TAB_WIDTH = 22;
-    public static final int TAB_HEIGHT = 72;
+    public static final int TAB_WIDTH = 28; // matches GraphSearchBar's ICON_BTN_SIZE -- a square tab
+    public static final int TAB_HEIGHT = 28;
     public static final int DRAWER_WIDTH = 156;
+    private static final String EYE_ICON = "👁"; // U+1F441 EYE
+    private static final double EYE_ICON_SCALE = 1.5;
 
     private int x, y;
     private int canvasHeight;
@@ -78,21 +80,21 @@ public class HiddenNodesDrawer {
     public boolean isHovered(double mouseX, double mouseY) {
         if (expanded) {
             int drawerH = Math.min(canvasHeight - 12, 220);
-            return mouseX >= x && mouseX < x + DRAWER_WIDTH && mouseY >= y && mouseY < y + drawerH;
+            return GuiMath.contains(x, y, DRAWER_WIDTH, drawerH, mouseX, mouseY);
         } else {
-            return mouseX >= x && mouseX < x + TAB_WIDTH && mouseY >= y && mouseY < y + TAB_HEIGHT;
+            return GuiMath.contains(x, y, TAB_WIDTH, TAB_HEIGHT, mouseX, mouseY);
         }
     }
 
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         // Tab hover entry transitions: only expand when hovering tab, collapse when leaving drawer bounds
         if (!expanded) {
-            if (mouseX >= x && mouseX < x + TAB_WIDTH && mouseY >= y && mouseY < y + TAB_HEIGHT) {
+            if (GuiMath.contains(x, y, TAB_WIDTH, TAB_HEIGHT, mouseX, mouseY)) {
                 expanded = true;
             }
         } else {
             int drawerH = Math.min(canvasHeight - 12, 220);
-            if (mouseX < x || mouseX >= x + DRAWER_WIDTH || mouseY < y || mouseY >= y + drawerH) {
+            if (!GuiMath.contains(x, y, DRAWER_WIDTH, drawerH, mouseX, mouseY)) {
                 expanded = false;
             }
         }
@@ -113,32 +115,29 @@ public class HiddenNodesDrawer {
             guiGraphics.fill(x, y + TAB_HEIGHT - 1, x + TAB_WIDTH, y + TAB_HEIGHT, COLOUR_BORDER_DARK);
             guiGraphics.fill(x + TAB_WIDTH - 1, y, x + TAB_WIDTH, y + TAB_HEIGHT, COLOUR_BORDER_DARK);
 
-            boolean hoverTab = mouseX >= x && mouseX < x + TAB_WIDTH && mouseY >= y && mouseY < y + TAB_HEIGHT;
+            boolean hoverTab = GuiMath.contains(x, y, TAB_WIDTH, TAB_HEIGHT, mouseX, mouseY);
             if (hoverTab) {
                 guiGraphics.fill(x, y, x + TAB_WIDTH, y + TAB_HEIGHT, COLOUR_HOVER_BTN);
             }
 
-            // Eye Icon / Symbol at top of tab
-            guiGraphics.drawCenteredString(font, "\u25CE", x + TAB_WIDTH / 2, y + 4, hiddenCount > 0 ? COLOUR_GREEN : COLOUR_TEXT);
+            // Eye Icon -- true-centred in the square tab when there's no badge to avoid;
+            // when the badge is showing (below), anchored just clear of its bottom edge
+            // instead, since true-centering would put the icon's top behind the badge.
+            int eyeColour = hiddenCount > 0 ? COLOUR_GREEN : COLOUR_TEXT;
+            double eyeH = font.lineHeight * EYE_ICON_SCALE;
+            double eyeTop = hiddenCount > 0 ? y + 9 : y + (TAB_HEIGHT - eyeH) / 2.0;
+            drawEyeIcon(guiGraphics, x + TAB_WIDTH / 2.0, eyeTop, eyeColour);
 
-            // Vertical letters for "UNHIDE"
-            String text = "UNHIDE";
-            int startY = y + 15;
-            for (int i = 0; i < text.length(); i++) {
-                String letter = String.valueOf(text.charAt(i));
-                guiGraphics.drawCenteredString(font, letter, x + TAB_WIDTH / 2, startY + (i * 7), COLOUR_MUTED);
-            }
-
-            // Badge count if nodes are hidden
+            // Badge count, overlaid in the top-right corner so it doesn't have to share
+            // vertical space with the icon
             if (hiddenCount > 0) {
                 String countText = String.valueOf(hiddenCount);
-                int badgeBg = COLOUR_GREEN;
                 int badgeW = font.width(countText) + 4;
                 int badgeH = 8;
-                int badgeX = x + (TAB_WIDTH - badgeW) / 2;
-                int badgeY = y + TAB_HEIGHT - 10;
-                guiGraphics.fill(badgeX, badgeY, badgeX + badgeW, badgeY + badgeH, badgeBg);
-                guiGraphics.drawCenteredString(font, countText, x + TAB_WIDTH / 2, badgeY, 0xFFFFFFFF);
+                int badgeX = x + TAB_WIDTH - badgeW - 1;
+                int badgeY = y + 1;
+                guiGraphics.fill(badgeX, badgeY, badgeX + badgeW, badgeY + badgeH, COLOUR_GREEN);
+                guiGraphics.drawCenteredString(font, countText, badgeX + badgeW / 2, badgeY, 0xFFFFFFFF);
             }
             return;
         }
@@ -152,7 +151,10 @@ public class HiddenNodesDrawer {
         guiGraphics.fill(x + DRAWER_WIDTH - 1, y, x + DRAWER_WIDTH, y + drawerH, COLOUR_BORDER_DARK);
 
         // Header
-        guiGraphics.drawString(font, "\u25CE Hidden Nodes (" + hiddenCount + ")", x + 6, y + 6, COLOUR_TITLE, false);
+        double headerIconW = font.width(EYE_ICON) * EYE_ICON_SCALE;
+        drawEyeIcon(guiGraphics, x + 6 + headerIconW / 2.0, y + 6, COLOUR_TITLE);
+        guiGraphics.drawString(font, " Hidden Nodes (" + hiddenCount + ")",
+                (int) (x + 8 + headerIconW), y + 6, COLOUR_TITLE, false);
 
         int currentY = y + 20;
 
@@ -240,7 +242,9 @@ public class HiddenNodesDrawer {
             return false;
         }
 
-        if (button == 0 && unhideAllHovered && onUnhideAll != null) {
+        if (button == 0 && onUnhideAll != null &&
+                mouseX >= unhideAllX && mouseX < unhideAllX + unhideAllW &&
+                mouseY >= unhideAllY && mouseY < unhideAllY + unhideAllH) {
             onUnhideAll.run();
             Minecraft.getInstance().getSoundManager().play(
                     net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
@@ -277,5 +281,19 @@ public class HiddenNodesDrawer {
             return true;
         }
         return false;
+    }
+
+    /**
+     * Draws {@link #EYE_ICON} at {@link #EYE_ICON_SCALE}x its normal size, horizontally
+     * centred on {@code centerX} with its top edge at {@code top} (both in unscaled screen
+     * pixels). The font glyph is small at 1x, so this scales it up around its own origin
+     * rather than just enlarging the whole widget layout.
+     */
+    private void drawEyeIcon(GuiGraphics guiGraphics, double centerX, double top, int colour) {
+        guiGraphics.pose().pushPose();
+        guiGraphics.pose().translate(centerX, top, 0);
+        guiGraphics.pose().scale((float) EYE_ICON_SCALE, (float) EYE_ICON_SCALE, 1f);
+        guiGraphics.drawString(font, EYE_ICON, -font.width(EYE_ICON) / 2, 0, colour, false);
+        guiGraphics.pose().popPose();
     }
 }

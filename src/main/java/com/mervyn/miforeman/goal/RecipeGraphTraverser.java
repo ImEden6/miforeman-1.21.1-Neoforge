@@ -7,6 +7,7 @@ import com.mervyn.miforeman.goal.ProductionGoal.MaterialFlow;
 import com.mervyn.miforeman.goal.ProductionGoal.TargetType;
 import aztech.modern_industrialization.machines.recipe.MachineRecipe;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.crafting.RecipeHolder;
@@ -208,8 +209,46 @@ public final class RecipeGraphTraverser {
 
     private static final Map<GraphCacheKey, RecipeGraph> GRAPH_CACHE = new HashMap<>();
 
+    /**
+     * Immutable snapshot of the indexed item/fluid recipe lookup, keyed on both the
+     * {@link RecipeManager} instance and the dimension it was built for -- a single
+     * {@link RecipeManager} is shared server-wide across dimensions, but the index can
+     * still be dimension-specific (see {@link #indexMachineRecipes}'s proxied-recipe
+     * branch). Held behind one {@code volatile} reference so readers on the client
+     * render thread and the integrated-server thread always see a fully-consistent
+     * snapshot together, never a torn mix of an old map with a new manager/dimension.
+     */
+    private record RecipeIndex(
+            RecipeManager recipeManager,
+            ResourceKey<Level> dimension,
+            Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> itemRecipes,
+            Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> fluidRecipes) {
+    }
+
+    private static volatile RecipeIndex cachedIndex;
+
     public static void clearGraphCache() {
         GRAPH_CACHE.clear();
+        cachedIndex = null;
+    }
+
+    /**
+     * Rebuilds the item/fluid recipe index only when the {@link RecipeManager}
+     * instance or the dimension has changed since the last call (e.g. a datapack
+     * reload swaps in a new instance, or the caller moved to a different dimension),
+     * instead of re-scanning {@code RecipeManager.getRecipes()} on every call.
+     */
+    private static RecipeIndex ensureRecipeIndex(Level level, RecipeManager recipeManager) {
+        RecipeIndex local = cachedIndex;
+        if (local != null && local.recipeManager() == recipeManager && local.dimension().equals(level.dimension())) {
+            return local;
+        }
+        Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> itemRecipes = new HashMap<>();
+        Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> fluidRecipes = new HashMap<>();
+        indexMachineRecipes(level, recipeManager, itemRecipes, fluidRecipes);
+        RecipeIndex fresh = new RecipeIndex(recipeManager, level.dimension(), itemRecipes, fluidRecipes);
+        cachedIndex = fresh;
+        return fresh;
     }
 
     public static RecipeGraph computeRecipeGraph(Level level, ProductionGoal goal) {
@@ -222,9 +261,9 @@ public final class RecipeGraphTraverser {
 
         RecipeManager recipeManager = level.getRecipeManager();
 
-        Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> itemRecipes = new HashMap<>();
-        Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> fluidRecipes = new HashMap<>();
-        indexMachineRecipes(level, recipeManager, itemRecipes, fluidRecipes);
+        RecipeIndex index = ensureRecipeIndex(level, recipeManager);
+        Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> itemRecipes = index.itemRecipes();
+        Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> fluidRecipes = index.fluidRecipes();
 
         // Two phases -- mirrors computePlan()/getSubPlan()'s existing memoization
         // pattern, which
@@ -321,7 +360,10 @@ public final class RecipeGraphTraverser {
             List<ResourceLocation> ambiguityOptions = allCandidates.size() > 1
                     ? allCandidates.stream().map(RecipeHolder::id).toList()
                     : (allCandidates.size() == 1 ? List.of(allCandidates.get(0).id()) : List.of());
-            result = new StructuralNode(resourceId, null, null, null, ambiguityOptions, selections.get(resourceId), 0.0, List.of(), List.of());
+            ResourceLocation selectedAmbiguity = ambiguityOptions.isEmpty()
+                    ? null
+                    : (selections.get(resourceId) != null ? selections.get(resourceId) : ambiguityOptions.get(0));
+            result = new StructuralNode(resourceId, null, null, null, ambiguityOptions, selectedAmbiguity, 0.0, List.of(), List.of());
         } else {
             List<RecipeHolder<MachineRecipe>> candidates = allCandidates;
             RecipeHolder<MachineRecipe> chosenHolder = null;
@@ -366,7 +408,10 @@ public final class RecipeGraphTraverser {
             }
 
             if (outputAmount <= 0.0 || outputProbability <= 0.0) {
-                result = new StructuralNode(resourceId, null, null, null, ambiguityOptions, selections.get(resourceId), 0.0, List.of(), List.of());
+                ResourceLocation selectedAmbiguity = ambiguityOptions.isEmpty()
+                        ? null
+                        : (selections.get(resourceId) != null ? selections.get(resourceId) : ambiguityOptions.get(0));
+                result = new StructuralNode(resourceId, null, null, null, ambiguityOptions, selectedAmbiguity, 0.0, List.of(), List.of());
             } else {
                 double runsPerSecond = 1.0 / (outputAmount * outputProbability);
                 double machineCountPerUnit = (runsPerSecond * chosenRecipe.duration) / 20.0;
@@ -419,14 +464,12 @@ public final class RecipeGraphTraverser {
 
     public static List<RecipeHolder<MachineRecipe>> getCandidateRecipes(Level level, ResourceLocation resourceId) {
         var recipeManager = level.getRecipeManager();
-        Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> itemRecipes = new HashMap<>();
-        Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> fluidRecipes = new HashMap<>();
-        indexMachineRecipes(level, recipeManager, itemRecipes, fluidRecipes);
-        List<RecipeHolder<MachineRecipe>> list = itemRecipes.get(resourceId);
+        RecipeIndex index = ensureRecipeIndex(level, recipeManager);
+        List<RecipeHolder<MachineRecipe>> list = index.itemRecipes().get(resourceId);
         if (list != null && !list.isEmpty()) {
             return list;
         }
-        return fluidRecipes.getOrDefault(resourceId, List.of());
+        return index.fluidRecipes().getOrDefault(resourceId, List.of());
     }
 
     private static void propagateRates(

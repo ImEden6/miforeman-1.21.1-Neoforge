@@ -271,14 +271,19 @@ def main():
     # Built as a horizontal bar (brushed-metal streaks run along the long
     # axis, rivets sit side by side) then rotated so it reads correctly as a
     # vertical clip mounted on the clipboard's left edge, matching
-    # ClipboardScreen's CLIP_WIDTH=16/CLIP_HEIGHT=32 landscape layout.
+    # ClipboardChrome's CLIP_WIDTH=16/CLIP_HEIGHT=32 landscape layout.
     clip = make_clip(32, 16).transpose(Image.ROTATE_90)
     clip.save(OUT_DIR / "clipboard_clip.png")
+
+    # Unrotated variant mounted on the top edge instead, used only by
+    # EmiTargetPickerScreen (ClipboardChrome.CLIP_TOP_WIDTH=32/CLIP_TOP_HEIGHT=16).
+    clip_top = make_clip(32, 16)
+    clip_top.save(OUT_DIR / "clipboard_clip_top.png")
 
     emi_drop_hint = make_emi_drop_hint(16)
     emi_drop_hint.save(OUT_DIR / "emi_drop_hint.png")
 
-    print(f"Wrote 8 textures to {OUT_DIR}")
+    print(f"Wrote 9 textures to {OUT_DIR}")
 
 
 if __name__ == "__main__":

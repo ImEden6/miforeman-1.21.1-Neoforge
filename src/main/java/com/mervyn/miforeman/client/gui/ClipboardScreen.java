@@ -261,7 +261,7 @@ public class ClipboardScreen extends Screen {
         }
         y += 10 + FIELD_HEIGHT + 8;
 
-        EditBox rateField = new EditBox(this.font, contentX, y + 10, contentW, FIELD_HEIGHT,
+        EditBox rateField = new EditBox(this.font, contentX, y + 10, contentW - 80, FIELD_HEIGHT,
                 Component.literal("Rate"));
         rateField.setValue(String.valueOf(this.goalDraft.rate));
         rateField.setResponder(val -> {
@@ -273,6 +273,14 @@ public class ClipboardScreen extends Screen {
             revalidateDefineGoal();
         });
         this.addRenderableWidget(rateField);
+
+        Button unitButton = new ClipboardButton(contentX + contentW - 70, y + 10, 70, FIELD_HEIGHT,
+                Component.literal(this.goalDraft.perHour ? "Per Hour" : "Per Min"), b -> {
+                    this.goalDraft.perHour = !this.goalDraft.perHour;
+                    b.setMessage(Component.literal(this.goalDraft.perHour ? "Per Hour" : "Per Min"));
+                    revalidateDefineGoal();
+                });
+        this.addRenderableWidget(unitButton);
         y += 10 + FIELD_HEIGHT + 8;
 
         EditBox thresholdField = new EditBox(this.font, contentX, y + 10, contentW, FIELD_HEIGHT,

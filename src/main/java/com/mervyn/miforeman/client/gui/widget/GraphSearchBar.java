@@ -24,9 +24,11 @@ public class GraphSearchBar {
 
     private static final int BAR_WIDTH = 172;
     private static final int BAR_HEIGHT = 20;
-    private static final int ICON_BTN_SIZE = 22;
+    private static final int ICON_BTN_SIZE = 28;
+    private static final int SEARCH_ICON_LENS = 6;
 
     private int x, y;
+    private int anchorRightX, anchorTopY;
     private boolean visible = false;
     private final Font font;
     private final EditBox editBox;
@@ -50,14 +52,25 @@ public class GraphSearchBar {
     }
 
     public void setPosition(int rightX, int topY) {
+        this.anchorRightX = rightX;
+        this.anchorTopY = topY;
+        resolvePosition();
+    }
+
+    /**
+     * Recomputes x/y from the stored anchor and current visibility. Must be called
+     * whenever {@code visible} changes, since the anchor is fixed to the right edge
+     * but the two states occupy different widths (icon vs. full bar growing left).
+     */
+    private void resolvePosition() {
         if (visible) {
-            this.x = rightX - BAR_WIDTH;
-            this.y = topY;
+            this.x = anchorRightX - BAR_WIDTH;
+            this.y = anchorTopY;
             this.editBox.setX(this.x + 18);
             this.editBox.setY(this.y + 4);
         } else {
-            this.x = rightX - ICON_BTN_SIZE;
-            this.y = topY;
+            this.x = anchorRightX - ICON_BTN_SIZE;
+            this.y = anchorTopY;
             this.editBox.setX(this.x);
             this.editBox.setY(this.y);
         }
@@ -65,6 +78,7 @@ public class GraphSearchBar {
 
     public void setVisible(boolean visible) {
         this.visible = visible;
+        resolvePosition();
         if (visible) {
             this.editBox.setFocused(true);
         } else {
@@ -106,7 +120,8 @@ public class GraphSearchBar {
             if (hover) {
                 guiGraphics.fill(x, y, x + ICON_BTN_SIZE, y + ICON_BTN_SIZE, COLOUR_HOVER_BTN);
             }
-            guiGraphics.drawCenteredString(font, "\u2315", x + ICON_BTN_SIZE / 2, y + (ICON_BTN_SIZE - font.lineHeight) / 2 + 1, COLOUR_TEXT);
+            drawSearchIcon(guiGraphics, x + (ICON_BTN_SIZE - SEARCH_ICON_LENS - 3) / 2,
+                    y + (ICON_BTN_SIZE - SEARCH_ICON_LENS - 3) / 2, SEARCH_ICON_LENS, COLOUR_TEXT);
             return;
         }
 
@@ -118,7 +133,7 @@ public class GraphSearchBar {
         guiGraphics.fill(x + BAR_WIDTH - 1, y, x + BAR_WIDTH, y + BAR_HEIGHT, COLOUR_BORDER_DARK);
 
         // Search icon prefix
-        guiGraphics.drawString(font, "\u2315", x + 4, y + 6, COLOUR_MUTED, false);
+        drawSearchIcon(guiGraphics, x + 4, y + 5, SEARCH_ICON_LENS, COLOUR_MUTED);
 
         // Edit box background inner field
         int ebX = x + 16;
@@ -258,5 +273,27 @@ public class GraphSearchBar {
             return false;
         }
         return editBox.charTyped(codePoint, modifiers);
+    }
+
+    private static final int SEARCH_ICON_HANDLE = 3;
+
+    /**
+     * Draws a magnifying-glass icon (ring + diagonal handle) out of flat-filled pixels,
+     * rather than the Unicode telephone-recorder character (U+2315), which falls back to a
+     * blocky unifont glyph that reads as a clipped smudge at this size. {@code left}/{@code
+     * top} is the overall icon's bounding-box top-left corner (lens + handle); the lens sits
+     * shifted right by {@link #SEARCH_ICON_HANDLE} so the handle can extend down-left of it.
+     */
+    private static void drawSearchIcon(GuiGraphics guiGraphics, int left, int top, int lensSize, int colour) {
+        int lensLeft = left + SEARCH_ICON_HANDLE;
+        guiGraphics.fill(lensLeft + 1, top, lensLeft + lensSize - 1, top + 1, colour);
+        guiGraphics.fill(lensLeft + 1, top + lensSize - 1, lensLeft + lensSize - 1, top + lensSize, colour);
+        guiGraphics.fill(lensLeft, top + 1, lensLeft + 1, top + lensSize - 1, colour);
+        guiGraphics.fill(lensLeft + lensSize - 1, top + 1, lensLeft + lensSize, top + lensSize - 1, colour);
+
+        int hx = lensLeft;
+        int hy = top + lensSize - 1;
+        guiGraphics.fill(hx - 2, hy, hx, hy + 2, colour);
+        guiGraphics.fill(hx - 3, hy + 1, hx - 1, hy + 3, colour);
     }
 }

@@ -51,8 +51,7 @@ public class EmiTargetPickerScreen extends AbstractContainerScreen<EmiTargetPick
     private static final int ICON_SIZE = 96;
     private static final int HINT_ICON_SIZE = 16;
 
-    private static final int COLOUR_TITLE = 0xFFDAA520;
-    private static final int COLOUR_LABEL = 0xFF8B7355;
+    private static final int COLOUR_TEXT = 0xFF8B6C4B;
 
     private static final ResourceLocation TEX_CLIPBOARD_ITEM = ResourceLocation.fromNamespaceAndPath(MIForeman.MODID,
             "textures/item/foreman_clipboard.png");
@@ -138,7 +137,7 @@ public class EmiTargetPickerScreen extends AbstractContainerScreen<EmiTargetPick
 
     @Override
     protected void renderBg(GuiGraphics guiGraphics, float partialTick, int mouseX, int mouseY) {
-        ClipboardChrome.drawBackground(guiGraphics, leftPos, topPos, imageWidth, imageHeight);
+        ClipboardChrome.drawBackgroundWithTopClip(guiGraphics, leftPos, topPos, imageWidth, imageHeight);
 
         int iconCenterX = leftPos + imageWidth / 2;
         int iconCenterY = topPos + imageHeight / 2 - 10;
@@ -148,9 +147,17 @@ public class EmiTargetPickerScreen extends AbstractContainerScreen<EmiTargetPick
         // header content to share that corner with, and top-left collides with other
         // mods' own
         // screen-corner icons (seen in testing), so centering avoids that entirely.
+        int titleY = iconCenterY - ICON_SIZE / 2 - 16;
         Component titleComp = Component.literal("Pick Target From EMI");
         guiGraphics.drawString(this.font, titleComp, iconCenterX - this.font.width(titleComp) / 2,
-                iconCenterY - ICON_SIZE / 2 - 16, COLOUR_TITLE, false);
+                titleY, COLOUR_TEXT, false);
+
+        String hint = EmiCompat.isLoaded()
+                ? "Drag an item or fluid from the sidebar onto the clipboard"
+                : "EMI is not installed";
+        Component hintComp = Component.literal(hint);
+        guiGraphics.drawString(this.font, hintComp, iconCenterX - this.font.width(hintComp) / 2,
+                titleY + this.font.lineHeight + 4, COLOUR_TEXT, false);
 
         guiGraphics.pose().pushPose();
         guiGraphics.pose().translate(iconCenterX, iconCenterY, 0);
@@ -159,16 +166,9 @@ public class EmiTargetPickerScreen extends AbstractContainerScreen<EmiTargetPick
         guiGraphics.blit(TEX_CLIPBOARD_ITEM, -16, -16, 0, 0, 32, 32, 32, 32);
         guiGraphics.pose().popPose();
 
-        int hintY = iconCenterY + ICON_SIZE / 2 + 6;
-        guiGraphics.blit(TEX_DROP_HINT, iconCenterX - HINT_ICON_SIZE / 2, hintY, 0, 0,
+        int hintIconY = iconCenterY + ICON_SIZE / 2 + 6;
+        guiGraphics.blit(TEX_DROP_HINT, iconCenterX - HINT_ICON_SIZE / 2, hintIconY, 0, 0,
                 HINT_ICON_SIZE, HINT_ICON_SIZE, HINT_ICON_SIZE, HINT_ICON_SIZE);
-
-        String hint = EmiCompat.isLoaded()
-                ? "Drag an item or fluid from the sidebar onto the clipboard"
-                : "EMI is not installed";
-        Component hintComp = Component.literal(hint);
-        guiGraphics.drawString(this.font, hintComp, iconCenterX - this.font.width(hintComp) / 2,
-                topPos + imageHeight - PADDING - 34, COLOUR_LABEL, false);
     }
 
     @Override

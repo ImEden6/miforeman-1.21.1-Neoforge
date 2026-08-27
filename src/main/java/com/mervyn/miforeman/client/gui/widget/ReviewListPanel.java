@@ -54,7 +54,8 @@ public class ReviewListPanel extends AbstractWidget {
     }
 
     private int actionButtonX() {
-        return getX() + getWidth() - ACTION_BUTTON_WIDTH - 6;
+        int scrollbarReserve = scroll.maxScroll(rows.size(), getHeight()) > 0 ? ListScroll.SCROLLBAR_WIDTH : 0;
+        return getX() + getWidth() - ACTION_BUTTON_WIDTH - 6 - scrollbarReserve;
     }
 
     private int actionButtonY(int rowY) {
@@ -88,7 +89,7 @@ public class ReviewListPanel extends AbstractWidget {
 
                 int checkboxX = getX() + 6;
                 int checkboxY = currentY + 4;
-                boolean showUnreject = row.rejected();
+                boolean showUnreject = row.rejected() && !row.linked();
 
                 if (!showUnreject) {
                     guiGraphics.renderOutline(checkboxX, checkboxY, CHECKBOX_SIZE, CHECKBOX_SIZE, COLOUR_BORDER);
