@@ -53,3 +53,12 @@ correctness fixes, feature ideas, and docs debt.
 - **Avoid hardcoded constants** - the code is full of hardcoded constants, which should be replaced
   with `Constants`.
 (Basically just use lang files.)
+
+## Code quality
+
+- **`ProductionGoal` builder** — the record has 6 chained telescoping constructors (4 to 13
+  args), so every new field means touching every overload plus every `with*()` method. A
+  `ProductionGoal.Builder` would fix that, but the short constructors are used by ~20 call
+  sites in `ForemanGameTests.java`, including one deliberately exercising an 11-arg legacy
+  shape — migrating all of those is a real chunk of test-suite churn for a smell fix, not
+  something to do as a drive-by.
