@@ -72,4 +72,18 @@ public class RecipeGraphNode {
     public void setBaseEuPerTick(long baseEuPerTick) { this.baseEuPerTick = baseEuPerTick; }
     public long getTotalEuPerTick() { return totalEuPerTick; }
     public void setTotalEuPerTick(long totalEuPerTick) { this.totalEuPerTick = totalEuPerTick; }
+
+    /** Deep-enough copy for handing a node out of a shared cache. Callers can freely mutate
+     *  the copy's setters (expanded, selectedAmbiguity, ...) without affecting the cached
+     *  original or any other copy handed out from it. */
+    public RecipeGraphNode copy() {
+        RecipeGraphNode copy = new RecipeGraphNode(id, type, machineType, recipe, requiredRate, machineCount,
+                ambiguityOptions, selectedAmbiguity, ambiguityOwnerId, depth);
+        copy.expanded = this.expanded;
+        copy.baseEuPerTick = this.baseEuPerTick;
+        copy.totalEuPerTick = this.totalEuPerTick;
+        copy.inputs.addAll(this.inputs);
+        copy.outputs.addAll(this.outputs);
+        return copy;
+    }
 }

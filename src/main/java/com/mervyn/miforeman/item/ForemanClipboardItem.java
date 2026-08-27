@@ -81,8 +81,7 @@ public class ForemanClipboardItem extends Item {
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         ItemStack itemstack = player.getItemInHand(hand);
         if (level.isClientSide) {
-            Runnable r = () -> com.mervyn.miforeman.client.ClientAccess.openClipboardScreen(itemstack);
-            r.run();
+            com.mervyn.miforeman.client.ClientAccess.openClipboardScreen(itemstack, hand);
         }
         return InteractionResultHolder.sidedSuccess(itemstack, level.isClientSide());
     }

@@ -29,6 +29,7 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.*;
@@ -111,15 +112,21 @@ public class ClipboardScreen extends Screen {
     /** The most recent goal state synchronized to the server. */
     private ProductionGoal lastSyncedGoal;
 
-    public ClipboardScreen(ItemStack stack) {
+    /** Which hand this clipboard was opened from -- so updates are written back to the same
+     *  stack even when a clipboard is held in both hands at once. */
+    private final InteractionHand hand;
+
+    public ClipboardScreen(ItemStack stack, InteractionHand hand) {
         super(Component.literal("Clipboard Goal Editor"));
 
+        this.hand = hand;
         ProductionGoal goal = stack.get(ModComponents.PRODUCTION_GOAL.get());
         this.openedGoal = goal;
         this.lastSyncedGoal = goal;
         this.hasExistingGoal = (goal != null);
         this.goalDraft = (goal != null) ? GoalDraft.fromGoal(goal) : GoalDraft.defaults();
         this.monitoringState = (goal != null) ? MonitoringState.fromGoal(goal) : MonitoringState.defaults();
+        this.monitoringState.hand = hand;
 
         ClipboardUiState ui = (goal != null) ? goal.uiState() : ClipboardUiState.EMPTY;
         this.cameraX = ui.cameraX();
@@ -145,7 +152,7 @@ public class ClipboardScreen extends Screen {
         // action -- layer it on here too so a drag survives a plain close, same as the
         // ui state.
         ClipboardCloseSync.computeCloseSyncGoal(lastSyncedGoal, snapshot, goalDraft.graphLayout)
-                .ifPresent(toPersist -> new GoalUpdatePayload(toPersist).sendToServer());
+                .ifPresent(toPersist -> new GoalUpdatePayload(toPersist, hand).sendToServer());
     }
 
     private int guiWidth() {
@@ -415,8 +422,7 @@ public class ClipboardScreen extends Screen {
                 RecipeGraphNode selectedNode = selectedNodeId != null
                         ? this.goalDraft.currentPlan.graph().node(selectedNodeId)
                         : null;
-                detailCard = new DetailCard(contentX + canvasWidth + 6, canvasY, detailWidth, contentH, selectedNode,
-                        this.goalDraft.currentPlan, this.goalDraft.perHour, showMachineNumbers, (resId, choiceRecipeId) -> {
+                DetailCard.Callbacks detailCardCallbacks = new DetailCard.Callbacks((resId, choiceRecipeId) -> {
                             this.goalDraft.recipeSelections.put(resId, choiceRecipeId);
                             // A MACHINE node's own id IS its recipe id, so cycling the recipe of the
                             // currently-selected machine node makes that id vanish from the rebuilt graph.
@@ -457,7 +463,10 @@ public class ClipboardScreen extends Screen {
                             }
                         }, resId -> {
                             return this.goalDraft.graphLayout != null && this.goalDraft.graphLayout.isHidden(resId);
-                        }, this::expandMaterialNode, detailScrollOffset, v -> this.detailScrollOffset = v);
+                        }, this::expandMaterialNode);
+                detailCard = new DetailCard(contentX + canvasWidth + 6, canvasY, detailWidth, contentH, selectedNode,
+                        this.goalDraft.currentPlan, this.goalDraft.perHour, showMachineNumbers, detailCardCallbacks,
+                        detailScrollOffset, v -> this.detailScrollOffset = v);
                 this.addRenderableWidget(detailCard);
             } else {
                 detailCard = null;
@@ -583,7 +592,7 @@ public class ClipboardScreen extends Screen {
                 Component.literal("Done"), b -> this.onClose());
         this.addRenderableWidget(nextButton);
 
-        new RequestMonitoringUpdatePayload().sendToServer();
+        new RequestMonitoringUpdatePayload(monitoringState.hand).sendToServer();
     }
 
     private void updateMonitoringButtonLabels() {
@@ -630,7 +639,7 @@ public class ClipboardScreen extends Screen {
         if (!goalDraft.isReadyToSave())
             return;
         lastSyncedGoal = buildCurrentGoal();
-        new GoalUpdatePayload(lastSyncedGoal).sendToServer();
+        new GoalUpdatePayload(lastSyncedGoal, hand).sendToServer();
     }
 
     private void computePlan() {
@@ -654,7 +663,7 @@ public class ClipboardScreen extends Screen {
     public void tick() {
         super.tick();
         if (currentStep == STEP_MONITOR && monitoringState.tickAndShouldPoll()) {
-            new RequestMonitoringUpdatePayload().sendToServer();
+            new RequestMonitoringUpdatePayload(monitoringState.hand).sendToServer();
         }
     }
 
@@ -797,14 +806,13 @@ public class ClipboardScreen extends Screen {
             return;
         }
 
-        int red = 0, orange = 0, yellow = 0, green = 0, other = 0;
+        int red = 0, orange = 0, yellow = 0, green = 0;
         for (var machine : this.monitoringState.liveData) {
             switch (machine.status()) {
-                case "RED" -> red++;
-                case "ORANGE" -> orange++;
-                case "YELLOW" -> yellow++;
-                case "GREEN" -> green++;
-                default -> other++;
+                case RED -> red++;
+                case ORANGE -> orange++;
+                case YELLOW -> yellow++;
+                case GREEN -> green++;
             }
         }
 
@@ -816,8 +824,7 @@ public class ClipboardScreen extends Screen {
         segX = drawStatusCount(guiGraphics, segX, currentY, red, "RED", COLOUR_ERROR);
         segX = drawStatusCount(guiGraphics, segX, currentY, orange, "ORANGE", 0xFFE67700);
         segX = drawStatusCount(guiGraphics, segX, currentY, yellow, "YELLOW", COLOUR_AMBER);
-        segX = drawStatusCount(guiGraphics, segX, currentY, green, "GREEN", COLOUR_GREEN);
-        drawStatusCount(guiGraphics, segX, currentY, other, "OTHER", COLOUR_MUTED);
+        drawStatusCount(guiGraphics, segX, currentY, green, "GREEN", COLOUR_GREEN);
     }
 
     private int drawStatusCount(GuiGraphics guiGraphics, int x, int y, int count, String label, int colour) {
@@ -832,7 +839,7 @@ public class ClipboardScreen extends Screen {
         if (!goalDraft.isReadyToSave())
             return;
         lastSyncedGoal = buildCurrentGoal();
-        new GoalUpdatePayload(lastSyncedGoal).sendToServer();
+        new GoalUpdatePayload(lastSyncedGoal, hand).sendToServer();
     }
 
     private void expandMaterialNode(ResourceLocation resourceId) {

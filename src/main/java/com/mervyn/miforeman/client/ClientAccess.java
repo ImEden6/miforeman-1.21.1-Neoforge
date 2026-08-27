@@ -4,11 +4,12 @@ import com.mervyn.miforeman.client.gui.ClipboardScreen;
 import com.mervyn.miforeman.client.gui.MonitoringScreen;
 import com.mervyn.miforeman.client.gui.ReviewMachinesScreen;
 import net.minecraft.client.Minecraft;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 
 public class ClientAccess {
-    public static void openClipboardScreen(ItemStack stack) {
-        Minecraft.getInstance().setScreen(new ClipboardScreen(stack));
+    public static void openClipboardScreen(ItemStack stack, InteractionHand hand) {
+        Minecraft.getInstance().setScreen(new ClipboardScreen(stack, hand));
     }
 
     public static void handleLiveMonitoring(com.mervyn.miforeman.network.LiveMonitoringPayload payload) {

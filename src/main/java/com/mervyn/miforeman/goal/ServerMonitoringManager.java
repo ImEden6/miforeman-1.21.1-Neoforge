@@ -43,7 +43,7 @@ public class ServerMonitoringManager {
 
     public static class MachineTracker {
         public final BlockPos pos;
-        public String status = "RED";
+        public MachineStatus status = MachineStatus.RED;
         public ResourceLocation lastRecipeId = null;
         /** Recipe a saturating (ORANGE) machine runs once its output clears. Distinct from
          *  lastRecipeId, which only tracks an active craft. */
@@ -185,7 +185,7 @@ public class ServerMonitoringManager {
                             tracker.lastUsedEnergy = usedEnergy;
                             tracker.lastRecipeEnergy = recipeEnergy;
                         }
-                        tracker.status = "GREEN";
+                        tracker.status = MachineStatus.GREEN;
                         tracker.saturatedRecipeId = null;
                     } else {
                         tracker.lastRecipeId = null;
@@ -214,13 +214,13 @@ public class ServerMonitoringManager {
         lastPruneTick = Long.MIN_VALUE;
     }
 
-    public record PassiveStatus(String status, @Nullable ResourceLocation matchedRecipeId) {}
+    public record PassiveStatus(MachineStatus status, @Nullable ResourceLocation matchedRecipeId) {}
 
-    public static String getMachinePassiveStatus(UnifiedCrafter crafter, ServerLevel level) {
+    public static MachineStatus getMachinePassiveStatus(UnifiedCrafter crafter, ServerLevel level) {
         return getMachinePassiveStatusDetailed(crafter, level).status();
     }
 
-    public static String getMachinePassiveStatus(CrafterComponent crafter, ServerLevel level) {
+    public static MachineStatus getMachinePassiveStatus(CrafterComponent crafter, ServerLevel level) {
         return getMachinePassiveStatusDetailed(UnifiedCrafter.from(crafter), level).status();
     }
 
@@ -232,12 +232,12 @@ public class ServerMonitoringManager {
      *  recipe ID when saturating (ORANGE). */
     public static PassiveStatus getMachinePassiveStatusDetailed(UnifiedCrafter crafter, ServerLevel level) {
         if (crafter.hasActiveRecipe()) {
-            return new PassiveStatus("GREEN", null);
+            return new PassiveStatus(MachineStatus.GREEN, null);
         }
 
         var recipeType = crafter.getRecipeType();
         if (recipeType == null) {
-            return new PassiveStatus("RED", null);
+            return new PassiveStatus(MachineStatus.RED, null);
         }
 
         List<ConfigurableItemStack> itemInputs = crafter.getItemInputs();
@@ -251,11 +251,11 @@ public class ServerMonitoringManager {
                 continue;
             }
             if (CrafterComponent.doInputsMatch(itemInputs, fluidInputs, recipe)) {
-                return new PassiveStatus("ORANGE", holder.id()); // Saturating
+                return new PassiveStatus(MachineStatus.ORANGE, holder.id()); // Saturating
             }
         }
 
-        return new PassiveStatus("RED", null); // Starving
+        return new PassiveStatus(MachineStatus.RED, null); // Starving
     }
 
     public static double getExpectedRate(ProductionGoal goal, ResourceLocation resourceId) {

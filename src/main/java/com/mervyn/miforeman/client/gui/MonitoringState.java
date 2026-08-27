@@ -13,6 +13,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.core.GlobalPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.InteractionHand;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -33,6 +34,10 @@ class MonitoringState {
     final List<ScanResultPayload.Candidate> lastScanResults = new ArrayList<>();
     boolean showRejected = false;
     boolean showInWorldHighlights;
+    /** Which hand's clipboard this state belongs to -- set by ClipboardScreen right after
+     *  construction, so RequestMonitoringUpdatePayload/GoalUpdatePayload always target the
+     *  clipboard the player actually opened, not whichever hand happens to be "main". */
+    InteractionHand hand = InteractionHand.MAIN_HAND;
     private int tickCount = 0;
 
     private MonitoringState() {

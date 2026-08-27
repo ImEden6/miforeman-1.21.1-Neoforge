@@ -280,8 +280,8 @@ public class ForemanGameTests {
         }
 
         // Test 1: Empty inputs -> Starving (RED)
-        String statusStarving = ServerMonitoringManager.getMachinePassiveStatus(crafter, level);
-        if (!"RED".equals(statusStarving)) {
+        com.mervyn.miforeman.goal.MachineStatus statusStarving = ServerMonitoringManager.getMachinePassiveStatus(crafter, level);
+        if (statusStarving != com.mervyn.miforeman.goal.MachineStatus.RED) {
             helper.fail("Expected machine with empty inputs to be STARVING (RED), but got: " + statusStarving);
             return;
         }
@@ -298,8 +298,8 @@ public class ForemanGameTests {
                 .of(net.minecraft.world.item.Items.GLASS));
         outputSlot.setAmount(64);
 
-        String statusSaturating = ServerMonitoringManager.getMachinePassiveStatus(crafter, level);
-        if (!"ORANGE".equals(statusSaturating)) {
+        com.mervyn.miforeman.goal.MachineStatus statusSaturating = ServerMonitoringManager.getMachinePassiveStatus(crafter, level);
+        if (statusSaturating != com.mervyn.miforeman.goal.MachineStatus.ORANGE) {
             helper.fail("Expected machine with matched inputs but blocked outputs to be SATURATING (ORANGE), but got: "
                     + statusSaturating);
             return;
@@ -307,8 +307,8 @@ public class ForemanGameTests {
 
         // Test 3: Clear outputs -> ORANGE (ready but inactive)
         outputSlot.empty();
-        String statusReady = ServerMonitoringManager.getMachinePassiveStatus(crafter, level);
-        if (!"ORANGE".equals(statusReady)) {
+        com.mervyn.miforeman.goal.MachineStatus statusReady = ServerMonitoringManager.getMachinePassiveStatus(crafter, level);
+        if (statusReady != com.mervyn.miforeman.goal.MachineStatus.ORANGE) {
             helper.fail(
                     "Expected ready-to-craft machine to return ORANGE (since it can start but is not currently active), but got: "
                             + statusReady);

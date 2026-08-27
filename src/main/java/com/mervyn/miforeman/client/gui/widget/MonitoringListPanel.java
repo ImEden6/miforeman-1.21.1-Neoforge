@@ -3,6 +3,7 @@ package com.mervyn.miforeman.client.gui.widget;
 import com.mervyn.miforeman.client.DisplayFormat;
 import com.mervyn.miforeman.client.gui.ColourPalette;
 import com.mervyn.miforeman.client.gui.ColourPalette.ColourKey;
+import com.mervyn.miforeman.goal.MachineStatus;
 import com.mervyn.miforeman.network.LiveMonitoringPayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -35,7 +36,7 @@ public class MonitoringListPanel extends AbstractWidget {
     private static final int ACTION_BUTTON_WIDTH = 46;
     private static final int ACTION_BUTTON_HEIGHT = 14;
 
-    private final List<MonitoringRow> rows;
+    private List<MonitoringRow> rows;
     private final boolean perHour;
     private final @Nullable GlobalPos selectedPos;
     private final Consumer<MonitoringRow> onLocate;
@@ -51,6 +52,12 @@ public class MonitoringListPanel extends AbstractWidget {
         this.selectedPos = selectedPos;
         this.onLocate = onLocate;
         this.scroll = new ListScroll(ROW_HEIGHT, initialScrollOffset, onScrollChange);
+    }
+
+    /** Swaps in fresh row data without recreating this widget -- preserves scroll offset,
+     *  hover state, and identity across a poll response. */
+    public void updateRows(List<MonitoringRow> rows) {
+        this.rows = rows;
     }
 
     private int actionButtonX() {
@@ -148,13 +155,12 @@ public class MonitoringListPanel extends AbstractWidget {
         return scroll.onWheel(scrollY, rows.size(), getHeight());
     }
 
-    private int statusColour(String status) {
+    private int statusColour(MachineStatus status) {
         return switch (status) {
-            case "RED" -> COLOUR_RED;
-            case "ORANGE" -> COLOUR_ORANGE;
-            case "YELLOW" -> COLOUR_AMBER;
-            case "GREEN" -> COLOUR_GREEN;
-            default -> COLOUR_MUTED;
+            case RED -> COLOUR_RED;
+            case ORANGE -> COLOUR_ORANGE;
+            case YELLOW -> COLOUR_AMBER;
+            case GREEN -> COLOUR_GREEN;
         };
     }
 

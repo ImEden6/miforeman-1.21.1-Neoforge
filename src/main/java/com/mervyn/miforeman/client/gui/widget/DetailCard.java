@@ -36,16 +36,27 @@ public class DetailCard extends AbstractWidget {
     private static final int COLOUR_CYCLE_BOX = 0xFFD8C3A5;
     private static final int COLOUR_CYCLE_HOVER = 0xFFEAE7D9;
 
+    /** Bundles DetailCard's UI-interaction callbacks so they travel as one typed unit instead
+     *  of several same-shaped Runnable/Consumer parameters that are easy to transpose at a call
+     *  site. */
+    public record Callbacks(
+            BiConsumer<ResourceLocation, ResourceLocation> onAmbiguity,
+            Runnable onToggleNumbers,
+            @Nullable Consumer<ResourceLocation> onToggleVisibility,
+            @Nullable Runnable onUnhideAll,
+            @Nullable Predicate<ResourceLocation> isHiddenPredicate,
+            @Nullable Consumer<ResourceLocation> onExpandMaterial
+    ) {
+        public Callbacks(BiConsumer<ResourceLocation, ResourceLocation> onAmbiguity, Runnable onToggleNumbers) {
+            this(onAmbiguity, onToggleNumbers, null, null, null, null);
+        }
+    }
+
     private @Nullable RecipeGraphNode node;
     private final FactoryPlan plan;
     private final boolean perHour;
     private final boolean showNumbers;
-    private final BiConsumer<ResourceLocation, ResourceLocation> onAmbiguity;
-    private final Runnable onToggleNumbers;
-    private final @Nullable Consumer<ResourceLocation> onToggleVisibility;
-    private final @Nullable Runnable onUnhideAll;
-    private final @Nullable Predicate<ResourceLocation> isHiddenPredicate;
-    private final @Nullable Consumer<ResourceLocation> onExpandMaterial;
+    private final Callbacks callbacks;
     private final IntConsumer onScrollChange;
     private int scrollOffset;
     private int totalContentHeight = 0;
@@ -79,35 +90,16 @@ public class DetailCard extends AbstractWidget {
     private boolean isExpandBoxHovered = false;
 
     public DetailCard(int x, int y, int width, int height, @Nullable RecipeGraphNode node,
-                      FactoryPlan plan, boolean perHour, boolean showNumbers,
-                      BiConsumer<ResourceLocation, ResourceLocation> onAmbiguity,
-                      Runnable onToggleNumbers,
-                      @Nullable Consumer<ResourceLocation> onToggleVisibility,
-                      @Nullable Runnable onUnhideAll,
-                      @Nullable Predicate<ResourceLocation> isHiddenPredicate,
-                      @Nullable Consumer<ResourceLocation> onExpandMaterial,
+                      FactoryPlan plan, boolean perHour, boolean showNumbers, Callbacks callbacks,
                       int initialScrollOffset, IntConsumer onScrollChange) {
         super(x, y, width, height, Component.literal("Detail Card"));
         this.node = node;
         this.plan = plan;
         this.perHour = perHour;
         this.showNumbers = showNumbers;
-        this.onAmbiguity = onAmbiguity;
-        this.onToggleNumbers = onToggleNumbers;
-        this.onToggleVisibility = onToggleVisibility;
-        this.onUnhideAll = onUnhideAll;
-        this.isHiddenPredicate = isHiddenPredicate;
-        this.onExpandMaterial = onExpandMaterial;
+        this.callbacks = callbacks;
         this.scrollOffset = initialScrollOffset;
         this.onScrollChange = onScrollChange;
-    }
-
-    public DetailCard(int x, int y, int width, int height, @Nullable RecipeGraphNode node,
-                      FactoryPlan plan, boolean perHour, boolean showNumbers,
-                      BiConsumer<ResourceLocation, ResourceLocation> onAmbiguity,
-                      Runnable onToggleNumbers,
-                      int initialScrollOffset, IntConsumer onScrollChange) {
-        this(x, y, width, height, node, plan, perHour, showNumbers, onAmbiguity, onToggleNumbers, null, null, null, null, initialScrollOffset, onScrollChange);
     }
 
     public void setNode(@Nullable RecipeGraphNode node) {
@@ -120,7 +112,7 @@ public class DetailCard extends AbstractWidget {
         return node != null
                 && node.getType() != NodeType.MACHINE
                 && node.getInputs().isEmpty()
-                && onExpandMaterial != null
+                && callbacks.onExpandMaterial() != null
                 && Minecraft.getInstance().level != null
                 && !RecipeGraphTraverser.getCandidateRecipes(Minecraft.getInstance().level, node.getId()).isEmpty();
     }
@@ -241,7 +233,7 @@ public class DetailCard extends AbstractWidget {
             currentY += 13;
 
             // Visibility Toggle for Selected Node
-            boolean isHidden = isHiddenPredicate != null && isHiddenPredicate.test(node.getId());
+            boolean isHidden = callbacks.isHiddenPredicate() != null && callbacks.isHiddenPredicate().test(node.getId());
             String visText = isHidden ? "Unhide from Canvas" : "Hide from Canvas";
             int visTextW = fontSource.font.width(visText);
             nodeVisBoxX = getX() + 6;
@@ -421,25 +413,25 @@ public class DetailCard extends AbstractWidget {
             return false;
         }
 
-        if (button == 0 && node == null && onToggleNumbers != null &&
+        if (button == 0 && node == null && callbacks.onToggleNumbers() != null &&
                 mouseX >= numToggleBoxX && mouseX < numToggleBoxX + numToggleBoxW &&
                 mouseY >= numToggleBoxY && mouseY < numToggleBoxY + numToggleBoxH) {
-            onToggleNumbers.run();
+            callbacks.onToggleNumbers().run();
             this.playDownSound(Minecraft.getInstance().getSoundManager());
             return true;
         }
 
-        if (button == 0 && node != null && onToggleVisibility != null &&
+        if (button == 0 && node != null && callbacks.onToggleVisibility() != null &&
                 mouseX >= nodeVisBoxX && mouseX < nodeVisBoxX + nodeVisBoxW &&
                 mouseY >= nodeVisBoxY && mouseY < nodeVisBoxY + nodeVisBoxH) {
-            onToggleVisibility.accept(node.getId());
+            callbacks.onToggleVisibility().accept(node.getId());
             this.playDownSound(Minecraft.getInstance().getSoundManager());
             return true;
         }
 
-        if (button == 0 && node != null && onExpandMaterial != null &&
+        if (button == 0 && node != null && callbacks.onExpandMaterial() != null &&
                 GuiMath.contains(expandBoxX, expandBoxY, expandBoxW, expandBoxH, mouseX, mouseY)) {
-            onExpandMaterial.accept(node.getId());
+            callbacks.onExpandMaterial().accept(node.getId());
             this.playDownSound(Minecraft.getInstance().getSoundManager());
             return true;
         }
@@ -458,7 +450,7 @@ public class DetailCard extends AbstractWidget {
                         : node.getId();
 
                 if (resourceId != null) {
-                    onAmbiguity.accept(resourceId, nextSel);
+                    callbacks.onAmbiguity().accept(resourceId, nextSel);
                     this.playDownSound(Minecraft.getInstance().getSoundManager());
                     return true;
                 }

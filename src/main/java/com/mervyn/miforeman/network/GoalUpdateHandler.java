@@ -13,7 +13,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.InteractionHand;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.Nullable;
 
@@ -43,10 +42,7 @@ public class GoalUpdateHandler {
                 return;
             }
 
-            ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
-            if (stack.isEmpty() || !stack.is(ModItems.FOREMAN_CLIPBOARD_ITEM.get())) {
-                stack = player.getItemInHand(InteractionHand.OFF_HAND);
-            }
+            ItemStack stack = player.getItemInHand(payload.hand());
             if (!stack.isEmpty() && stack.is(ModItems.FOREMAN_CLIPBOARD_ITEM.get())) {
                 ProductionGoal newGoal = payload.goal();
                 ProductionGoal.FactoryPlan plan = RecipeGraphTraverser.computePlan(level, newGoal);

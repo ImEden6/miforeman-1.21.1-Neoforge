@@ -98,6 +98,11 @@ public class ForemanCommands {
         ItemStack stack = new ItemStack(ModItems.FOREMAN_CLIPBOARD_ITEM.get());
         stack.set(ModComponents.PRODUCTION_GOAL.get(), goal);
 
+        ItemStack existing = player.getItemInHand(InteractionHand.MAIN_HAND);
+        if (!existing.isEmpty() && !player.getInventory().add(existing)) {
+            player.drop(existing, false);
+        }
+
         player.setItemInHand(InteractionHand.MAIN_HAND, stack);
         source.sendSuccess(() -> Component.literal("Successfully created and equipped MI Foreman's Clipboard with goal: " + name), true);
 

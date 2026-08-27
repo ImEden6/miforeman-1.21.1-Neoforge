@@ -11,6 +11,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.GlobalPos;
 import net.minecraft.network.chat.Component;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -25,13 +26,15 @@ public class MonitoringScreen extends Screen {
     private static final int PADDING = 8;
     private static final int COLOUR_TITLE = 0xFFDAA520;
     private static final int POLL_INTERVAL_TICKS = 20;
-    private static final List<String> STATUS_PRIORITY = List.of("RED", "ORANGE", "YELLOW", "GREEN");
 
     private final MonitoringState state;
     private final boolean perHour;
     private final Screen backTarget;
     private int tickCount = 0;
     private int scrollOffset = 0;
+    /** Kept so poll responses can push new row data in place (see {@link #refreshData()})
+     *  instead of clearing and recreating every widget on the screen every ~1s. */
+    private @Nullable MonitoringListPanel listPanel;
 
     public MonitoringScreen(MonitoringState state, boolean perHour, Screen backTarget) {
         super(Component.literal("Live Monitoring"));
@@ -52,6 +55,7 @@ public class MonitoringScreen extends Screen {
     protected void init() {
         super.init();
         rebuild();
+        new RequestMonitoringUpdatePayload(state.hand).sendToServer();
     }
 
     private void rebuild() {
@@ -64,15 +68,8 @@ public class MonitoringScreen extends Screen {
         int contentW = guiWidth() - (PADDING + ClipboardChrome.MAIN_BORDER) * 2 - 4;
         int btnY = top + guiHeight() - PADDING - ClipboardChrome.MAIN_BORDER - 22;
 
-        List<LiveMonitoringPayload.MachineStatusData> sorted = new ArrayList<>(state.liveData);
-        sorted.sort(Comparator.comparingInt(this::statusRank));
-
-        List<MonitoringListPanel.MonitoringRow> displayRows = sorted.stream()
-                .map(m -> new MonitoringListPanel.MonitoringRow(m, m.recipeId().map(MonitoringState::resolveProductLabel).orElse(null)))
-                .toList();
-
-        MonitoringListPanel listPanel = new MonitoringListPanel(contentX, contentY, contentW, btnY - 6 - contentY,
-                displayRows, perHour, WorldHighlightRenderer.getSelected(), this::handleLocate,
+        listPanel = new MonitoringListPanel(contentX, contentY, contentW, btnY - 6 - contentY,
+                buildDisplayRows(), perHour, WorldHighlightRenderer.getSelected(), this::handleLocate,
                 scrollOffset, v -> scrollOffset = v);
         this.addRenderableWidget(listPanel);
 
@@ -81,8 +78,27 @@ public class MonitoringScreen extends Screen {
                 b -> Minecraft.getInstance().setScreen(backTarget)
         );
         this.addRenderableWidget(backButton);
+    }
 
-        new RequestMonitoringUpdatePayload().sendToServer();
+    /** Pushes fresh poll data into the existing list panel in place, instead of the full
+     *  {@link #rebuild()} -- avoids resetting scroll/hover state and recreating widgets on
+     *  every ~1s poll response. Layout (positions, the back button, selection) only changes
+     *  via {@link #rebuild()}, triggered from init()/resize/handleLocate. */
+    private void refreshData() {
+        if (listPanel != null) {
+            listPanel.updateRows(buildDisplayRows());
+        } else {
+            rebuild();
+        }
+    }
+
+    private List<MonitoringListPanel.MonitoringRow> buildDisplayRows() {
+        List<LiveMonitoringPayload.MachineStatusData> sorted = new ArrayList<>(state.liveData);
+        sorted.sort(Comparator.comparingInt(this::statusRank));
+
+        return sorted.stream()
+                .map(m -> new MonitoringListPanel.MonitoringRow(m, m.recipeId().map(MonitoringState::resolveProductLabel).orElse(null)))
+                .toList();
     }
 
     /** Toggles locating a machine in-world when clicked. */
@@ -97,13 +113,12 @@ public class MonitoringScreen extends Screen {
     }
 
     private int statusRank(LiveMonitoringPayload.MachineStatusData machine) {
-        int idx = STATUS_PRIORITY.indexOf(machine.status());
-        return idx < 0 ? STATUS_PRIORITY.size() : idx;
+        return machine.status().ordinal();
     }
 
     public void updateLiveMonitoring(List<LiveMonitoringPayload.MachineStatusData> data) {
         state.setLiveData(data);
-        rebuild();
+        refreshData();
     }
 
     @Override
@@ -112,7 +127,7 @@ public class MonitoringScreen extends Screen {
         tickCount++;
         if (tickCount >= POLL_INTERVAL_TICKS) {
             tickCount = 0;
-            new RequestMonitoringUpdatePayload().sendToServer();
+            new RequestMonitoringUpdatePayload(state.hand).sendToServer();
         }
     }
 

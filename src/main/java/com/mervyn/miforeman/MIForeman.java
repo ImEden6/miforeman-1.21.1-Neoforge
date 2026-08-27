@@ -3,7 +3,6 @@ package com.mervyn.miforeman;
 import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
-import com.mervyn.miforeman.client.ClientConfig;
 import com.mervyn.miforeman.command.ForemanCommands;
 import com.mervyn.miforeman.registry.ModComponents;
 import com.mervyn.miforeman.registry.ModItems;
@@ -53,9 +52,11 @@ public class MIForeman {
             event.register(ForemanGameTests.class);
         });
 
-        // Register our mod's ModConfigSpec so that FML can create and load the config file for us
+        // Register our mod's ModConfigSpec so that FML can create and load the config file for us.
+        // Client config is registered from MIForemanClient instead (dist=CLIENT-gated), per
+        // CONTRIBUTING.md's documented config-location convention -- registering it here would
+        // make a dedicated server needlessly create a meaningless client config file.
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
-        modContainer.registerConfig(ModConfig.Type.CLIENT, ClientConfig.SPEC);
     }
 
     // Add the items to creative tabs

@@ -12,6 +12,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
@@ -28,6 +29,9 @@ public class ReviewMachinesScreen extends Screen {
     private final Runnable onChange;
     private final Screen backTarget;
     private int scrollOffset = 0;
+    /** Kept so poll responses can push new row data in place (see {@link #refreshData()})
+     *  instead of clearing and recreating every widget on the screen every ~1s. */
+    private @Nullable ReviewListPanel listPanel;
 
     public ReviewMachinesScreen(MonitoringState state, Runnable onChange, Screen backTarget) {
         super(Component.literal("Review Machines"));
@@ -48,7 +52,7 @@ public class ReviewMachinesScreen extends Screen {
     protected void init() {
         super.init();
         rebuild();
-        new RequestMonitoringUpdatePayload().sendToServer();
+        new RequestMonitoringUpdatePayload(state.hand).sendToServer();
     }
 
     private void rebuild() {
@@ -94,7 +98,7 @@ public class ReviewMachinesScreen extends Screen {
 
         List<ReviewListPanel.ReviewRow> rows = state.buildReviewRows();
         int listY = contentY + 18;
-        ReviewListPanel listPanel = new ReviewListPanel(contentX, listY, contentW, btnY - 6 - listY,
+        listPanel = new ReviewListPanel(contentX, listY, contentW, btnY - 6 - listY,
                 rows, this::handleReviewToggle, this::handleRejectCandidateRequest, this::handleUnreject,
                 scrollOffset, v -> scrollOffset = v);
         this.addRenderableWidget(listPanel);
@@ -122,7 +126,23 @@ public class ReviewMachinesScreen extends Screen {
 
     public void updateLiveMonitoring(List<LiveMonitoringPayload.MachineStatusData> data) {
         state.setLiveData(data);
-        rebuild();
+        refreshData();
+    }
+
+    /** Pushes fresh poll data into the existing list panel in place, instead of the full
+     *  {@link #rebuild()} -- avoids resetting scroll/hover state and recreating widgets on
+     *  every ~1s poll response. Safe to skip recomputing button active-states here. liveData
+     *  only affects each row's productLabel (see MonitoringState.buildReviewRows), never the
+     *  linked/rejected sets those buttons key off of. Layout only changes via rebuild(),
+     *  triggered from init()/resize/user actions. */
+    private void refreshData() {
+        if (listPanel == null) {
+            rebuild();
+            return;
+        }
+        List<ReviewListPanel.ReviewRow> rows = state.buildReviewRows();
+        listPanel.updateRows(rows);
+        state.updateWorldHighlightPositions(rows);
     }
 
     public void updateScanResults(List<ScanResultPayload.Candidate> candidates) {
@@ -134,7 +154,7 @@ public class ReviewMachinesScreen extends Screen {
     public void tick() {
         super.tick();
         if (state.tickAndShouldPoll()) {
-            new RequestMonitoringUpdatePayload().sendToServer();
+            new RequestMonitoringUpdatePayload(state.hand).sendToServer();
         }
     }
 
@@ -147,7 +167,7 @@ public class ReviewMachinesScreen extends Screen {
             }
         }
         onChange.run();
-        new RequestMonitoringUpdatePayload().sendToServer();
+        new RequestMonitoringUpdatePayload(state.hand).sendToServer();
         rebuild();
     }
 
@@ -165,7 +185,7 @@ public class ReviewMachinesScreen extends Screen {
                             state.applyUnlink(row.pos(), () -> {});
                         }
                         onChange.run();
-                        new RequestMonitoringUpdatePayload().sendToServer();
+                        new RequestMonitoringUpdatePayload(state.hand).sendToServer();
                         rebuild();
                     }
                 },
@@ -180,7 +200,7 @@ public class ReviewMachinesScreen extends Screen {
         } else {
             state.applyLink(row.pos(), onChange);
         }
-        new RequestMonitoringUpdatePayload().sendToServer();
+        new RequestMonitoringUpdatePayload(state.hand).sendToServer();
         rebuild();
     }
 

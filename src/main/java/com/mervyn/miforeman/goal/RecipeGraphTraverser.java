@@ -207,7 +207,20 @@ public final class RecipeGraphTraverser {
             Map<ResourceLocation, ResourceLocation> selections) {
     }
 
-    private static final Map<GraphCacheKey, RecipeGraph> GRAPH_CACHE = new HashMap<>();
+    // Bounded (LRU-evicted) since every distinct (target, rate, selections) combination is a
+    // separate key -- unbounded would grow forever across a long session of slider drags.
+    // Not a ConcurrentHashMap. LinkedHashMap's removeEldestEntry hook needs external
+    // synchronization anyway (get-then-put isn't atomic), so every access below is wrapped in
+    // synchronized(GRAPH_CACHE) instead. This cache is genuinely reached from two different
+    // threads in singleplayer, the client render thread (ClipboardScreen -> GoalDraft.computePlan)
+    // and the integrated/dedicated server thread (GoalUpdateHandler, ForemanCommands).
+    private static final int GRAPH_CACHE_MAX_SIZE = 50;
+    private static final Map<GraphCacheKey, RecipeGraph> GRAPH_CACHE = new LinkedHashMap<>(16, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<GraphCacheKey, RecipeGraph> eldest) {
+            return size() > GRAPH_CACHE_MAX_SIZE;
+        }
+    };
 
     /**
      * Immutable snapshot of the indexed item/fluid recipe lookup, keyed on both the
@@ -228,7 +241,9 @@ public final class RecipeGraphTraverser {
     private static volatile RecipeIndex cachedIndex;
 
     public static void clearGraphCache() {
-        GRAPH_CACHE.clear();
+        synchronized (GRAPH_CACHE) {
+            GRAPH_CACHE.clear();
+        }
         cachedIndex = null;
     }
 
@@ -254,9 +269,14 @@ public final class RecipeGraphTraverser {
     public static RecipeGraph computeRecipeGraph(Level level, ProductionGoal goal) {
         GraphCacheKey key = new GraphCacheKey(goal.type(), goal.targetId(), goal.rate(),
                 new HashMap<>(goal.recipeSelections()));
-        RecipeGraph cached = GRAPH_CACHE.get(key);
-        if (cached != null) {
-            return cached;
+        synchronized (GRAPH_CACHE) {
+            RecipeGraph cached = GRAPH_CACHE.get(key);
+            if (cached != null) {
+                // Never hand out the cached instance itself -- its nodes have public setters
+                // (setExpanded, setSelectedAmbiguity, ...) that UI code calls directly, which
+                // would otherwise mutate the shared cache entry in place.
+                return cached.copy();
+            }
         }
 
         RecipeManager recipeManager = level.getRecipeManager();
@@ -296,8 +316,10 @@ public final class RecipeGraphTraverser {
         }
 
         RecipeGraph result = new RecipeGraph(goal.targetId(), goal.rate(), nodes, new ArrayList<>(edges.values()));
-        GRAPH_CACHE.put(key, result);
-        return result;
+        synchronized (GRAPH_CACHE) {
+            GRAPH_CACHE.put(key, result);
+        }
+        return result.copy();
     }
 
     private record EdgeKey(ResourceLocation from, ResourceLocation to) {

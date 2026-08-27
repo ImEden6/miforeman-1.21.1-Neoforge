@@ -33,7 +33,7 @@ public class ReviewListPanel extends AbstractWidget {
     private static final int ACTION_BUTTON_WIDTH = 46;
     private static final int ACTION_BUTTON_HEIGHT = 14;
 
-    private final List<ReviewRow> rows;
+    private List<ReviewRow> rows;
     private final Consumer<ReviewRow> onToggleLink;
     private final Consumer<ReviewRow> onRejectRequest;
     private final Consumer<ReviewRow> onUnreject;
@@ -51,6 +51,12 @@ public class ReviewListPanel extends AbstractWidget {
         this.onRejectRequest = onRejectRequest;
         this.onUnreject = onUnreject;
         this.scroll = new ListScroll(ROW_HEIGHT, initialScrollOffset, onScrollChange);
+    }
+
+    /** Swaps in fresh row data without recreating this widget -- preserves scroll offset,
+     *  hover state, and identity across a poll response. */
+    public void updateRows(List<ReviewRow> rows) {
+        this.rows = rows;
     }
 
     private int actionButtonX() {

@@ -1,6 +1,7 @@
 package com.mervyn.miforeman.network;
 
 import aztech.modern_industrialization.machines.MachineBlockEntity;
+import com.mervyn.miforeman.goal.MachineStatus;
 import com.mervyn.miforeman.goal.ProductionGoal;
 import com.mervyn.miforeman.goal.ServerMonitoringManager;
 import com.mervyn.miforeman.goal.ServerMonitoringManager.MachineTracker;
@@ -11,7 +12,6 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
@@ -25,10 +25,7 @@ public class MonitoringPacketHandlers {
             if (!(context.player() instanceof ServerPlayer player)) {
                 return;
             }
-            ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
-            if (stack.isEmpty() || !stack.is(ModItems.FOREMAN_CLIPBOARD_ITEM.get())) {
-                stack = player.getItemInHand(InteractionHand.OFF_HAND);
-            }
+            ItemStack stack = player.getItemInHand(payload.hand());
             if (stack.isEmpty() || !stack.is(ModItems.FOREMAN_CLIPBOARD_ITEM.get())) {
                 return;
             }
@@ -71,13 +68,13 @@ public class MonitoringPacketHandlers {
                 BlockEntity be = machineLevel.getBlockEntity(pos.pos());
                 if (be instanceof MachineBlockEntity machine) {
                     MachineTracker tracker = ServerMonitoringManager.trackerFor(pos);
-                    String status = tracker.status;
+                    MachineStatus status = tracker.status;
 
                     Map<ResourceLocation, Double> rates = machineRates.getOrDefault(pos, Map.of());
                     ResourceLocation blockId = BuiltInRegistries.BLOCK.getKey(machine.getBlockState().getBlock());
 
                     // If active (GREEN), check for underperformance (YELLOW)
-                    if ("GREEN".equals(status)) {
+                    if (status == MachineStatus.GREEN) {
                         boolean isUnderperforming = false;
                         for (var entry : rates.entrySet()) {
                             ResourceLocation resourceId = entry.getKey();
@@ -89,7 +86,7 @@ public class MonitoringPacketHandlers {
                             }
                         }
                         if (isUnderperforming) {
-                            status = "YELLOW";
+                            status = MachineStatus.YELLOW;
                         }
                     }
 
