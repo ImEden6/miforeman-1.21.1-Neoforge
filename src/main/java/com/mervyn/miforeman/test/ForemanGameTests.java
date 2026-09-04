@@ -16,6 +16,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import aztech.modern_industrialization.machines.MachineBlockEntity;
 import com.mervyn.miforeman.goal.ServerMonitoringManager;
 import com.mervyn.miforeman.goal.UnifiedCrafter;
@@ -279,14 +280,19 @@ public class ForemanGameTests {
             return;
         }
 
-        // Test 1: Empty inputs -> Starving (RED)
-        com.mervyn.miforeman.goal.MachineStatus statusStarving = ServerMonitoringManager.getMachinePassiveStatus(crafter, level);
-        if (statusStarving != com.mervyn.miforeman.goal.MachineStatus.RED) {
-            helper.fail("Expected machine with empty inputs to be STARVING (RED), but got: " + statusStarving);
+        // Test 1: Empty inputs -> Starving (RED), and no cycle info -> plain STARVED, not DEAD_LOOP.
+        var statusStarving = ServerMonitoringManager.getMachinePassiveStatusDetailed(crafter, level);
+        if (statusStarving.status() != com.mervyn.miforeman.goal.MachineStatus.RED) {
+            helper.fail("Expected machine with empty inputs to be STARVING (RED), but got: " + statusStarving.status());
+            return;
+        }
+        if (statusStarving.reason() != com.mervyn.miforeman.goal.FailureReason.STARVED) {
+            helper.fail("Expected empty-input RED machine to report STARVED (no cyclicResourceIds given), but got: "
+                    + statusStarving.reason());
             return;
         }
 
-        // Test 2: Add valid inputs, but block outputs -> Saturating (ORANGE)
+        // Test 2: Add valid inputs, but block outputs -> Saturating (ORANGE), reason CLOG_LOCK.
         var ironIngot = net.minecraft.world.item.Items.IRON_INGOT;
         var inputSlot = crafter.getItemInputs().get(0);
         inputSlot.setKey(aztech.modern_industrialization.thirdparty.fabrictransfer.api.item.ItemVariant.of(ironIngot));
@@ -298,10 +304,14 @@ public class ForemanGameTests {
                 .of(net.minecraft.world.item.Items.GLASS));
         outputSlot.setAmount(64);
 
-        com.mervyn.miforeman.goal.MachineStatus statusSaturating = ServerMonitoringManager.getMachinePassiveStatus(crafter, level);
-        if (statusSaturating != com.mervyn.miforeman.goal.MachineStatus.ORANGE) {
+        var statusSaturating = ServerMonitoringManager.getMachinePassiveStatusDetailed(crafter, level);
+        if (statusSaturating.status() != com.mervyn.miforeman.goal.MachineStatus.ORANGE) {
             helper.fail("Expected machine with matched inputs but blocked outputs to be SATURATING (ORANGE), but got: "
-                    + statusSaturating);
+                    + statusSaturating.status());
+            return;
+        }
+        if (statusSaturating.reason() != com.mervyn.miforeman.goal.FailureReason.CLOG_LOCK) {
+            helper.fail("Expected blocked-output ORANGE machine to report CLOG_LOCK, but got: " + statusSaturating.reason());
             return;
         }
 
@@ -312,6 +322,53 @@ public class ForemanGameTests {
             helper.fail(
                     "Expected ready-to-craft machine to return ORANGE (since it can start but is not currently active), but got: "
                             + statusReady);
+            return;
+        }
+
+        // Test 4: Drain the input to zero -- genuinely starving (RED, no candidates; MI resets a
+        // drained ConfigurableItemStack's configured type back to blank, so there's no live input
+        // resource to inspect). Simulate "this machine was last seen running the ORANGE recipe
+        // from Test 2" (as MachineTracker.lastKnownRecipeId would after a real craft) and confirm
+        // that -- combined with that recipe's input resource being reported cyclic -- reads DEAD_LOOP.
+        inputSlot.setAmount(0);
+        ResourceLocation lastKnownRecipeId = statusSaturating.matchedRecipeId();
+        if (lastKnownRecipeId == null) {
+            helper.fail("Test 2's ORANGE status didn't report a matchedRecipeId to build the DEAD_LOOP case from.");
+            return;
+        }
+        ResourceLocation ironIngotId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(ironIngot);
+
+        var statusDeadLoop = ServerMonitoringManager.getMachinePassiveStatusDetailed(crafter, level,
+                Set.of(ironIngotId), lastKnownRecipeId);
+        if (statusDeadLoop.status() != com.mervyn.miforeman.goal.MachineStatus.RED) {
+            helper.fail("Expected drained-input machine to be RED, but got: " + statusDeadLoop.status());
+            return;
+        }
+        if (statusDeadLoop.reason() != com.mervyn.miforeman.goal.FailureReason.DEAD_LOOP) {
+            helper.fail("Expected RED machine last seen running a recipe touching a cyclic resource to report "
+                    + "DEAD_LOOP, but got: " + statusDeadLoop.reason());
+            return;
+        }
+
+        // Sanity check: the same drained state with an unrelated cyclicResourceIds set stays
+        // plain STARVED, confirming DEAD_LOOP tracks the specific resource, not "any cycle
+        // exists anywhere".
+        var statusStillStarved = ServerMonitoringManager.getMachinePassiveStatusDetailed(crafter, level,
+                Set.of(ResourceLocation.parse("minecraft:diamond")), lastKnownRecipeId);
+        if (statusStillStarved.reason() != com.mervyn.miforeman.goal.FailureReason.STARVED) {
+            helper.fail("Expected drained-input machine with an unrelated cyclicResourceIds entry to stay STARVED, but got: "
+                    + statusStillStarved.reason());
+            return;
+        }
+
+        // And with no lastKnownRecipeId at all (never seen running), it's plain STARVED even
+        // though the cyclic set would otherwise match -- a machine that's never run isn't
+        // "dead-looping" yet.
+        var statusNeverRan = ServerMonitoringManager.getMachinePassiveStatusDetailed(crafter, level,
+                Set.of(ironIngotId), null);
+        if (statusNeverRan.reason() != com.mervyn.miforeman.goal.FailureReason.STARVED) {
+            helper.fail("Expected drained-input machine with no lastKnownRecipeId to stay STARVED, but got: "
+                    + statusNeverRan.reason());
             return;
         }
 
@@ -507,6 +564,74 @@ public class ForemanGameTests {
                         + node.getOutputs().stream().map(e -> e.to().toString()).toList());
                 return;
             }
+        }
+
+        helper.succeed();
+    }
+
+    /** Verifies {@code RecipeGraphTraverser.collectUpstreamResourceIds}, the walk that powers
+     *  the Review/Monitoring screens' "search by end product" feature, correctly collects every
+     *  resource between a machine and the graph's target (inclusive), excludes MACHINE node ids
+     *  (recipe ids) from the result, and degrades gracefully to an empty set for an unknown or
+     *  null recipe id instead of throwing. */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testCollectUpstreamResourceIds(GameTestHelper helper) {
+        var level = helper.getLevel();
+        ResourceLocation targetId = ResourceLocation.parse("modern_industrialization:quantum_upgrade");
+        ProductionGoal goal = new ProductionGoal("upstream_test", ProductionGoal.TargetType.ITEM, targetId, 1.0);
+        var graph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
+
+        var machineNode = graph.nodes().values().stream()
+                .filter(n -> n.getType() == com.mervyn.miforeman.goal.NodeType.MACHINE)
+                .findFirst()
+                .orElse(null);
+        if (machineNode == null) {
+            helper.fail("Expected at least one MACHINE node in the quantum_upgrade graph.");
+            return;
+        }
+
+        var upstream = RecipeGraphTraverser.collectUpstreamResourceIds(graph, machineNode.getId());
+
+        if (!upstream.contains(targetId)) {
+            helper.fail("Expected collectUpstreamResourceIds to include the goal's target resource " + targetId
+                    + ", but got: " + upstream);
+            return;
+        }
+
+        ResourceLocation immediateOutput = machineNode.getOutputs().stream()
+                .findFirst().map(com.mervyn.miforeman.goal.GraphEdge::to).orElse(null);
+        if (immediateOutput == null) {
+            helper.fail("Test machine node unexpectedly has no output edges; can't verify immediate-output inclusion.");
+            return;
+        }
+        if (!upstream.contains(immediateOutput)) {
+            helper.fail("Expected collectUpstreamResourceIds to include the machine's immediate output resource "
+                    + immediateOutput + ", but got: " + upstream);
+            return;
+        }
+
+        // MACHINE-type node ids (recipe ids) are never part of the result -- only resource ids.
+        for (ResourceLocation id : upstream) {
+            var node = graph.nodes().get(id);
+            if (node != null && node.getType() == com.mervyn.miforeman.goal.NodeType.MACHINE) {
+                helper.fail("Expected collectUpstreamResourceIds to only return resource ids, but got a MACHINE "
+                        + "node id in the result: " + id);
+                return;
+            }
+        }
+
+        // Unknown or null recipe id -> graceful empty set, not an exception (e.g. a row whose
+        // recorded recipe isn't part of this goal's plan, or one with no recipe recorded yet).
+        var unknown = RecipeGraphTraverser.collectUpstreamResourceIds(graph,
+                ResourceLocation.parse("modern_industrialization:not_a_real_recipe"));
+        if (!unknown.isEmpty()) {
+            helper.fail("Expected an unknown recipe id to produce an empty upstream set, but got: " + unknown);
+            return;
+        }
+        var nullResult = RecipeGraphTraverser.collectUpstreamResourceIds(graph, null);
+        if (!nullResult.isEmpty()) {
+            helper.fail("Expected a null recipe id to produce an empty upstream set, but got: " + nullResult);
+            return;
         }
 
         helper.succeed();
@@ -720,19 +845,27 @@ public class ForemanGameTests {
 
         ProductionGoal goal = new ProductionGoal("cache_test", ProductionGoal.TargetType.ITEM, targetId, 1.0);
 
+        // computeRecipeGraph() always returns cached.copy()/result.copy() -- see its own doc
+        // comment -- specifically so callers can never accidentally mutate a shared cache entry
+        // through a node's public setters. That means two calls NEVER return the same reference,
+        // cache hit or not, so identity ("==") can't observe cache mechanics from outside. What's
+        // left to verify from here is content: a cache hit must still return the *same*
+        // structural result as the original compute, an invalidated/re-keyed entry must still be
+        // internally consistent, and genuinely different queries must produce genuinely different
+        // content.
         var first = RecipeGraphTraverser.computeRecipeGraph(level, goal);
         var second = RecipeGraphTraverser.computeRecipeGraph(level, goal);
-        if (first != second) {
-            helper.fail("Expected computeRecipeGraph to return the identical cached reference for an "
-                    + "unchanged goal query, but got two distinct instances.");
+        if (!sameGraphContent(first, second)) {
+            helper.fail("Expected two computeRecipeGraph calls for an unchanged goal query to return "
+                    + "structurally identical content.");
             return;
         }
 
         RecipeGraphTraverser.clearGraphCache();
         var afterClear = RecipeGraphTraverser.computeRecipeGraph(level, goal);
-        if (afterClear == first) {
-            helper.fail("Expected clearGraphCache() to force a fresh RecipeGraph instance, but the "
-                    + "same reference was returned.");
+        if (!sameGraphContent(afterClear, first)) {
+            helper.fail("Expected a fresh recompute after clearGraphCache() to still match the original "
+                    + "content for an unchanged goal query (computation should be deterministic).");
             return;
         }
 
@@ -754,20 +887,233 @@ public class ForemanGameTests {
                 Map.of(ambiguousNode.getAmbiguityOwnerId(), altRecipe));
 
         var altGraph = RecipeGraphTraverser.computeRecipeGraph(level, altGoal);
-        if (altGraph == afterClear) {
-            helper.fail("Expected a goal with different recipeSelections to be a distinct cache "
-                    + "entry, but got the same reference as the default-selections goal.");
+        if (sameGraphContent(altGraph, afterClear)) {
+            helper.fail("Expected a goal with different recipeSelections to produce structurally "
+                    + "different content than the default-selections goal.");
             return;
         }
 
         var stillCachedDefault = RecipeGraphTraverser.computeRecipeGraph(level, goal);
-        if (stillCachedDefault != afterClear) {
-            helper.fail("Populating the cache for altGoal's recipeSelections evicted or replaced "
-                    + "the existing entry for the default-selections goal.");
+        if (!sameGraphContent(stillCachedDefault, afterClear)) {
+            helper.fail("Populating the cache for altGoal's recipeSelections corrupted the existing "
+                    + "entry's content for the default-selections goal.");
             return;
         }
 
         RecipeGraphTraverser.clearGraphCache();
+        helper.succeed();
+    }
+
+    /** Structural content comparison for {@link com.mervyn.miforeman.goal.RecipeGraph}.
+     *  {@code RecipeGraphNode} has no value-based equals/hashCode (its setters mean identity
+     *  equality is the right default for production code), so this exists purely for tests that
+     *  need to compare two independently-computed graphs for "same result", not "same instance". */
+    private static boolean sameGraphContent(com.mervyn.miforeman.goal.RecipeGraph a, com.mervyn.miforeman.goal.RecipeGraph b) {
+        if (!a.target().equals(b.target()) || a.targetRate() != b.targetRate()) {
+            return false;
+        }
+        if (!a.nodes().keySet().equals(b.nodes().keySet())) {
+            return false;
+        }
+        if (a.edges().size() != b.edges().size()) {
+            return false;
+        }
+        var aPairs = a.edges().stream().map(e -> List.of(e.from(), e.to())).collect(java.util.stream.Collectors.toSet());
+        var bPairs = b.edges().stream().map(e -> List.of(e.from(), e.to())).collect(java.util.stream.Collectors.toSet());
+        if (!aPairs.equals(bPairs)) {
+            return false;
+        }
+        return a.cyclicResourceIds().equals(b.cyclicResourceIds());
+    }
+
+    /** Verifies {@code RecipeGraphTraverser.collectDag} actually records recycling-loop
+     *  membership on real recipe data (not just the hand-built {@code Set.of(...)} the
+     *  {@code testIdentifyBottlenecks} classification cases use).
+     *  <p>quantum_upgrade's large, complex recipe web must produce at least one cyclic resource
+     *  (a loose check, exact membership isn't the point at that scale). iron_plate's small
+     *  graph is a precise regression snapshot instead: it turns out iron_ingot and iron_nugget
+     *  are a genuine 2-cycle via MI's packer/unpacker recipes (9 nuggets &lt;-&gt; 1 ingot, each
+     *  direction a candidate recipe for the other's resource). That's not a bug, and it's a good
+     *  small, understandable example of exactly what this mechanism is meant to catch. If MI's
+     *  packer/unpacker recipes change, update this snapshot. */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testRecipeGraphCyclicResourceIdsCaptured(GameTestHelper helper) {
+        var level = helper.getLevel();
+        RecipeGraphTraverser.clearGraphCache();
+
+        ResourceLocation cyclicTarget = ResourceLocation.parse("modern_industrialization:quantum_upgrade");
+        ProductionGoal cyclicGoal = new ProductionGoal("cyclic_capture_test", ProductionGoal.TargetType.ITEM, cyclicTarget, 1.0);
+        var cyclicGraph = RecipeGraphTraverser.computeRecipeGraph(level, cyclicGoal);
+
+        if (cyclicGraph.cyclicResourceIds().isEmpty()) {
+            helper.fail("Expected quantum_upgrade's recipe graph to contain at least one recycling-loop "
+                    + "resource captured by collectDag's back-edge recording, but cyclicResourceIds() was empty.");
+            return;
+        }
+
+        ResourceLocation ironPlateTarget = ResourceLocation.parse("modern_industrialization:iron_plate");
+        ProductionGoal ironPlateGoal = new ProductionGoal("iron_plate_cycle_snapshot_test", ProductionGoal.TargetType.ITEM, ironPlateTarget, 1.0);
+        var ironPlateGraph = RecipeGraphTraverser.computeRecipeGraph(level, ironPlateGoal);
+
+        var expectedIronCycle = Set.of(ResourceLocation.parse("minecraft:iron_ingot"), ResourceLocation.parse("minecraft:iron_nugget"));
+        if (!ironPlateGraph.cyclicResourceIds().equals(expectedIronCycle)) {
+            helper.fail("Expected iron_plate's recipe graph cyclicResourceIds() to be exactly "
+                    + expectedIronCycle + " (the ingot/nugget packer-unpacker loop), but got: "
+                    + ironPlateGraph.cyclicResourceIds() + ". If MI's packer/unpacker recipes changed "
+                    + "intentionally, update this snapshot.");
+            return;
+        }
+
+        RecipeGraphTraverser.clearGraphCache();
+        helper.succeed();
+    }
+
+    /** Verifies {@code RecipeGraphTraverser.peekCyclicResourceIds}'s cache-only contract: empty
+     *  before the graph has ever been computed (never forces a compute), and matches the real
+     *  graph's {@code cyclicResourceIds()} once it has been. */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testPeekCyclicResourceIdsCacheOnly(GameTestHelper helper) {
+        var level = helper.getLevel();
+        RecipeGraphTraverser.clearGraphCache();
+
+        ResourceLocation targetId = ResourceLocation.parse("modern_industrialization:quantum_upgrade");
+        ProductionGoal goal = new ProductionGoal("peek_cache_test", ProductionGoal.TargetType.ITEM, targetId, 1.0);
+
+        if (!RecipeGraphTraverser.peekCyclicResourceIds(goal).isEmpty()) {
+            helper.fail("Expected peekCyclicResourceIds() to return empty before the graph has ever been "
+                    + "computed for this goal -- did it force a compute instead of only reading the cache?");
+            return;
+        }
+
+        var graph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
+        var peeked = RecipeGraphTraverser.peekCyclicResourceIds(goal);
+        if (!peeked.equals(graph.cyclicResourceIds())) {
+            helper.fail("Expected peekCyclicResourceIds() to match the freshly-computed graph's "
+                    + "cyclicResourceIds() once cached. Computed: " + graph.cyclicResourceIds() + ", peeked: " + peeked);
+            return;
+        }
+
+        RecipeGraphTraverser.clearGraphCache();
+        helper.succeed();
+    }
+
+    /** Verifies {@code ServerMonitoringManager.classifyLiveStatus}, the logic extracted from
+     *  {@code MonitoringPacketHandlers.handleRequest}'s YELLOW branch so it's testable without a
+     *  real network {@code IPayloadContext}. It correctly distinguishes a shortfall on a cyclic
+     *  resource (DEAD_LOOP) from one on a non-cyclic resource (NONE), and leaves a machine that
+     *  meets its expected rate untouched. */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testClassifyLiveStatusDeadLoopReason(GameTestHelper helper) {
+        var level = helper.getLevel();
+        RecipeGraphTraverser.clearGraphCache();
+
+        ResourceLocation targetId = ResourceLocation.parse("modern_industrialization:quantum_upgrade");
+        ProductionGoal baseGoal = new ProductionGoal("classify_live_status_test", ProductionGoal.TargetType.ITEM, targetId, 1.0);
+        var graph = RecipeGraphTraverser.computeRecipeGraph(level, baseGoal);
+        if (graph.cyclicResourceIds().isEmpty()) {
+            helper.fail("Expected quantum_upgrade's graph to have at least one cyclic resource to build this test on.");
+            return;
+        }
+        ResourceLocation cyclicResource = graph.cyclicResourceIds().iterator().next();
+        ResourceLocation nonCyclicResource = ResourceLocation.parse("miforeman_test:not_cyclic_resource");
+
+        // Same type/targetId/rate/recipeSelections as baseGoal (so peekCyclicResourceIds still
+        // cache-hits the graph just computed above), with a synthetic plan declaring expected
+        // rates for both test resources.
+        ProductionGoal goal = baseGoal.withPlan(java.util.Optional.of(new ProductionGoal.FactoryPlan(
+                List.of(), List.of(),
+                List.of(new ProductionGoal.MaterialFlow(ProductionGoal.TargetType.ITEM, cyclicResource, 10.0),
+                        new ProductionGoal.MaterialFlow(ProductionGoal.TargetType.ITEM, nonCyclicResource, 10.0)),
+                List.of())));
+
+        var tracker = new ServerMonitoringManager.MachineTracker(new BlockPos(0, 0, 0));
+        tracker.status = com.mervyn.miforeman.goal.MachineStatus.GREEN;
+        tracker.failureReason = com.mervyn.miforeman.goal.FailureReason.NONE;
+
+        // Case 1: shortfall on the cyclic resource -> YELLOW + DEAD_LOOP.
+        var cyclicResult = ServerMonitoringManager.classifyLiveStatus(goal, tracker,
+                Map.of(cyclicResource, 1.0), Map.of(cyclicResource, 2.0)); // 2.0 < 10.0 * threshold
+        if (cyclicResult.status() != com.mervyn.miforeman.goal.MachineStatus.YELLOW) {
+            helper.fail("Expected a shortfall on a cyclic resource to read YELLOW, but got: " + cyclicResult.status());
+            return;
+        }
+        if (cyclicResult.reason() != com.mervyn.miforeman.goal.FailureReason.DEAD_LOOP) {
+            helper.fail("Expected a shortfall on a cyclic resource to report DEAD_LOOP, but got: " + cyclicResult.reason());
+            return;
+        }
+
+        // Case 2: shortfall on a non-cyclic resource -> YELLOW + NONE (still actively crafting,
+        // so not itself clog-locked, and not a dead-loop either).
+        var nonCyclicResult = ServerMonitoringManager.classifyLiveStatus(goal, tracker,
+                Map.of(nonCyclicResource, 1.0), Map.of(nonCyclicResource, 2.0));
+        if (nonCyclicResult.status() != com.mervyn.miforeman.goal.MachineStatus.YELLOW) {
+            helper.fail("Expected a shortfall on a non-cyclic resource to still read YELLOW, but got: "
+                    + nonCyclicResult.status());
+            return;
+        }
+        if (nonCyclicResult.reason() != com.mervyn.miforeman.goal.FailureReason.NONE) {
+            helper.fail("Expected a shortfall on a non-cyclic resource to report NONE (not DEAD_LOOP), but got: "
+                    + nonCyclicResult.reason());
+            return;
+        }
+
+        // Case 3: rates meet the expected threshold -> stays GREEN + NONE, unchanged.
+        var okResult = ServerMonitoringManager.classifyLiveStatus(goal, tracker,
+                Map.of(cyclicResource, 1.0), Map.of(cyclicResource, 20.0)); // 20.0 >= 10.0 * threshold
+        if (okResult.status() != com.mervyn.miforeman.goal.MachineStatus.GREEN
+                || okResult.reason() != com.mervyn.miforeman.goal.FailureReason.NONE) {
+            helper.fail("Expected rates meeting the expected threshold to leave status/reason unchanged "
+                    + "(GREEN/NONE), but got: " + okResult.status() + "/" + okResult.reason());
+            return;
+        }
+
+        RecipeGraphTraverser.clearGraphCache();
+        helper.succeed();
+    }
+
+    /** Verifies {@code LiveMonitoringPayload.MachineStatusData}'s STREAM_CODEC round-trips the
+     *  {@code reason} field (the one thing added to this payload alongside the dead-loop/clog-lock
+     *  feature), same pattern as {@code testProductionGoalStreamCodecParity}. */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testLiveMonitoringPayloadStreamCodecParity(GameTestHelper helper) {
+        var level = helper.getLevel();
+
+        var payload = new com.mervyn.miforeman.network.LiveMonitoringPayload(List.of(
+                new com.mervyn.miforeman.network.LiveMonitoringPayload.MachineStatusData(
+                        GlobalPos.of(net.minecraft.world.level.Level.OVERWORLD, new BlockPos(1, 2, 3)),
+                        com.mervyn.miforeman.goal.MachineStatus.RED,
+                        com.mervyn.miforeman.goal.FailureReason.DEAD_LOOP,
+                        12.5,
+                        ResourceLocation.parse("modern_industrialization:bronze_compressor"),
+                        java.util.Optional.of(ResourceLocation.parse("modern_industrialization:materials/iron/compressor/main"))),
+                new com.mervyn.miforeman.network.LiveMonitoringPayload.MachineStatusData(
+                        GlobalPos.of(net.minecraft.world.level.Level.NETHER, new BlockPos(4, 5, 6)),
+                        com.mervyn.miforeman.goal.MachineStatus.ORANGE,
+                        com.mervyn.miforeman.goal.FailureReason.CLOG_LOCK,
+                        0.0,
+                        ResourceLocation.parse("modern_industrialization:electric_compressor"),
+                        java.util.Optional.empty()),
+                new com.mervyn.miforeman.network.LiveMonitoringPayload.MachineStatusData(
+                        GlobalPos.of(net.minecraft.world.level.Level.OVERWORLD, new BlockPos(7, 8, 9)),
+                        com.mervyn.miforeman.goal.MachineStatus.GREEN,
+                        com.mervyn.miforeman.goal.FailureReason.NONE,
+                        99.9,
+                        ResourceLocation.parse("modern_industrialization:macerator"),
+                        java.util.Optional.of(ResourceLocation.parse("modern_industrialization:materials/iron/macerator/main")))));
+
+        @SuppressWarnings("deprecation")
+        var buf = new net.minecraft.network.RegistryFriendlyByteBuf(io.netty.buffer.Unpooled.buffer(),
+                level.registryAccess());
+        com.mervyn.miforeman.network.LiveMonitoringPayload.STREAM_CODEC.encode(buf, payload);
+        var decoded = com.mervyn.miforeman.network.LiveMonitoringPayload.STREAM_CODEC.decode(buf);
+
+        if (!decoded.equals(payload)) {
+            helper.fail("STREAM_CODEC round-trip does not match original LiveMonitoringPayload -- a field was "
+                    + "likely added to MachineStatusData without updating STREAM_CODEC (or vice versa). Original: "
+                    + payload + ", decoded: " + decoded);
+            return;
+        }
+
         helper.succeed();
     }
 
@@ -975,7 +1321,7 @@ public class ForemanGameTests {
                 helper.fail("Expected onServerTick to create a MachineTracker for the linked machine.");
                 return;
             }
-            if (!"RED".equals(tracker.status)) {
+            if (tracker.status != com.mervyn.miforeman.goal.MachineStatus.RED) {
                 helper.fail("Expected empty-input machine to read RED, but got: " + tracker.status);
                 return;
             }
@@ -996,7 +1342,7 @@ public class ForemanGameTests {
 
             helper.runAfterDelay(5, () -> {
                 var trackerAfterFeed = ServerMonitoringManager.TRACKERS.get(key);
-                if (trackerAfterFeed == null || !"GREEN".equals(trackerAfterFeed.status)) {
+                if (trackerAfterFeed == null || trackerAfterFeed.status != com.mervyn.miforeman.goal.MachineStatus.GREEN) {
                     helper.fail("Expected actively-crafting machine to read GREEN, but got: "
                             + (trackerAfterFeed != null ? trackerAfterFeed.status : "null"));
                     return;
@@ -1017,7 +1363,7 @@ public class ForemanGameTests {
 
                 helper.succeedWhen(() -> {
                     var finalTracker = ServerMonitoringManager.TRACKERS.get(key);
-                    if (finalTracker == null || !"ORANGE".equals(finalTracker.status)) {
+                    if (finalTracker == null || finalTracker.status != com.mervyn.miforeman.goal.MachineStatus.ORANGE) {
                         helper.fail("Expected saturated machine to read ORANGE, but got: "
                                 + (finalTracker != null ? finalTracker.status : "null"));
                     }
@@ -1319,6 +1665,19 @@ public class ForemanGameTests {
         helper.succeed();
     }
 
+    /** Builds the same per-node searchable-text map {@code GraphCanvas.searchableNodeTexts()}
+     *  builds in production: raw id, path, and formatted display name. So these tests exercise
+     *  {@link com.mervyn.miforeman.client.gui.widget.SearchState} the same way the real graph view does. */
+    private static Map<ResourceLocation, List<String>> searchableNodeTexts(
+            java.util.Collection<com.mervyn.miforeman.goal.RecipeGraphNode> nodes) {
+        Map<ResourceLocation, List<String>> texts = new java.util.HashMap<>();
+        for (var node : nodes) {
+            ResourceLocation id = node.getId();
+            texts.put(id, List.of(id.toString(), id.getPath(), com.mervyn.miforeman.client.DisplayFormat.formatId(id)));
+        }
+        return texts;
+    }
+
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testGraphSearchMatchingLogic(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
@@ -1330,17 +1689,19 @@ public class ForemanGameTests {
             return;
         }
 
-        com.mervyn.miforeman.client.gui.widget.GraphSearchState state = new com.mervyn.miforeman.client.gui.widget.GraphSearchState();
+        com.mervyn.miforeman.client.gui.widget.SearchState<ResourceLocation> state =
+                new com.mervyn.miforeman.client.gui.widget.SearchState<>();
+        Map<ResourceLocation, List<String>> texts = searchableNodeTexts(graph.nodes().values());
 
         // 1. Empty query
-        state.setQuery("", graph.nodes().values());
+        state.setQuery("", texts);
         if (state.isSearching() || state.getMatchCount() != 0 || state.getCurrentIndex() != -1) {
             helper.fail("Empty query should have 0 matches and isSearching == false");
             return;
         }
 
         // 2. Search by partial machine name (case-insensitive formatted name)
-        state.setQuery("assembler", graph.nodes().values());
+        state.setQuery("assembler", texts);
         if (!state.isSearching() || state.getMatchCount() == 0) {
             helper.fail("Expected matches for query 'assembler' in quantum_upgrade graph");
             return;
@@ -1356,7 +1717,7 @@ public class ForemanGameTests {
         }
 
         // 3. Search by exact resource namespace ID
-        state.setQuery("modern_industrialization:quantum_upgrade", graph.nodes().values());
+        state.setQuery("modern_industrialization:quantum_upgrade", texts);
         if (state.getMatchCount() != 1) {
             helper.fail("Expected exactly 1 match for full quantum_upgrade ID, got: " + state.getMatchCount());
             return;
@@ -1377,8 +1738,9 @@ public class ForemanGameTests {
                 ResourceLocation.parse("modern_industrialization:quantum_upgrade"), 1.0);
         com.mervyn.miforeman.goal.RecipeGraph graph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
 
-        com.mervyn.miforeman.client.gui.widget.GraphSearchState state = new com.mervyn.miforeman.client.gui.widget.GraphSearchState();
-        state.setQuery("assembler", graph.nodes().values());
+        com.mervyn.miforeman.client.gui.widget.SearchState<ResourceLocation> state =
+                new com.mervyn.miforeman.client.gui.widget.SearchState<>();
+        state.setQuery("assembler", searchableNodeTexts(graph.nodes().values()));
 
         int count = state.getMatchCount();
         if (count < 2) {
@@ -1417,6 +1779,64 @@ public class ForemanGameTests {
         ResourceLocation wrappedFirst = state.nextMatch();
         if (state.getCurrentIndex() != 0 || wrappedFirst == null || !wrappedFirst.equals(state.getMatches().get(0))) {
             helper.fail("Expected wrap-around forward to index 0, got: " + state.getCurrentIndex());
+            return;
+        }
+
+        helper.succeed();
+    }
+
+    /** Proves {@code SearchState} actually generalizes. No graph/GUI data at all, just an
+     *  arbitrary ID type ({@code String}) with a hand-built searchable-text map. Same
+     *  matching/cycling assertions as {@code testGraphSearchMatchingLogic}/
+     *  {@code testGraphSearchMatchCycling}, which exercise the identical logic against real
+     *  {@code ResourceLocation} graph data. */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testSearchStateGenericOverArbitraryId(GameTestHelper helper) {
+        Map<String, List<String>> texts = Map.of(
+                "iron_press", List.of("Iron Press", "modid:iron_press"),
+                "gold_press", List.of("Gold Press", "modid:gold_press"),
+                "furnace", List.of("Furnace", "modid:furnace"));
+
+        var state = new com.mervyn.miforeman.client.gui.widget.SearchState<String>();
+
+        // Matching: case-insensitive substring against any of an id's supplied texts.
+        state.setQuery("PRESS", texts);
+        if (state.getMatchCount() != 2 || !state.isMatch("iron_press") || !state.isMatch("gold_press")
+                || state.isMatch("furnace")) {
+            helper.fail("Expected 'PRESS' (case-insensitive) to match iron_press/gold_press only, got matches: "
+                    + state.getMatches());
+            return;
+        }
+
+        // Cycling: same wraparound semantics as the ResourceLocation-keyed graph search.
+        int count = state.getMatchCount();
+        if (state.getCurrentIndex() != 0) {
+            helper.fail("Initial index expected 0, got: " + state.getCurrentIndex());
+            return;
+        }
+        String second = state.nextMatch();
+        if (state.getCurrentIndex() != 1 || !java.util.Objects.equals(second, state.getMatches().get(1))) {
+            helper.fail("Expected nextMatch() to advance to index 1");
+            return;
+        }
+        String wrappedBack = state.prevMatch();
+        String wrappedFurtherBack = state.prevMatch();
+        if (state.getCurrentIndex() != count - 1
+                || !java.util.Objects.equals(wrappedFurtherBack, state.getMatches().get(count - 1))) {
+            helper.fail("Expected prevMatch() twice from index 1 to wrap to index " + (count - 1) + ", got: "
+                    + state.getCurrentIndex());
+            return;
+        }
+
+        // Empty/no-match query clears state.
+        state.setQuery("", texts);
+        if (state.isSearching() || state.getMatchCount() != 0 || state.getCurrentIndex() != -1) {
+            helper.fail("Empty query should reset to 0 matches and isSearching == false");
+            return;
+        }
+        state.setQuery("nonexistent", texts);
+        if (state.getMatchCount() != 0 || state.currentMatchId() != null) {
+            helper.fail("Query with no matches should have 0 matches and a null current match");
             return;
         }
 
