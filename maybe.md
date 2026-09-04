@@ -92,6 +92,34 @@ plumbing than the direct per-machine status coloring that shipped.)
   dedicated tests (`testRecipeGraphCyclicResourceIdsCaptured`, `testGraphCacheHitAndInvalidation`)
   and no bug is attached to it, just a real-but-optional cleanup.
 
+## DetailCard
+
+- **Two-column icon'd inputs/outputs card, GTNH planner style** — reference: a
+  screenshot of gtnhplanner.com's build-summary card (2026-09-05), not the
+  MIT-licensed `gtnh-factory-flow-main` repo this file otherwise draws from —
+  visual layout inspiration only, no code-lifting rights assumed for it.
+  Redesign `DetailCard`'s Summary Mode (currently a single-column plain-text
+  scroll: target/power/machines/raw-inputs, see `DetailCard.java:147-225`)
+  into a title + metadata header (machine count, card/node count) above two
+  side-by-side colored panels -- INPUTS (red/pink tint) and OUTPUTS
+  (green/teal tint) -- each row showing an item/fluid icon, name, and rate.
+  Three real gaps to close, not just a style tweak:
+  - **Item/fluid icon rendering** -- this codebase has none anywhere today
+    (no `guiGraphics.renderItem(...)` calls exist yet). Needs
+    `ResourceLocation -> ItemStack` resolution for items and a separate
+    fluid-sprite path for fluids (the reference card's Water input is a
+    fluid, not an item).
+  - **An actual "outputs" list** -- `ProductionGoal.FactoryPlan` currently
+    tracks `machines`/`rawInputs`/`intermediateFlows`, but nothing for "final
+    outputs besides the target" (the reference card's byproduct outputs like
+    Titanium Dust/Plutonium 239 Dust/Ashes). Needs new derivation logic,
+    similar to how raw inputs are already computed by the plan solver.
+  - **The two-panel layout itself** -- straightforward once the above two
+    exist; it's a redesign of an existing, already-structured section, not
+    new information architecture.
+  Discussed 2026-09-05: could ship as a scoped first pass (colored two-panel
+  layout, text-only, no icons) before taking on icon rendering separately.
+
 ## Data pipeline (if we ever export/share recipe datasets)
 
 - **In-game off-screen render for icons, not a screenshot tool** — their
