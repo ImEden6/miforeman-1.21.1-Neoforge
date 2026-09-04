@@ -3,10 +3,12 @@ package com.mervyn.miforeman.client.gui.widget;
 import com.mervyn.miforeman.client.DisplayFormat;
 import com.mervyn.miforeman.goal.GraphEdge;
 import com.mervyn.miforeman.goal.GraphLayoutState;
+import com.mervyn.miforeman.goal.MachineStatus;
 import com.mervyn.miforeman.goal.NodePosition;
 import com.mervyn.miforeman.goal.NodeType;
 import com.mervyn.miforeman.goal.RecipeGraph;
 import com.mervyn.miforeman.goal.RecipeGraphNode;
+import com.mervyn.miforeman.network.LiveMonitoringPayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
@@ -80,6 +82,11 @@ public class GraphCanvas extends AbstractWidget {
     private final SearchState<ResourceLocation> searchState = new SearchState<>();
     private final GraphSearchBar searchBar;
     private final HiddenNodesDrawer hiddenNodesDrawer;
+    /** Live per-machine status keyed by recipe id -- a MACHINE node's own id IS its recipe id
+     *  (see ClipboardScreen's note on that invariant), so this looks up directly by node id.
+     *  Empty until {@link #updateLiveStatus} is called; not populated at construction since the
+     *  graph is built once but live data arrives continuously while this screen is open. */
+    private Map<ResourceLocation, LiveMonitoringPayload.MachineStatusData> liveStatusByRecipeId = Map.of();
 
     public GraphCanvas(int x, int y, int width, int height, RecipeGraph graph,
                         GraphLayoutState layoutState, double panX, double panY, float zoom,
@@ -105,6 +112,34 @@ public class GraphCanvas extends AbstractWidget {
         updateDrawerPosition();
         computeFilteredView();
         computeAutoLayout();
+    }
+
+    /** Refreshes the live machine-status coloring from a fresh monitoring poll. Called whenever
+     *  {@code ClipboardScreen} receives a {@code LiveMonitoringPayload} while this canvas is
+     *  showing -- see {@code ClipboardScreen#updateLiveMonitoring}. */
+    public void updateLiveStatus(List<LiveMonitoringPayload.MachineStatusData> data) {
+        Map<ResourceLocation, LiveMonitoringPayload.MachineStatusData> byRecipeId = new HashMap<>();
+        for (LiveMonitoringPayload.MachineStatusData entry : data) {
+            entry.recipeId().ifPresent(recipeId -> byRecipeId.put(recipeId, entry));
+        }
+        this.liveStatusByRecipeId = byRecipeId;
+    }
+
+    /** Default (non-selected, non-searching) edge colour: tints an edge with the worse
+     *  endpoint's live status colour when either endpoint is a MACHINE node reporting RED or
+     *  ORANGE (the two "not producing" statuses), otherwise the plain default. */
+    private int bottleneckEdgeColour(GraphEdge edge) {
+        MachineStatus worst = null;
+        for (ResourceLocation nodeId : List.of(edge.from(), edge.to())) {
+            LiveMonitoringPayload.MachineStatusData live = liveStatusByRecipeId.get(nodeId);
+            if (live == null) continue;
+            MachineStatus status = live.status();
+            if (status != MachineStatus.RED && status != MachineStatus.ORANGE) continue;
+            if (worst == null || status.ordinal() < worst.ordinal()) {
+                worst = status;
+            }
+        }
+        return worst != null ? (0x55000000 | (worst.colour() & 0x00FFFFFF)) : COLOUR_EDGE;
     }
 
     /**
@@ -394,7 +429,7 @@ public class GraphCanvas extends AbstractWidget {
             NodePosition fromPos = positionOf(from);
             NodePosition toPos = positionOf(to);
             if (fromPos == null || toPos == null) continue;
-            int colour = COLOUR_EDGE;
+            int colour = bottleneckEdgeColour(edge);
             if (isSearching) {
                 boolean bothMatch = searchState.isMatch(edge.from()) && searchState.isMatch(edge.to());
                 boolean touchesSelected = selectedNodeId != null && (edge.from().equals(selectedNodeId) || edge.to().equals(selectedNodeId));
@@ -419,8 +454,12 @@ public class GraphCanvas extends AbstractWidget {
 
             int fillTop = !isMatch ? COLOUR_NODE_FILL_TOP_DIM : COLOUR_NODE_FILL_TOP;
             int fillBottom = !isMatch ? COLOUR_NODE_FILL_BOTTOM_DIM : COLOUR_NODE_FILL_BOTTOM;
-            int borderLight = isCurrentMatch ? COLOUR_SEARCH_CURRENT_MATCH : (isSearching && isMatch ? COLOUR_SEARCH_MATCH_BORDER : (!isMatch ? COLOUR_BORDER_LIGHT_DIM : COLOUR_BORDER_LIGHT));
-            int borderDark = isCurrentMatch ? COLOUR_SEARCH_CURRENT_MATCH : (isSearching && isMatch ? COLOUR_SEARCH_MATCH_BORDER : (!isMatch ? COLOUR_BORDER_DARK_DIM : COLOUR_BORDER_DARK));
+            LiveMonitoringPayload.MachineStatusData liveStatus = node.getType() == NodeType.MACHINE
+                    ? liveStatusByRecipeId.get(node.getId()) : null;
+            int defaultBorderLight = liveStatus != null ? liveStatus.status().colour() : COLOUR_BORDER_LIGHT;
+            int defaultBorderDark = liveStatus != null ? liveStatus.status().colour() : COLOUR_BORDER_DARK;
+            int borderLight = isCurrentMatch ? COLOUR_SEARCH_CURRENT_MATCH : (isSearching && isMatch ? COLOUR_SEARCH_MATCH_BORDER : (!isMatch ? COLOUR_BORDER_LIGHT_DIM : defaultBorderLight));
+            int borderDark = isCurrentMatch ? COLOUR_SEARCH_CURRENT_MATCH : (isSearching && isMatch ? COLOUR_SEARCH_MATCH_BORDER : (!isMatch ? COLOUR_BORDER_DARK_DIM : defaultBorderDark));
 
             if (node.getType() == NodeType.MACHINE) {
                 fillChamfered(guiGraphics, pos.x(), pos.y(), NODE_WIDTH, NODE_HEIGHT, MACHINE_CHAMFER, borderLight);

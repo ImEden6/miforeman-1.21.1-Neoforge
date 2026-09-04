@@ -28,6 +28,7 @@ public final class DisplayFormat {
         return switch (reason) {
             case DEAD_LOOP -> " (" + I18n.get("miforeman.status.reason.dead_loop") + ")";
             case CLOG_LOCK -> " (" + I18n.get("miforeman.status.reason.clog_lock") + ")";
+            case DISPOSAL_THROTTLED -> " (" + I18n.get("miforeman.status.reason.disposal_throttled") + ")";
             case STARVED, NONE -> "";
         };
     }

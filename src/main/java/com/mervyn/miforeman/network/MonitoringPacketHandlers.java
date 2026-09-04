@@ -97,7 +97,7 @@ public class MonitoringPacketHandlers {
                     // once its output clears) are mutually exclusive -- whichever is set is the
                     // recipe worth showing the player.
                     ResourceLocation displayRecipeId = tracker.lastRecipeId != null ? tracker.lastRecipeId : tracker.saturatedRecipeId;
-                    list.add(new LiveMonitoringPayload.MachineStatusData(pos, status, reason, primaryRate, blockId, Optional.ofNullable(displayRecipeId)));
+                    list.add(new LiveMonitoringPayload.MachineStatusData(pos, status, reason, primaryRate, tracker.disposalRatio, blockId, Optional.ofNullable(displayRecipeId)));
                 }
             }
 

@@ -16,17 +16,35 @@ import java.util.Optional;
 public record LiveMonitoringPayload(List<LiveMonitoringPayload.MachineStatusData> machines) implements CustomPacketPayload {
     public static final Type<LiveMonitoringPayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "live_monitoring"));
 
+    // 7 fields exceeds StreamCodec.composite's max arity (6), so this is coded by hand --
+    // same pattern as ClipboardUiState.STREAM_CODEC.
     public record MachineStatusData(GlobalPos pos, MachineStatus status, FailureReason reason, double actualRate,
-                                     ResourceLocation machineId, Optional<ResourceLocation> recipeId) {
-        public static final StreamCodec<RegistryFriendlyByteBuf, MachineStatusData> STREAM_CODEC = StreamCodec.composite(
-                GlobalPos.STREAM_CODEC, MachineStatusData::pos,
-                ByteBufCodecs.STRING_UTF8.map(MachineStatus::valueOf, MachineStatus::name), MachineStatusData::status,
-                ByteBufCodecs.STRING_UTF8.map(FailureReason::valueOf, FailureReason::name), MachineStatusData::reason,
-                ByteBufCodecs.DOUBLE, MachineStatusData::actualRate,
-                ResourceLocation.STREAM_CODEC, MachineStatusData::machineId,
-                ByteBufCodecs.optional(ResourceLocation.STREAM_CODEC), MachineStatusData::recipeId,
-                MachineStatusData::new
-        );
+                                     double disposalRatio, ResourceLocation machineId, Optional<ResourceLocation> recipeId) {
+        public static final StreamCodec<RegistryFriendlyByteBuf, MachineStatusData> STREAM_CODEC =
+                new StreamCodec<>() {
+                    @Override
+                    public MachineStatusData decode(RegistryFriendlyByteBuf buf) {
+                        GlobalPos pos = GlobalPos.STREAM_CODEC.decode(buf);
+                        MachineStatus status = MachineStatus.valueOf(ByteBufCodecs.STRING_UTF8.decode(buf));
+                        FailureReason reason = FailureReason.valueOf(ByteBufCodecs.STRING_UTF8.decode(buf));
+                        double actualRate = ByteBufCodecs.DOUBLE.decode(buf);
+                        double disposalRatio = ByteBufCodecs.DOUBLE.decode(buf);
+                        ResourceLocation machineId = ResourceLocation.STREAM_CODEC.decode(buf);
+                        Optional<ResourceLocation> recipeId = ByteBufCodecs.optional(ResourceLocation.STREAM_CODEC).decode(buf);
+                        return new MachineStatusData(pos, status, reason, actualRate, disposalRatio, machineId, recipeId);
+                    }
+
+                    @Override
+                    public void encode(RegistryFriendlyByteBuf buf, MachineStatusData value) {
+                        GlobalPos.STREAM_CODEC.encode(buf, value.pos());
+                        ByteBufCodecs.STRING_UTF8.encode(buf, value.status().name());
+                        ByteBufCodecs.STRING_UTF8.encode(buf, value.reason().name());
+                        ByteBufCodecs.DOUBLE.encode(buf, value.actualRate());
+                        ByteBufCodecs.DOUBLE.encode(buf, value.disposalRatio());
+                        ResourceLocation.STREAM_CODEC.encode(buf, value.machineId());
+                        ByteBufCodecs.optional(ResourceLocation.STREAM_CODEC).encode(buf, value.recipeId());
+                    }
+                };
     }
 
     public static final StreamCodec<RegistryFriendlyByteBuf, LiveMonitoringPayload> STREAM_CODEC = StreamCodec.composite(

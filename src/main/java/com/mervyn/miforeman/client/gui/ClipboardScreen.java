@@ -662,7 +662,8 @@ public class ClipboardScreen extends Screen {
     @Override
     public void tick() {
         super.tick();
-        if (currentStep == STEP_MONITOR && monitoringState.tickAndShouldPoll()) {
+        boolean wantsLiveData = currentStep == STEP_MONITOR || (currentStep == STEP_REVIEW_PLAN && graphCanvas != null);
+        if (wantsLiveData && monitoringState.tickAndShouldPoll()) {
             new RequestMonitoringUpdatePayload(monitoringState.hand).sendToServer();
         }
     }
@@ -671,6 +672,9 @@ public class ClipboardScreen extends Screen {
         monitoringState.setLiveData(data);
         if (currentStep == STEP_MONITOR) {
             updateMonitoringButtonLabels();
+        }
+        if (graphCanvas != null) {
+            graphCanvas.updateLiveStatus(data);
         }
     }
 

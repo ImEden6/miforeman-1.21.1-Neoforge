@@ -64,16 +64,13 @@ grant). Everything below is a pattern from that codebase that could apply to
   solver ever needs to reason about shared-supply fairness or byproduct
   routing precisely, this staged-LP structure is a cleaner model than
   hand-rolled iteration.
-- **Disposal ratio as a first-class number** — per-machine "how fast could
-  this run before its own unconsumed output backs it up," used both to
-  explain bottlenecks and to exempt legitimately-full consumers from
-  fairness rules. Could sharpen bottleneck ranking: distinguish
-  supply-starved from disposal-throttled machines instead of collapsing
-  both into "not at 100%".
-- **Bottleneck view** — rank machines by utilization (actual/expected) and feed it into
-  `GraphCanvas` node/edge coloring, keying fill color to state (ambiguous, rate
-  satisfied/deficit, raw vs intermediate vs target). The data already exists in
-  `MachineTracker.energyEvents`.
+(Disposal ratio and the machine-status bottleneck view for `GraphCanvas` -- built
+2026-09-04: see `ServerMonitoringManager.computeDisposalRatio`,
+`FailureReason.DISPOSAL_THROTTLED`, and `GraphCanvas.updateLiveStatus`. The
+resource-node rate-satisfied/deficit coloring this bullet also described was
+deliberately left out -- it needs joining `RecipeGraphNode.getRequiredRate()`
+against summed live rates across all producing machines, materially more
+plumbing than the direct per-machine status coloring that shipped.)
 
 ## Data pipeline (if we ever export/share recipe datasets)
 

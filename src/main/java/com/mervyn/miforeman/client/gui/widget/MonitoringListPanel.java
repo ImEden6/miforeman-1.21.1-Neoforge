@@ -27,10 +27,6 @@ public class MonitoringListPanel extends AbstractWidget {
     private static final int COLOUR_BORDER = 0xFF6B5030;
     private static final int COLOUR_TEXT = 0xFF3A2A18;
     private static final int COLOUR_MUTED = 0xFF8A7A68;
-    private static final int COLOUR_GREEN = 0xFF2E7D32;
-    private static final int COLOUR_AMBER = 0xFF9A6C00;
-    private static final int COLOUR_RED = 0xFFCC3333;
-    private static final int COLOUR_ORANGE = 0xFFE67700;
     private static final int COLOUR_HOVER = 0x156B5030;
     private static final int COLOUR_SELECTED_ROW = 0x2000E5FF;
     private static final int ACTION_BUTTON_WIDTH = 46;
@@ -157,12 +153,7 @@ public class MonitoringListPanel extends AbstractWidget {
     }
 
     private int statusColour(MachineStatus status) {
-        return switch (status) {
-            case RED -> COLOUR_RED;
-            case ORANGE -> COLOUR_ORANGE;
-            case YELLOW -> COLOUR_AMBER;
-            case GREEN -> COLOUR_GREEN;
-        };
+        return status.colour();
     }
 
     @Override

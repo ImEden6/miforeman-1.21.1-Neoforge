@@ -1000,8 +1000,9 @@ public class ForemanGameTests {
     /** Verifies {@code ServerMonitoringManager.classifyLiveStatus}, the logic extracted from
      *  {@code MonitoringPacketHandlers.handleRequest}'s YELLOW branch so it's testable without a
      *  real network {@code IPayloadContext}. It correctly distinguishes a shortfall on a cyclic
-     *  resource (DEAD_LOOP) from one on a non-cyclic resource (NONE), and leaves a machine that
-     *  meets its expected rate untouched. */
+     *  resource (DEAD_LOOP) from one on a non-cyclic resource with a healthy output
+     *  (NONE) or a near-full output (DISPOSAL_THROTTLED), and leaves a machine that meets its
+     *  expected rate untouched. */
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testClassifyLiveStatusDeadLoopReason(GameTestHelper helper) {
         var level = helper.getLevel();
@@ -1067,13 +1068,25 @@ public class ForemanGameTests {
             return;
         }
 
+        // Case 4: shortfall on a non-cyclic resource, but this machine's own output is nearly
+        // full -> YELLOW + DISPOSAL_THROTTLED instead of NONE.
+        tracker.disposalRatio = 0.9;
+        var throttledResult = ServerMonitoringManager.classifyLiveStatus(goal, tracker,
+                Map.of(nonCyclicResource, 1.0), Map.of(nonCyclicResource, 2.0));
+        if (throttledResult.status() != com.mervyn.miforeman.goal.MachineStatus.YELLOW
+                || throttledResult.reason() != com.mervyn.miforeman.goal.FailureReason.DISPOSAL_THROTTLED) {
+            helper.fail("Expected a non-cyclic shortfall with a near-full output to report YELLOW/DISPOSAL_THROTTLED, "
+                    + "but got: " + throttledResult.status() + "/" + throttledResult.reason());
+            return;
+        }
+
         RecipeGraphTraverser.clearGraphCache();
         helper.succeed();
     }
 
-    /** Verifies {@code LiveMonitoringPayload.MachineStatusData}'s STREAM_CODEC round-trips the
-     *  {@code reason} field (the one thing added to this payload alongside the dead-loop/clog-lock
-     *  feature), same pattern as {@code testProductionGoalStreamCodecParity}. */
+    /** Verifies {@code LiveMonitoringPayload.MachineStatusData}'s STREAM_CODEC round-trips every
+     *  field, including {@code reason} (dead-loop/clog-lock feature) and {@code disposalRatio}
+     *  (disposal-ratio feature), same pattern as {@code testProductionGoalStreamCodecParity}. */
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testLiveMonitoringPayloadStreamCodecParity(GameTestHelper helper) {
         var level = helper.getLevel();
@@ -1084,6 +1097,7 @@ public class ForemanGameTests {
                         com.mervyn.miforeman.goal.MachineStatus.RED,
                         com.mervyn.miforeman.goal.FailureReason.DEAD_LOOP,
                         12.5,
+                        0.0,
                         ResourceLocation.parse("modern_industrialization:bronze_compressor"),
                         java.util.Optional.of(ResourceLocation.parse("modern_industrialization:materials/iron/compressor/main"))),
                 new com.mervyn.miforeman.network.LiveMonitoringPayload.MachineStatusData(
@@ -1091,13 +1105,15 @@ public class ForemanGameTests {
                         com.mervyn.miforeman.goal.MachineStatus.ORANGE,
                         com.mervyn.miforeman.goal.FailureReason.CLOG_LOCK,
                         0.0,
+                        1.0,
                         ResourceLocation.parse("modern_industrialization:electric_compressor"),
                         java.util.Optional.empty()),
                 new com.mervyn.miforeman.network.LiveMonitoringPayload.MachineStatusData(
                         GlobalPos.of(net.minecraft.world.level.Level.OVERWORLD, new BlockPos(7, 8, 9)),
-                        com.mervyn.miforeman.goal.MachineStatus.GREEN,
-                        com.mervyn.miforeman.goal.FailureReason.NONE,
+                        com.mervyn.miforeman.goal.MachineStatus.YELLOW,
+                        com.mervyn.miforeman.goal.FailureReason.DISPOSAL_THROTTLED,
                         99.9,
+                        0.9,
                         ResourceLocation.parse("modern_industrialization:macerator"),
                         java.util.Optional.of(ResourceLocation.parse("modern_industrialization:materials/iron/macerator/main")))));
 
@@ -1111,6 +1127,81 @@ public class ForemanGameTests {
             helper.fail("STREAM_CODEC round-trip does not match original LiveMonitoringPayload -- a field was "
                     + "likely added to MachineStatusData without updating STREAM_CODEC (or vice versa). Original: "
                     + payload + ", decoded: " + decoded);
+            return;
+        }
+
+        helper.succeed();
+    }
+
+    /** Verifies {@code ServerMonitoringManager.computeDisposalRatio} uses {@code getCapacity()}
+     *  (which clamps to the resource's own max stack size), not {@code getAdjustedCapacity()}
+     *  (which ignores it). A non-stackable output (max stack size 1) holding a single item is
+     *  genuinely full -- if this used the raw adjusted capacity (64 by default) instead, it
+     *  would wrongly compute the slot as ~1/64 full and never flag a real clog as disposal-
+     *  throttled. See maybe.md's "disposal ratio" note and CLAUDE.md's MI-internals gotchas. */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testComputeDisposalRatioUsesRealCapacityNotAdjustedCapacity(GameTestHelper helper) {
+        var outputStack = aztech.modern_industrialization.inventory.ConfigurableItemStack.standardOutputSlot();
+        outputStack.setKey(aztech.modern_industrialization.thirdparty.fabrictransfer.api.item.ItemVariant.of(net.minecraft.world.item.Items.DIAMOND_PICKAXE));
+        outputStack.setAmount(1);
+
+        if (net.minecraft.world.item.Items.DIAMOND_PICKAXE.getDefaultMaxStackSize() != 1) {
+            helper.fail("Test assumption broken: diamond_pickaxe is expected to have max stack size 1.");
+            return;
+        }
+
+        UnifiedCrafter fakeCrafter = new UnifiedCrafter() {
+            @Override
+            public boolean hasActiveRecipe() {
+                return false;
+            }
+
+            @Override
+            public @org.jetbrains.annotations.Nullable RecipeHolder<MachineRecipe> getActiveRecipe() {
+                return null;
+            }
+
+            @Override
+            public float getProgress() {
+                return 0f;
+            }
+
+            @Override
+            public List<aztech.modern_industrialization.inventory.ConfigurableItemStack> getItemInputs() {
+                return List.of();
+            }
+
+            @Override
+            public List<aztech.modern_industrialization.inventory.ConfigurableFluidStack> getFluidInputs() {
+                return List.of();
+            }
+
+            @Override
+            public List<aztech.modern_industrialization.inventory.ConfigurableItemStack> getItemOutputs() {
+                return List.of(outputStack);
+            }
+
+            @Override
+            public List<aztech.modern_industrialization.inventory.ConfigurableFluidStack> getFluidOutputs() {
+                return List.of();
+            }
+
+            @Override
+            public @org.jetbrains.annotations.Nullable aztech.modern_industrialization.machines.recipe.MachineRecipeType getRecipeType() {
+                return null;
+            }
+
+            @Override
+            public boolean banRecipe(MachineRecipe recipe) {
+                return false;
+            }
+        };
+
+        double ratio = ServerMonitoringManager.computeDisposalRatio(fakeCrafter);
+        if (Math.abs(ratio - 1.0) > 0.001) {
+            helper.fail("Expected a full non-stackable output slot (1 held / 1 real capacity) to compute "
+                    + "disposalRatio ~1.0, but got: " + ratio + ". A value near 1/64 (~0.0156) means "
+                    + "computeDisposalRatio is using getAdjustedCapacity() instead of getCapacity().");
             return;
         }
 

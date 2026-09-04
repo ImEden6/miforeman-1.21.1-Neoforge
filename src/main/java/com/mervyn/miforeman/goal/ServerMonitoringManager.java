@@ -55,6 +55,10 @@ public class ServerMonitoringManager {
         public ResourceLocation lastKnownRecipeId = null;
         public long lastUsedEnergy = 0;
         public long lastRecipeEnergy = 0;
+        /** How full this machine's fullest output slot is, 0.0 (empty) to 1.0 (full/backed up).
+         *  Refreshed every tick regardless of active/passive status -- see
+         *  {@link ServerMonitoringManager#computeDisposalRatio}. */
+        public double disposalRatio = 0.0;
         public final Deque<EnergyEvent> energyEvents = new ArrayDeque<>();
 
         public MachineTracker(BlockPos pos) {
@@ -122,6 +126,32 @@ public class ServerMonitoringManager {
         return UnifiedCrafter.from(machine);
     }
 
+    /** actual/expected ratio at or above this marks a running (GREEN) but underperforming
+     *  machine as {@link FailureReason#DISPOSAL_THROTTLED} rather than plain underperformance --
+     *  see {@link #classifyLiveStatus}. */
+    private static final double DISPOSAL_THROTTLE_THRESHOLD = 0.85;
+
+    /** How full this machine's fullest output slot is, 0.0 (empty) to 1.0 (full/backed up).
+     *  Uses {@code getCapacity()}, not {@code getAdjustedCapacity()} -- for a non-64-stackable
+     *  item output, the adjusted capacity alone ignores the item's own max stack size and would
+     *  understate how close the slot actually is to full. See maybe.md's "disposal ratio" note. */
+    public static double computeDisposalRatio(UnifiedCrafter crafter) {
+        double maxRatio = 0.0;
+        for (ConfigurableItemStack stack : crafter.getItemOutputs()) {
+            long capacity = stack.getCapacity();
+            if (capacity > 0) {
+                maxRatio = Math.max(maxRatio, (double) stack.getAmount() / capacity);
+            }
+        }
+        for (ConfigurableFluidStack stack : crafter.getFluidOutputs()) {
+            long capacity = stack.getCapacity();
+            if (capacity > 0) {
+                maxRatio = Math.max(maxRatio, (double) stack.getAmount() / capacity);
+            }
+        }
+        return maxRatio;
+    }
+
     @SubscribeEvent
     public static void onServerTick(ServerTickEvent.Post event) {
         if (event.getServer().getPlayerList().getPlayerCount() == 0) {
@@ -169,6 +199,7 @@ public class ServerMonitoringManager {
                     if (crafter == null) continue;
 
                     MachineTracker tracker = trackerFor(GlobalPos.of(entry.getKey(), pos));
+                    tracker.disposalRatio = computeDisposalRatio(crafter);
                     boolean hasActive = crafter.hasActiveRecipe();
 
                     if (hasActive) {
@@ -440,9 +471,13 @@ public class ServerMonitoringManager {
             }
             if (underperformingResource != null) {
                 status = MachineStatus.YELLOW;
-                reason = RecipeGraphTraverser.peekCyclicResourceIds(goal).contains(underperformingResource)
-                        ? FailureReason.DEAD_LOOP
-                        : FailureReason.NONE;
+                if (RecipeGraphTraverser.peekCyclicResourceIds(goal).contains(underperformingResource)) {
+                    reason = FailureReason.DEAD_LOOP;
+                } else if (tracker.disposalRatio >= DISPOSAL_THROTTLE_THRESHOLD) {
+                    reason = FailureReason.DISPOSAL_THROTTLED;
+                } else {
+                    reason = FailureReason.NONE;
+                }
             }
         }
         return new LiveStatus(status, reason);

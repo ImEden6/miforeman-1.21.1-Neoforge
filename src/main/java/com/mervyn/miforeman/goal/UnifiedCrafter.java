@@ -35,6 +35,10 @@ public interface UnifiedCrafter {
 
     List<ConfigurableFluidStack> getFluidInputs();
 
+    List<ConfigurableItemStack> getItemOutputs();
+
+    List<ConfigurableFluidStack> getFluidOutputs();
+
     @Nullable MachineRecipeType getRecipeType();
 
     boolean banRecipe(MachineRecipe recipe);
@@ -143,6 +147,16 @@ public interface UnifiedCrafter {
         }
 
         @Override
+        public List<ConfigurableItemStack> getItemOutputs() {
+            return crafter.getInventory().getItemOutputs();
+        }
+
+        @Override
+        public List<ConfigurableFluidStack> getFluidOutputs() {
+            return crafter.getInventory().getFluidOutputs();
+        }
+
+        @Override
         public @Nullable MachineRecipeType getRecipeType() {
             var behavior = crafter.getBehavior();
             return behavior != null ? behavior.recipeType() : null;
@@ -247,6 +261,36 @@ public interface UnifiedCrafter {
         }
 
         @Override
+        @SuppressWarnings("unchecked")
+        public List<ConfigurableItemStack> getItemOutputs() {
+            try {
+                if (accessors.getItemOutputsMethod != null) {
+                    Object inv = accessors.getInvMethod != null ? accessors.getInvMethod.invoke(component) : component;
+                    if (inv != null) {
+                        return (List<ConfigurableItemStack>) accessors.getItemOutputsMethod.invoke(inv);
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+            return Collections.emptyList();
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public List<ConfigurableFluidStack> getFluidOutputs() {
+            try {
+                if (accessors.getFluidOutputsMethod != null) {
+                    Object inv = accessors.getInvMethod != null ? accessors.getInvMethod.invoke(component) : component;
+                    if (inv != null) {
+                        return (List<ConfigurableFluidStack>) accessors.getFluidOutputsMethod.invoke(inv);
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+            return Collections.emptyList();
+        }
+
+        @Override
         public @Nullable MachineRecipeType getRecipeType() {
             try {
                 if (accessors.getRecipeTypeMethod != null) {
@@ -294,7 +338,7 @@ public interface UnifiedCrafter {
      */
     final class ModularAccessors {
         private static final Map<Class<?>, ModularAccessors> CACHE = new ConcurrentHashMap<>();
-        private static final ModularAccessors NONE = new ModularAccessors(null, null, null, null, null, null, null, null, null, false, null, false);
+        private static final ModularAccessors NONE = new ModularAccessors(null, null, null, null, null, null, null, null, null, null, null, false, null, false);
 
         final @Nullable Method hasActiveRecipeMethod;
         final @Nullable Method getActiveRecipeMethod;
@@ -303,6 +347,8 @@ public interface UnifiedCrafter {
         final @Nullable Method getInvMethod;
         final @Nullable Method getItemInputsMethod;
         final @Nullable Method getFluidInputsMethod;
+        final @Nullable Method getItemOutputsMethod;
+        final @Nullable Method getFluidOutputsMethod;
         final @Nullable Method getBehaviorMethod;
         final @Nullable Method getRecipeTypeMethod;
         final boolean recipeTypeOnComponent;
@@ -317,6 +363,8 @@ public interface UnifiedCrafter {
                 @Nullable Method getInvMethod,
                 @Nullable Method getItemInputsMethod,
                 @Nullable Method getFluidInputsMethod,
+                @Nullable Method getItemOutputsMethod,
+                @Nullable Method getFluidOutputsMethod,
                 @Nullable Method getBehaviorMethod,
                 @Nullable Method getRecipeTypeMethod,
                 boolean recipeTypeOnComponent,
@@ -329,6 +377,8 @@ public interface UnifiedCrafter {
             this.getInvMethod = getInvMethod;
             this.getItemInputsMethod = getItemInputsMethod;
             this.getFluidInputsMethod = getFluidInputsMethod;
+            this.getItemOutputsMethod = getItemOutputsMethod;
+            this.getFluidOutputsMethod = getFluidOutputsMethod;
             this.getBehaviorMethod = getBehaviorMethod;
             this.getRecipeTypeMethod = getRecipeTypeMethod;
             this.recipeTypeOnComponent = recipeTypeOnComponent;
@@ -358,6 +408,8 @@ public interface UnifiedCrafter {
 
                 Method getItemInputsMethod = findMethod(invClass, "getItemInputs");
                 Method getFluidInputsMethod = findMethod(invClass, "getFluidInputs");
+                Method getItemOutputsMethod = findMethod(invClass, "getItemOutputs");
+                Method getFluidOutputsMethod = findMethod(invClass, "getFluidOutputs");
 
                 Method getBehaviorMethod = findMethod(clazz, "getBehavior");
                 Class<?> behaviorClass = getBehaviorMethod != null ? getBehaviorMethod.getReturnType() : clazz;
@@ -392,6 +444,8 @@ public interface UnifiedCrafter {
                         getInvMethod,
                         getItemInputsMethod,
                         getFluidInputsMethod,
+                        getItemOutputsMethod,
+                        getFluidOutputsMethod,
                         getBehaviorMethod,
                         getRecipeTypeMethod,
                         recipeTypeOnComp,
