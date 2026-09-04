@@ -530,20 +530,35 @@ public class GraphCanvas extends AbstractWidget {
         }
     }
 
-    /** Renders a vertical gradient chamfered rectangle. */
+    /** Renders a vertical gradient chamfered rectangle. Only the top/bottom {@code chamfer} rows
+     *  actually need a per-row inset; the flat middle band (same width every row) is drawn as a
+     *  single {@code fillGradient} call instead of one {@code fill} per row -- fewer draw calls
+     *  for the same pixels, since {@code lerpColour} is linear in {@code row} so an affine
+     *  reparametrization over just the middle rows reproduces identical per-row colours. */
     private void fillChamferedGradient(GuiGraphics guiGraphics, int x, int y, int w, int h, int chamfer, int colourTop, int colourBottom) {
         int c = Math.min(chamfer, h / 2);
-        for (int row = 0; row < h; row++) {
-            float t = h <= 1 ? 0 : (float) row / (h - 1);
-            int colour = lerpColour(colourTop, colourBottom, t);
-            int inset = 0;
-            if (row < c) {
-                inset = c - row;
-            } else if (row >= h - c) {
-                inset = c - (h - 1 - row);
-            }
+
+        for (int row = 0; row < c; row++) {
+            int colour = lerpColour(colourTop, colourBottom, chamferRowT(row, h));
+            int inset = c - row;
             guiGraphics.fill(x + inset, y + row, x + w - inset, y + row + 1, colour);
         }
+
+        if (h - 2 * c > 0) {
+            int midTop = lerpColour(colourTop, colourBottom, chamferRowT(c, h));
+            int midBottom = lerpColour(colourTop, colourBottom, chamferRowT(h - c - 1, h));
+            guiGraphics.fillGradient(x, y + c, x + w, y + h - c, midTop, midBottom);
+        }
+
+        for (int row = h - c; row < h; row++) {
+            int colour = lerpColour(colourTop, colourBottom, chamferRowT(row, h));
+            int inset = c - (h - 1 - row);
+            guiGraphics.fill(x + inset, y + row, x + w - inset, y + row + 1, colour);
+        }
+    }
+
+    private static float chamferRowT(int row, int h) {
+        return h <= 1 ? 0 : (float) row / (h - 1);
     }
 
     private static int lerpColour(int from, int to, float t) {
