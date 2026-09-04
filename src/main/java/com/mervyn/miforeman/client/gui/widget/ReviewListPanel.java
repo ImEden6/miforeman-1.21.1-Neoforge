@@ -19,7 +19,7 @@ import java.util.function.IntConsumer;
  */
 public class ReviewListPanel extends AbstractWidget {
     public record ReviewRow(GlobalPos pos, ResourceLocation machineId, boolean linked, boolean rejected,
-                             boolean isNewCandidate, @Nullable String productLabel) {}
+                             boolean isNewCandidate, @Nullable String productLabel, @Nullable ResourceLocation recipeId) {}
 
     private static final int ROW_HEIGHT = 34;
     private static final int COLOUR_BORDER = 0xFF6B5030;

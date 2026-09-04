@@ -4,6 +4,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.function.Consumer;
@@ -32,11 +33,11 @@ public class GraphSearchBar {
     private boolean visible = false;
     private final Font font;
     private final EditBox editBox;
-    private final GraphSearchState state;
+    private final SearchState<ResourceLocation> state;
     private final Runnable onMatchChanged;
     private final Consumer<Boolean> onVisibilityChanged;
 
-    public GraphSearchBar(GraphSearchState state, Font font, Runnable onMatchChanged,
+    public GraphSearchBar(SearchState<ResourceLocation> state, Font font, Runnable onMatchChanged,
             Consumer<Boolean> onVisibilityChanged) {
         this.state = state;
         this.font = font;

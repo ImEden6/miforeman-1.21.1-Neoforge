@@ -1,13 +1,16 @@
 package com.mervyn.miforeman.client.gui;
 
+import com.mervyn.miforeman.client.DisplayFormat;
 import com.mervyn.miforeman.client.WorldHighlightRenderer;
 import com.mervyn.miforeman.client.gui.widget.ClipboardButton;
 import com.mervyn.miforeman.client.gui.widget.MonitoringListPanel;
+import com.mervyn.miforeman.client.gui.widget.SearchState;
 import com.mervyn.miforeman.network.LiveMonitoringPayload;
 import com.mervyn.miforeman.network.RequestMonitoringUpdatePayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.GlobalPos;
 import net.minecraft.network.chat.Component;
@@ -15,7 +18,9 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Full-window screen displaying live machine status data and monitoring metrics.
@@ -35,6 +40,11 @@ public class MonitoringScreen extends Screen {
     /** Kept so poll responses can push new row data in place (see {@link #refreshData()})
      *  instead of clearing and recreating every widget on the screen every ~1s. */
     private @Nullable MonitoringListPanel listPanel;
+    /** Same matching logic the recipe graph's search bar uses ({@code SearchState}), keyed by
+     *  row position. Only {@link SearchState#isSearching()}/{@link SearchState#isMatch} are used
+     *  here. Narrowing the list to matches makes next/prev cycling unnecessary. */
+    private final SearchState<GlobalPos> searchState = new SearchState<>();
+    private String searchQuery = "";
 
     public MonitoringScreen(MonitoringState state, boolean perHour, Screen backTarget) {
         super(Component.literal("Live Monitoring"));
@@ -68,7 +78,21 @@ public class MonitoringScreen extends Screen {
         int contentW = guiWidth() - (PADDING + ClipboardChrome.MAIN_BORDER) * 2 - 4;
         int btnY = top + guiHeight() - PADDING - ClipboardChrome.MAIN_BORDER - 22;
 
-        listPanel = new MonitoringListPanel(contentX, contentY, contentW, btnY - 6 - contentY,
+        EditBox searchField = new EditBox(this.font, contentX, contentY, contentW, 14, Component.literal("Search"));
+        searchField.setMaxLength(128);
+        searchField.setHint(Component.literal("Search...").withColor(0xFF8A7A68));
+        // setValue() unconditionally fires whatever responder is attached -- set the restored
+        // value first, while the responder is still EditBox's own no-op default, so restoring
+        // the query on rebuild() doesn't redundantly re-trigger refreshData().
+        searchField.setValue(searchQuery);
+        searchField.setResponder(val -> {
+            searchQuery = val;
+            refreshData();
+        });
+        this.addRenderableWidget(searchField);
+
+        int listY = contentY + 18;
+        listPanel = new MonitoringListPanel(contentX, listY, contentW, btnY - 6 - listY,
                 buildDisplayRows(), perHour, WorldHighlightRenderer.getSelected(), this::handleLocate,
                 scrollOffset, v -> scrollOffset = v);
         this.addRenderableWidget(listPanel);
@@ -96,9 +120,33 @@ public class MonitoringScreen extends Screen {
         List<LiveMonitoringPayload.MachineStatusData> sorted = new ArrayList<>(state.liveData);
         sorted.sort(Comparator.comparingInt(this::statusRank));
 
-        return sorted.stream()
+        List<MonitoringListPanel.MonitoringRow> rows = sorted.stream()
                 .map(m -> new MonitoringListPanel.MonitoringRow(m, m.recipeId().map(MonitoringState::resolveProductLabel).orElse(null)))
                 .toList();
+
+        searchState.setQuery(searchQuery, searchableTexts(rows));
+        if (!searchState.isSearching()) {
+            return rows;
+        }
+        return rows.stream().filter(r -> searchState.isMatch(r.machine().pos())).toList();
+    }
+
+    /** Search text per row: machine name, immediate product, and every resource between this
+     *  machine and the goal's final target (see {@link MonitoringState#endProductNames}). Searching
+     *  the end product's name surfaces every machine contributing to it, not just one whose own
+     *  recipe happens to output that exact item. */
+    private Map<GlobalPos, List<String>> searchableTexts(List<MonitoringListPanel.MonitoringRow> rows) {
+        Map<GlobalPos, List<String>> texts = new HashMap<>();
+        for (MonitoringListPanel.MonitoringRow row : rows) {
+            List<String> rowTexts = new ArrayList<>();
+            rowTexts.add(DisplayFormat.formatId(row.machine().machineId()));
+            if (row.productLabel() != null) {
+                rowTexts.add(row.productLabel());
+            }
+            rowTexts.addAll(state.endProductNames(row.machine().recipeId().orElse(null)));
+            texts.put(row.machine().pos(), rowTexts);
+        }
+        return texts;
     }
 
     /** Toggles locating a machine in-world when clicked. */

@@ -97,7 +97,8 @@ public class MonitoringListPanel extends AbstractWidget {
                 guiGraphics.fill(getX() + 4, currentY + 4, getX() + 8, currentY + 8, colour);
 
                 double rateVal = machine.actualRate() * (perHour ? 60.0 : 1.0);
-                String text = String.format("%s: %.2f/%s (%s)", DisplayFormat.formatId(machine.machineId()), rateVal, perHour ? "hr" : "min", machine.status());
+                String text = String.format("%s: %.2f/%s (%s)%s", DisplayFormat.formatId(machine.machineId()), rateVal, perHour ? "hr" : "min", machine.status(),
+                        DisplayFormat.formatFailureReason(machine.reason()));
                 int maxTextWidth = actionButtonX() - (getX() + 12) - 4;
                 if (mc.font.width(text) > maxTextWidth && maxTextWidth > 0) {
                     text = mc.font.plainSubstrByWidth(text, Math.max(0, maxTextWidth - 8)) + "..";

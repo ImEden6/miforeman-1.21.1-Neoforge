@@ -39,6 +39,9 @@ class MonitoringState {
      *  clipboard the player actually opened, not whichever hand happens to be "main". */
     InteractionHand hand = InteractionHand.MAIN_HAND;
     private int tickCount = 0;
+    /** The goal's recipe graph, computed once in {@link #fromGoal}. Backs {@link #endProductNames}.
+     *  Null when there's no client level yet, or for a {@link #defaults()} state with no goal at all. */
+    private @Nullable com.mervyn.miforeman.goal.RecipeGraph graph;
 
     private MonitoringState() {
         // WorldHighlightRenderer's on/off state is static and outlives any screen's
@@ -56,6 +59,11 @@ class MonitoringState {
         state.linkedMachines.addAll(goal.linkedMachines());
         state.machineLinkHistory = goal.machineLinkHistory();
         state.rejectedMachines.addAll(goal.rejectedMachines());
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level != null) {
+            state.graph = com.mervyn.miforeman.goal.RecipeGraphTraverser.computeRecipeGraph(mc.level, goal);
+        }
         return state;
     }
 
@@ -142,19 +150,20 @@ class MonitoringState {
         for (GlobalPos pos : linkedMachines) {
             ResourceLocation machineId = resolveMachineId(pos);
             LiveMonitoringPayload.MachineStatusData live = liveByPos.get(pos);
-            String productLabel = live == null ? null
-                    : live.recipeId().map(MonitoringState::resolveProductLabel).orElse(null);
+            ResourceLocation recipeId = live == null ? null : live.recipeId().orElse(null);
+            String productLabel = recipeId == null ? null : resolveProductLabel(recipeId);
             if (productLabel == null) {
                 ScanResultPayload.Candidate candidate = candidatesByPos.get(pos);
                 if (candidate != null) {
-                    productLabel = resolveProductLabel(candidate.recipeId());
+                    recipeId = candidate.recipeId();
+                    productLabel = resolveProductLabel(recipeId);
                     if (machineId.equals(ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "unknown"))) {
                         machineId = candidate.machineId();
                     }
                 }
             }
             rows.add(new ReviewListPanel.ReviewRow(pos, machineId, true, rejectedMachines.contains(pos), false,
-                    productLabel));
+                    productLabel, recipeId));
             seen.add(pos);
         }
 
@@ -166,7 +175,7 @@ class MonitoringState {
                 continue;
             String productLabel = resolveProductLabel(candidate.recipeId());
             rows.add(new ReviewListPanel.ReviewRow(candidate.pos(), candidate.machineId(), false, isRejected, true,
-                    productLabel));
+                    productLabel, candidate.recipeId()));
             seen.add(candidate.pos());
         }
 
@@ -194,6 +203,20 @@ class MonitoringState {
             }
         }
         return ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "unknown");
+    }
+
+    /** Formatted names of every resource between {@code recipeId}'s machine and this goal's
+     *  final target, inclusive. Used for search: see
+     *  {@link com.mervyn.miforeman.goal.RecipeGraphTraverser#collectUpstreamResourceIds}. Empty
+     *  when the graph hasn't been computed yet, {@code recipeId} is null, or it isn't a machine
+     *  node in this goal's plan (e.g. a linked machine crafting something unrelated). */
+    List<String> endProductNames(@Nullable ResourceLocation recipeId) {
+        if (graph == null || recipeId == null) {
+            return List.of();
+        }
+        return com.mervyn.miforeman.goal.RecipeGraphTraverser.collectUpstreamResourceIds(graph, recipeId).stream()
+                .map(DisplayFormat::formatId)
+                .toList();
     }
 
     /**

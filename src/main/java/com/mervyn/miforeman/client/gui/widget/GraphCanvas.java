@@ -77,7 +77,7 @@ public class GraphCanvas extends AbstractWidget {
     private final CameraChangeListener onCameraChange;
     private final com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode viewMode;
     private final boolean dragEnabled;
-    private final GraphSearchState searchState = new GraphSearchState();
+    private final SearchState<ResourceLocation> searchState = new SearchState<>();
     private final GraphSearchBar searchBar;
     private final HiddenNodesDrawer hiddenNodesDrawer;
 
@@ -252,8 +252,20 @@ public class GraphCanvas extends AbstractWidget {
         updateDrawerPosition();
     }
 
+    /** Search text for each visible node: raw id, path, and formatted display name. Same three
+     *  fields {@link SearchState} matched against back when this logic lived inline in
+     *  {@code GraphSearchState}. */
+    private Map<ResourceLocation, List<String>> searchableNodeTexts() {
+        Map<ResourceLocation, List<String>> texts = new HashMap<>();
+        for (RecipeGraphNode node : visibleNodes.values()) {
+            ResourceLocation id = node.getId();
+            texts.put(id, List.of(id.toString(), id.getPath(), DisplayFormat.formatId(id)));
+        }
+        return texts;
+    }
+
     private void onSearchMatchChanged() {
-        searchState.setQuery(searchBar.getValue(), visibleNodes.values());
+        searchState.setQuery(searchBar.getValue(), searchableNodeTexts());
         ResourceLocation currentMatch = searchState.currentMatchId();
         if (currentMatch != null) {
             this.selectedNodeId = currentMatch;
@@ -285,7 +297,7 @@ public class GraphCanvas extends AbstractWidget {
         return searchBar.isVisible();
     }
 
-    public GraphSearchState getSearchState() {
+    public SearchState<ResourceLocation> getSearchState() {
         return searchState;
     }
 
@@ -324,7 +336,7 @@ public class GraphCanvas extends AbstractWidget {
         computeFilteredView();
         autoLayout.clear();
         computeAutoLayout();
-        searchState.setQuery(searchBar.getValue(), visibleNodes.values());
+        searchState.setQuery(searchBar.getValue(), searchableNodeTexts());
     }
 
     public void undo() {
