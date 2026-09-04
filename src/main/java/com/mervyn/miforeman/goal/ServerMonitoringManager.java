@@ -150,6 +150,17 @@ public class ServerMonitoringManager {
         return capacity > 0 ? (double) amount / capacity : 0.0;
     }
 
+    /** Records that {@code recipeId} is now the actively-running recipe. Overwrites both
+     *  {@code lastRecipeId} (cleared whenever the machine goes idle) and
+     *  {@code lastKnownRecipeId} (never cleared -- see its own doc comment) every time a recipe
+     *  is genuinely active, so {@code lastKnownRecipeId} always reflects the latest recipe this
+     *  machine actually ran, never a stale one left over from an earlier, different recipe.
+     *  Extracted from {@link #onServerTick} so that freshness guarantee is unit-testable. */
+    public static void recordActiveRecipe(MachineTracker tracker, ResourceLocation recipeId) {
+        tracker.lastRecipeId = recipeId;
+        tracker.lastKnownRecipeId = recipeId;
+    }
+
     /** Recipe id worth showing the player for this machine: {@code lastRecipeId} (actually
      *  crafting) and {@code saturatedRecipeId} (blocked, would craft once its output clears) are
      *  mutually exclusive -- whichever is set wins. Neither is set for a RED (STARVED/DEAD_LOOP)
@@ -247,8 +258,7 @@ public class ServerMonitoringManager {
                                 tracker.addEnergy(tick, recipeId, consumed, recipeEnergy);
                             }
 
-                            tracker.lastRecipeId = recipeId;
-                            tracker.lastKnownRecipeId = recipeId;
+                            recordActiveRecipe(tracker, recipeId);
                             tracker.lastUsedEnergy = usedEnergy;
                             tracker.lastRecipeEnergy = recipeEnergy;
                         }

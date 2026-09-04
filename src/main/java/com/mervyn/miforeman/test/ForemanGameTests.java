@@ -1188,6 +1188,44 @@ public class ForemanGameTests {
         helper.succeed();
     }
 
+    /** Verifies {@code ServerMonitoringManager.recordActiveRecipe} never leaves
+     *  {@code lastKnownRecipeId} stale: it always reflects the LATEST recipe a machine actually
+     *  ran, not an earlier, different one. This is the fact that made the reviewed "stale
+     *  lastKnownRecipeId drives incorrect DEAD_LOOP classification" finding a non-issue once
+     *  traced -- the real gap was cross-goal context (fixed by {@code unionCyclicResourceIds}),
+     *  not this field going stale on its own. */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testRecordActiveRecipeNeverGoesStale(GameTestHelper helper) {
+        var tracker = new ServerMonitoringManager.MachineTracker(new BlockPos(0, 0, 0));
+        ResourceLocation cyclicRecipe = ResourceLocation.parse("modern_industrialization:materials/iron/compressor/main");
+        ResourceLocation laterNonCyclicRecipe = ResourceLocation.parse("modern_industrialization:materials/gold/compressor/main");
+
+        // Machine runs a recipe that (hypothetically) touches a cyclic resource...
+        ServerMonitoringManager.recordActiveRecipe(tracker, cyclicRecipe);
+        if (!cyclicRecipe.equals(tracker.lastKnownRecipeId)) {
+            helper.fail("Expected lastKnownRecipeId to reflect the just-run recipe, but got: " + tracker.lastKnownRecipeId);
+            return;
+        }
+
+        // ...then genuinely switches to and successfully runs a different, unrelated recipe.
+        // lastKnownRecipeId must track THIS recipe now, not the earlier cyclic one -- otherwise
+        // a later starve on a totally unrelated resource would be misread as a dead-loop.
+        ServerMonitoringManager.recordActiveRecipe(tracker, laterNonCyclicRecipe);
+        if (!laterNonCyclicRecipe.equals(tracker.lastKnownRecipeId)) {
+            helper.fail("Expected lastKnownRecipeId to update to the latest active recipe " + laterNonCyclicRecipe
+                    + " and not remain stale on " + cyclicRecipe + ", but got: " + tracker.lastKnownRecipeId);
+            return;
+        }
+
+        // lastRecipeId (the "currently active" indicator) tracks the same way.
+        if (!laterNonCyclicRecipe.equals(tracker.lastRecipeId)) {
+            helper.fail("Expected lastRecipeId to also update to the latest active recipe, but got: " + tracker.lastRecipeId);
+            return;
+        }
+
+        helper.succeed();
+    }
+
     /** Verifies {@code LiveMonitoringPayload.MachineStatusData}'s STREAM_CODEC round-trips every
      *  field, including {@code reason} (dead-loop/clog-lock feature) and {@code disposalRatio}
      *  (disposal-ratio feature), same pattern as {@code testProductionGoalStreamCodecParity}. */
