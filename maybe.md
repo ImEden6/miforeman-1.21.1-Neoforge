@@ -54,16 +54,6 @@ grant). Everything below is a pattern from that codebase that could apply to
 
 ## Solver / MachineTracker
 
-- **Golden-fixture regression test for hand-transcribed data** — their
-  `machine-table.ts` (curated per-machine coefficients that override
-  scraped/dataset data) is checked against `reference-coefficients.json`, a
-  fixture generated once by literally running the *upstream reference
-  project's own code* over a grid of inputs and dumping the results. The
-  test re-evaluates the curated table's formulas at those same sample
-  points and asserts they match within tolerance. Directly applicable to
-  anywhere we hand-maintain recipe/machine constants against a source of
-  truth (MI's own datagen, a wiki, a calculator) — catches transcription
-  drift immediately instead of silently.
 - **Staged LP instead of iterative descent for "what's actually running"**
   — their throughput solver used to be pure iterative equilibrium descent;
   now the real numbers come from a direct linear program solved as a
@@ -74,14 +64,6 @@ grant). Everything below is a pattern from that codebase that could apply to
   solver ever needs to reason about shared-supply fairness or byproduct
   routing precisely, this staged-LP structure is a cleaner model than
   hand-rolled iteration.
-- **Two named failure states instead of one generic "stuck"** — they
-  distinguish "dead-loop" (a cycle that loses material every lap and dies
-  with nothing priming it — fix: wire in a source) from "clog-lock" (a
-  machine frozen because its own surplus has nowhere to go — fix: add a
-  drawer/trash). Clog-lock is proven by re-solving with every output
-  allowed to vent at a penalty and seeing what revives. Worth stealing the
-  *framing* even without the LP machinery: two different player-facing
-  messages for two different root causes beats one "not running" state.
 - **Disposal ratio as a first-class number** — per-machine "how fast could
   this run before its own unconsumed output backs it up," used both to
   explain bottlenecks and to exempt legitimately-full consumers from
