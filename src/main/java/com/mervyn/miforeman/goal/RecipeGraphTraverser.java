@@ -266,6 +266,59 @@ public final class RecipeGraphTraverser {
         return fresh;
     }
 
+    /** Cache-only lookup of a goal's recycling-loop resource IDs, for cheap use from the server
+     *  tick loop. Never triggers {@link #computeRecipeGraph}'s comparatively expensive structure
+     *  resolution or deep copy. Returns an empty set until something else (opening the clipboard
+     *  screen, a plan recompute) has already populated the graph cache for this goal. */
+    public static Set<ResourceLocation> peekCyclicResourceIds(ProductionGoal goal) {
+        GraphCacheKey key = new GraphCacheKey(goal.type(), goal.targetId(), goal.rate(),
+                new HashMap<>(goal.recipeSelections()));
+        synchronized (GRAPH_CACHE) {
+            RecipeGraph cached = GRAPH_CACHE.get(key);
+            return cached != null ? cached.cyclicResourceIds() : Set.of();
+        }
+    }
+
+    /** Every resource id between {@code recipeId}'s machine node and {@code graph}'s target,
+     *  inclusive of both ends. Found by walking forward through {@link RecipeGraphNode#getOutputs()}
+     *  edges, which alternate resource -> machine -> resource all the way to the {@code TARGET}
+     *  node (see the node-id scheme in {@link #finalizeResourceNode}: resource nodes are keyed by
+     *  resource id, machine nodes are keyed by recipe id). Used to answer "does this machine
+     *  contribute anywhere to producing X", not just "is X this machine's own immediate output".
+     *  <p>Returns an empty set if {@code recipeId} isn't a machine node in this graph, e.g. a
+     *  linked machine crafting something unrelated to the current goal. No cycle risk beyond the
+     *  visited-node guard: {@code getOutputs()} reflects the already-cycle-cut DAG used for rate
+     *  propagation (see {@link #collectDag}), so this terminates even when
+     *  {@code graph.cyclicResourceIds()} is non-empty. */
+    public static Set<ResourceLocation> collectUpstreamResourceIds(RecipeGraph graph, @Nullable ResourceLocation recipeId) {
+        RecipeGraphNode start = recipeId == null ? null : graph.nodes().get(recipeId);
+        if (start == null) {
+            return Set.of();
+        }
+
+        Set<ResourceLocation> visitedNodeIds = new HashSet<>();
+        Set<ResourceLocation> resourceIds = new HashSet<>();
+        Deque<RecipeGraphNode> queue = new ArrayDeque<>(List.of(start));
+
+        while (!queue.isEmpty()) {
+            RecipeGraphNode node = queue.poll();
+            if (!visitedNodeIds.add(node.getId())) {
+                continue;
+            }
+            if (node.getType() != NodeType.MACHINE) {
+                resourceIds.add(node.getId());
+            }
+            for (GraphEdge edge : node.getOutputs()) {
+                RecipeGraphNode next = graph.nodes().get(edge.to());
+                if (next != null) {
+                    queue.add(next);
+                }
+            }
+        }
+
+        return resourceIds;
+    }
+
     public static RecipeGraph computeRecipeGraph(Level level, ProductionGoal goal) {
         GraphCacheKey key = new GraphCacheKey(goal.type(), goal.targetId(), goal.rate(),
                 new HashMap<>(goal.recipeSelections()));
@@ -304,7 +357,8 @@ public final class RecipeGraphTraverser {
 
         Map<ResourceLocation, RecipeGraphNode> nodes = new HashMap<>();
         Map<EdgeKey, GraphEdge> edges = new LinkedHashMap<>();
-        propagateRates(goal.targetId(), goal.rate(), 0, structNodes, nodes, edges);
+        Set<ResourceLocation> cyclicResourceIds = new HashSet<>();
+        propagateRates(goal.targetId(), goal.rate(), 0, structNodes, nodes, edges, cyclicResourceIds);
 
         for (GraphEdge edge : edges.values()) {
             RecipeGraphNode fromNode = nodes.get(edge.from());
@@ -315,7 +369,7 @@ public final class RecipeGraphTraverser {
                 toNode.putInput(edge);
         }
 
-        RecipeGraph result = new RecipeGraph(goal.targetId(), goal.rate(), nodes, new ArrayList<>(edges.values()));
+        RecipeGraph result = new RecipeGraph(goal.targetId(), goal.rate(), nodes, new ArrayList<>(edges.values()), cyclicResourceIds);
         synchronized (GRAPH_CACHE) {
             GRAPH_CACHE.put(key, result);
         }
@@ -498,13 +552,14 @@ public final class RecipeGraphTraverser {
             ResourceLocation rootId, double rootRate, int rootDepth,
             Map<ResourceLocation, StructuralNode> structNodes,
             Map<ResourceLocation, RecipeGraphNode> nodes,
-            Map<EdgeKey, GraphEdge> edges) {
+            Map<EdgeKey, GraphEdge> edges,
+            Set<ResourceLocation> cyclicResourceIds) {
 
         Map<ResourceLocation, Set<ResourceLocation>> forwardEdges = new HashMap<>();
         Map<ResourceLocation, Integer> inDegree = new HashMap<>();
         Set<ResourceLocation> onStack = new HashSet<>();
         Set<ResourceLocation> done = new HashSet<>();
-        collectDag(rootId, structNodes, forwardEdges, inDegree, onStack, done);
+        collectDag(rootId, structNodes, forwardEdges, inDegree, onStack, done, cyclicResourceIds);
 
         Map<ResourceLocation, Double> totalRate = new HashMap<>();
         Map<ResourceLocation, Integer> minDepth = new HashMap<>();
@@ -556,7 +611,8 @@ public final class RecipeGraphTraverser {
             Map<ResourceLocation, Set<ResourceLocation>> forwardEdges,
             Map<ResourceLocation, Integer> inDegree,
             Set<ResourceLocation> onStack,
-            Set<ResourceLocation> done) {
+            Set<ResourceLocation> done,
+            Set<ResourceLocation> cyclicResourceIds) {
 
         if (done.contains(curr))
             return;
@@ -576,6 +632,12 @@ public final class RecipeGraphTraverser {
                 continue;
 
             if (onStack.contains(child)) {
+                // Back-edge: curr ... child forms a recycling loop. Not solved (rate propagation
+                // still treats this edge as absent, same as before), but its membership is
+                // recorded so passive-status checks can tell a starved loop member ("dead-loop")
+                // apart from ordinary starvation.
+                cyclicResourceIds.add(curr);
+                cyclicResourceIds.add(child);
                 continue;
             }
 
@@ -583,7 +645,7 @@ public final class RecipeGraphTraverser {
                 inDegree.merge(child, 1, Integer::sum);
             }
 
-            collectDag(child, structNodes, forwardEdges, inDegree, onStack, done);
+            collectDag(child, structNodes, forwardEdges, inDegree, onStack, done, cyclicResourceIds);
         }
         onStack.remove(curr);
         done.add(curr);

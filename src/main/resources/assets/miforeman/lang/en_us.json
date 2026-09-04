@@ -7,5 +7,8 @@
   "miforeman.configuration.items": "Item List",
   "miforeman.configuration.logDirtBlock": "Log Dirt Block",
   "miforeman.configuration.magicNumberIntroduction": "Magic Number Text",
-  "miforeman.configuration.magicNumber": "Magic Number"
+  "miforeman.configuration.magicNumber": "Magic Number",
+
+  "miforeman.status.reason.dead_loop": "dead-loop: wire in a source",
+  "miforeman.status.reason.clog_lock": "clog-lock: add a drawer/trash"
 }

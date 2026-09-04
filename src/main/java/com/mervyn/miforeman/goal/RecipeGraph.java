@@ -5,12 +5,17 @@ import net.minecraft.resources.ResourceLocation;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public record RecipeGraph(
     ResourceLocation target,
     double targetRate,
     Map<ResourceLocation, RecipeGraphNode> nodes,
-    List<GraphEdge> edges
+    List<GraphEdge> edges,
+    /** Resource IDs that sit on a recycling loop (a back-edge was cut when this graph's DAG was
+     *  collected). See {@link RecipeGraphTraverser#computeRecipeGraph}. Used to tell a starved
+     *  loop member ("dead-loop") apart from ordinary starvation in passive status checks. */
+    Set<ResourceLocation> cyclicResourceIds
 ) {
     public RecipeGraphNode root() {
         return nodes.get(target);
@@ -57,6 +62,6 @@ public record RecipeGraph(
         for (var entry : nodes.entrySet()) {
             copiedNodes.put(entry.getKey(), entry.getValue().copy());
         }
-        return new RecipeGraph(target, targetRate, copiedNodes, new ArrayList<>(edges));
+        return new RecipeGraph(target, targetRate, copiedNodes, new ArrayList<>(edges), cyclicResourceIds);
     }
 }

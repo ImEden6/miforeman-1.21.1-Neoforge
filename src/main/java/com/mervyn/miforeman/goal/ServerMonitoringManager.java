@@ -44,10 +44,15 @@ public class ServerMonitoringManager {
     public static class MachineTracker {
         public final BlockPos pos;
         public MachineStatus status = MachineStatus.RED;
+        public FailureReason failureReason = FailureReason.NONE;
         public ResourceLocation lastRecipeId = null;
         /** Recipe a saturating (ORANGE) machine runs once its output clears. Distinct from
          *  lastRecipeId, which only tracks an active craft. */
         public ResourceLocation saturatedRecipeId = null;
+        /** Last recipe actually seen running. Unlike lastRecipeId this is never cleared when the
+         *  machine goes idle, so it can recognize a dead-loop (was producing/consuming a cyclic
+         *  resource, now starved) instead of ordinary starvation (never ran at all). */
+        public ResourceLocation lastKnownRecipeId = null;
         public long lastUsedEnergy = 0;
         public long lastRecipeEnergy = 0;
         public final Deque<EnergyEvent> energyEvents = new ArrayDeque<>();
@@ -123,8 +128,12 @@ public class ServerMonitoringManager {
             return;
         }
 
-        // Pass 1: collect this tick's monitored set across all players and hands.
+        // Pass 1: collect this tick's monitored set across all players and hands, and remember
+        // which goal linked each position -- used below for cheap (cache-only) dead-loop
+        // detection. If more than one goal links the same machine, the last one wins; that's
+        // fine, this classification is a best-effort hint, not load-bearing state.
         Set<GlobalPos> activeKeys = new HashSet<>();
+        Map<GlobalPos, ProductionGoal> goalByPos = new HashMap<>();
         for (ServerPlayer player : event.getServer().getPlayerList().getPlayers()) {
             for (var hand : net.minecraft.world.InteractionHand.values()) {
                 ItemStack stack = player.getItemInHand(hand);
@@ -132,6 +141,9 @@ public class ServerMonitoringManager {
                     ProductionGoal goal = stack.get(com.mervyn.miforeman.registry.ModComponents.PRODUCTION_GOAL.get());
                     if (goal != null) {
                         activeKeys.addAll(goal.linkedMachines());
+                        for (GlobalPos pos : goal.linkedMachines()) {
+                            goalByPos.put(pos, goal);
+                        }
                     }
                 }
             }
@@ -182,17 +194,25 @@ public class ServerMonitoringManager {
                             }
 
                             tracker.lastRecipeId = recipeId;
+                            tracker.lastKnownRecipeId = recipeId;
                             tracker.lastUsedEnergy = usedEnergy;
                             tracker.lastRecipeEnergy = recipeEnergy;
                         }
                         tracker.status = MachineStatus.GREEN;
+                        tracker.failureReason = FailureReason.NONE;
                         tracker.saturatedRecipeId = null;
                     } else {
                         tracker.lastRecipeId = null;
                         tracker.lastUsedEnergy = 0;
                         tracker.lastRecipeEnergy = 0;
-                        PassiveStatus passive = getMachinePassiveStatusDetailed(crafter, level);
+                        ProductionGoal goal = goalByPos.get(GlobalPos.of(entry.getKey(), pos));
+                        Set<ResourceLocation> cyclicResourceIds = goal != null
+                                ? RecipeGraphTraverser.peekCyclicResourceIds(goal)
+                                : Set.of();
+                        PassiveStatus passive = getMachinePassiveStatusDetailed(crafter, level, cyclicResourceIds,
+                                tracker.lastKnownRecipeId);
                         tracker.status = passive.status();
+                        tracker.failureReason = passive.reason();
                         tracker.saturatedRecipeId = passive.matchedRecipeId();
                     }
                 }
@@ -214,7 +234,8 @@ public class ServerMonitoringManager {
         lastPruneTick = Long.MIN_VALUE;
     }
 
-    public record PassiveStatus(MachineStatus status, @Nullable ResourceLocation matchedRecipeId) {}
+    public record PassiveStatus(MachineStatus status, @Nullable ResourceLocation matchedRecipeId,
+                                 FailureReason reason) {}
 
     public static MachineStatus getMachinePassiveStatus(UnifiedCrafter crafter, ServerLevel level) {
         return getMachinePassiveStatusDetailed(crafter, level).status();
@@ -228,16 +249,37 @@ public class ServerMonitoringManager {
         return getMachinePassiveStatusDetailed(UnifiedCrafter.from(crafter), level);
     }
 
-    /** Evaluates passive status like {@link #getMachinePassiveStatus}, and returns the matching
-     *  recipe ID when saturating (ORANGE). */
+    /** Evaluates passive status like {@link #getMachinePassiveStatus}, with no recycling-loop
+     *  awareness. A starving machine is always reported as {@link FailureReason#STARVED}. Use
+     *  the overload taking {@code cyclicResourceIds}/{@code lastKnownRecipeId} when a goal's
+     *  graph and this machine's tracker are available. */
     public static PassiveStatus getMachinePassiveStatusDetailed(UnifiedCrafter crafter, ServerLevel level) {
+        return getMachinePassiveStatusDetailed(crafter, level, Set.of(), null);
+    }
+
+    /** Evaluates passive status like {@link #getMachinePassiveStatus}, returns the matching
+     *  recipe ID when saturating (ORANGE), and classifies *why* the machine isn't running:
+     *  {@link FailureReason#CLOG_LOCK} (ORANGE, own output is full), {@link FailureReason#DEAD_LOOP}
+     *  (RED, and {@code lastKnownRecipeId}, the last recipe this machine was actually seen
+     *  running, has an input or output resource on a recycling loop in
+     *  {@code cyclicResourceIds}), or plain {@link FailureReason#STARVED} (RED otherwise, including
+     *  a machine that has simply never run yet).
+     *  <p>Deliberately doesn't derive dead-loop-ness from the crafter's current input slots. MI's
+     *  {@code ConfigurableItemStack}/{@code ConfigurableFluidStack} reset a slot's configured
+     *  resource type back to blank the moment its amount drains to zero, so a genuinely starved
+     *  slot, exactly the state this exists to classify, carries no live resource-type
+     *  information to check. {@code lastKnownRecipeId} is history the tracker already keeps, and
+     *  survives that reset. */
+    public static PassiveStatus getMachinePassiveStatusDetailed(UnifiedCrafter crafter, ServerLevel level,
+                                                                  Set<ResourceLocation> cyclicResourceIds,
+                                                                  @Nullable ResourceLocation lastKnownRecipeId) {
         if (crafter.hasActiveRecipe()) {
-            return new PassiveStatus(MachineStatus.GREEN, null);
+            return new PassiveStatus(MachineStatus.GREEN, null, FailureReason.NONE);
         }
 
         var recipeType = crafter.getRecipeType();
         if (recipeType == null) {
-            return new PassiveStatus(MachineStatus.RED, null);
+            return new PassiveStatus(MachineStatus.RED, null, FailureReason.STARVED);
         }
 
         List<ConfigurableItemStack> itemInputs = crafter.getItemInputs();
@@ -251,11 +293,51 @@ public class ServerMonitoringManager {
                 continue;
             }
             if (CrafterComponent.doInputsMatch(itemInputs, fluidInputs, recipe)) {
-                return new PassiveStatus(MachineStatus.ORANGE, holder.id()); // Saturating
+                return new PassiveStatus(MachineStatus.ORANGE, holder.id(), FailureReason.CLOG_LOCK); // Saturating
             }
         }
 
-        return new PassiveStatus(MachineStatus.RED, null); // Starving
+        // Starving. If this machine was never seen running a recipe touching a recycling loop,
+        // it's ordinary starvation (fix: increase upstream supply); otherwise it's a dead-loop
+        // (fix: wire in a source) -- see FailureReason.
+        boolean touchesCycle = recipeTouchesCycle(level, lastKnownRecipeId, cyclicResourceIds);
+        return new PassiveStatus(MachineStatus.RED, null, touchesCycle ? FailureReason.DEAD_LOOP : FailureReason.STARVED);
+    }
+
+    private static boolean recipeTouchesCycle(ServerLevel level, @Nullable ResourceLocation recipeId,
+                                               Set<ResourceLocation> cyclicResourceIds) {
+        if (recipeId == null || cyclicResourceIds.isEmpty()) {
+            return false;
+        }
+        var holder = level.getRecipeManager().byKey(recipeId);
+        if (holder.isEmpty() || !(holder.get().value() instanceof MachineRecipe recipe)) {
+            return false;
+        }
+        for (var in : recipe.itemInputs) {
+            for (var item : in.getInputItems()) {
+                if (cyclicResourceIds.contains(BuiltInRegistries.ITEM.getKey(item))) {
+                    return true;
+                }
+            }
+        }
+        for (var in : recipe.fluidInputs) {
+            for (var fluid : in.getInputFluids()) {
+                if (cyclicResourceIds.contains(BuiltInRegistries.FLUID.getKey(fluid))) {
+                    return true;
+                }
+            }
+        }
+        for (var out : recipe.itemOutputs) {
+            if (cyclicResourceIds.contains(BuiltInRegistries.ITEM.getKey(out.variant().getItem()))) {
+                return true;
+            }
+        }
+        for (var out : recipe.fluidOutputs) {
+            if (cyclicResourceIds.contains(BuiltInRegistries.FLUID.getKey(out.fluid()))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static double getExpectedRate(ProductionGoal goal, ResourceLocation resourceId) {
@@ -326,5 +408,43 @@ public class ServerMonitoringManager {
         }
 
         return finalRates;
+    }
+
+    /** Result of {@link #classifyLiveStatus}: the machine's status possibly upgraded to YELLOW,
+     *  and the reason to show alongside it. */
+    public record LiveStatus(MachineStatus status, FailureReason reason) {}
+
+    /** Given a machine's passively-tracked status/reason and its live actual-vs-total rate maps
+     *  (as computed by {@link #getActualRates} and summed across all machines producing the same
+     *  resource), decides whether a GREEN machine should read as YELLOW (underperforming), and if
+     *  so whether the shortfall traces to a resource on a recycling loop ({@link FailureReason#DEAD_LOOP})
+     *  or not ({@link FailureReason#NONE}, still actively crafting, so it isn't itself
+     *  clog-locked). Non-GREEN machines pass through unchanged. Extracted from
+     *  {@code MonitoringPacketHandlers.handleRequest} so this branch is unit-testable without a
+     *  real network {@code IPayloadContext}. */
+    public static LiveStatus classifyLiveStatus(ProductionGoal goal, MachineTracker tracker,
+                                                 Map<ResourceLocation, Double> rates,
+                                                 Map<ResourceLocation, Double> totalRates) {
+        MachineStatus status = tracker.status;
+        FailureReason reason = tracker.failureReason;
+        if (status == MachineStatus.GREEN) {
+            ResourceLocation underperformingResource = null;
+            for (var entry : rates.entrySet()) {
+                ResourceLocation resourceId = entry.getKey();
+                double actualTotal = totalRates.getOrDefault(resourceId, 0.0);
+                double expected = getExpectedRate(goal, resourceId);
+                if (expected > 0.0 && actualTotal < expected * goal.threshold()) {
+                    underperformingResource = resourceId;
+                    break;
+                }
+            }
+            if (underperformingResource != null) {
+                status = MachineStatus.YELLOW;
+                reason = RecipeGraphTraverser.peekCyclicResourceIds(goal).contains(underperformingResource)
+                        ? FailureReason.DEAD_LOOP
+                        : FailureReason.NONE;
+            }
+        }
+        return new LiveStatus(status, reason);
     }
 }

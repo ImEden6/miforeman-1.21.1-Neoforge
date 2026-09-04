@@ -1,6 +1,7 @@
 package com.mervyn.miforeman.network;
 
 import aztech.modern_industrialization.machines.MachineBlockEntity;
+import com.mervyn.miforeman.goal.FailureReason;
 import com.mervyn.miforeman.goal.MachineStatus;
 import com.mervyn.miforeman.goal.ProductionGoal;
 import com.mervyn.miforeman.goal.ServerMonitoringManager;
@@ -68,27 +69,15 @@ public class MonitoringPacketHandlers {
                 BlockEntity be = machineLevel.getBlockEntity(pos.pos());
                 if (be instanceof MachineBlockEntity machine) {
                     MachineTracker tracker = ServerMonitoringManager.trackerFor(pos);
-                    MachineStatus status = tracker.status;
 
                     Map<ResourceLocation, Double> rates = machineRates.getOrDefault(pos, Map.of());
                     ResourceLocation blockId = BuiltInRegistries.BLOCK.getKey(machine.getBlockState().getBlock());
 
-                    // If active (GREEN), check for underperformance (YELLOW)
-                    if (status == MachineStatus.GREEN) {
-                        boolean isUnderperforming = false;
-                        for (var entry : rates.entrySet()) {
-                            ResourceLocation resourceId = entry.getKey();
-                            double actualTotal = totalRates.getOrDefault(resourceId, 0.0);
-                            double expected = ServerMonitoringManager.getExpectedRate(goal, resourceId);
-                            if (expected > 0.0 && actualTotal < expected * goal.threshold()) {
-                                isUnderperforming = true;
-                                break;
-                            }
-                        }
-                        if (isUnderperforming) {
-                            status = MachineStatus.YELLOW;
-                        }
-                    }
+                    // GREEN may get upgraded to YELLOW (underperforming) here, with a reason
+                    // attached if the shortfall traces to a recycling loop.
+                    var liveStatus = ServerMonitoringManager.classifyLiveStatus(goal, tracker, rates, totalRates);
+                    MachineStatus status = liveStatus.status();
+                    FailureReason reason = liveStatus.reason();
 
                     // Determine primary output rate to display
                     double primaryRate = 0.0;
@@ -108,7 +97,7 @@ public class MonitoringPacketHandlers {
                     // once its output clears) are mutually exclusive -- whichever is set is the
                     // recipe worth showing the player.
                     ResourceLocation displayRecipeId = tracker.lastRecipeId != null ? tracker.lastRecipeId : tracker.saturatedRecipeId;
-                    list.add(new LiveMonitoringPayload.MachineStatusData(pos, status, primaryRate, blockId, Optional.ofNullable(displayRecipeId)));
+                    list.add(new LiveMonitoringPayload.MachineStatusData(pos, status, reason, primaryRate, blockId, Optional.ofNullable(displayRecipeId)));
                 }
             }
 
