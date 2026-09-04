@@ -28,15 +28,13 @@ grant). Everything below is a pattern from that codebase that could apply to
   dragging never freezes. A boxed-in wire that truly can't route still draws
   a fallback straight/L path rather than vanishing or blocking the rest of
   the solve.
-- **`GraphCanvas` render cost** — profiled 2026-09-04 while testing the
-  bottleneck-view coloring: `renderWidget`/`fillChamferedGradient`/
-  `drawElbowConnector`/`fillChamfered` together are ~24% of frame CPU while
-  the Review Plan screen is open (pre-existing cost, not caused by that
-  change — the new live-status color lookups don't show up in a CPU sample
-  at all). Not a problem today, but if a much larger graph ever makes this
-  visible as jank: batch the per-node/per-edge `fill` calls instead of many
-  small immediate-mode draws, and/or cache each chamfered-shape's corner
-  rects instead of recomputing them every frame.
+(`GraphCanvas` render cost -- the machine-node fill half was built 2026-09-05:
+`fillChamferedGradient` now draws its flat middle band as one `fillGradient`
+call instead of one `fill` per row, roughly halving a machine node's draw
+calls. `renderWidget`'s own per-node/per-edge loop and the corner-rect
+caching idea are still unaddressed, but there was no observed jank driving
+either, so they're not reopened here -- revisit only if a much larger graph
+actually makes rendering visibly choppy.)
 
 ## Layout (GraphCanvas auto-arrange, if we ever build one)
 
