@@ -456,6 +456,10 @@ public class GraphCanvas extends AbstractWidget {
             int fillBottom = !isMatch ? COLOUR_NODE_FILL_BOTTOM_DIM : COLOUR_NODE_FILL_BOTTOM;
             LiveMonitoringPayload.MachineStatusData liveStatus = node.getType() == NodeType.MACHINE
                     ? liveStatusByRecipeId.get(node.getId()) : null;
+            // Deliberately the same flat colour for both border sides when live status is
+            // present -- matches the existing search-highlight convention just below
+            // (COLOUR_SEARCH_CURRENT_MATCH/COLOUR_SEARCH_MATCH_BORDER do the same), not an
+            // oversight of the light/dark bevel used elsewhere.
             int defaultBorderLight = liveStatus != null ? liveStatus.status().colour() : COLOUR_BORDER_LIGHT;
             int defaultBorderDark = liveStatus != null ? liveStatus.status().colour() : COLOUR_BORDER_DARK;
             int borderLight = isCurrentMatch ? COLOUR_SEARCH_CURRENT_MATCH : (isSearching && isMatch ? COLOUR_SEARCH_MATCH_BORDER : (!isMatch ? COLOUR_BORDER_LIGHT_DIM : defaultBorderLight));

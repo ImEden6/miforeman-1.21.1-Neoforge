@@ -1,6 +1,5 @@
 package com.mervyn.miforeman.client.gui;
 
-import com.mervyn.miforeman.client.DisplayFormat;
 import com.mervyn.miforeman.client.WorldHighlightRenderer;
 import com.mervyn.miforeman.client.gui.widget.ClipboardButton;
 import com.mervyn.miforeman.client.gui.widget.MonitoringListPanel;
@@ -138,13 +137,8 @@ public class MonitoringScreen extends Screen {
     private Map<GlobalPos, List<String>> searchableTexts(List<MonitoringListPanel.MonitoringRow> rows) {
         Map<GlobalPos, List<String>> texts = new HashMap<>();
         for (MonitoringListPanel.MonitoringRow row : rows) {
-            List<String> rowTexts = new ArrayList<>();
-            rowTexts.add(DisplayFormat.formatId(row.machine().machineId()));
-            if (row.productLabel() != null) {
-                rowTexts.add(row.productLabel());
-            }
-            rowTexts.addAll(state.endProductNames(row.machine().recipeId().orElse(null)));
-            texts.put(row.machine().pos(), rowTexts);
+            texts.put(row.machine().pos(), state.rowSearchableTexts(
+                    row.machine().machineId(), row.productLabel(), row.machine().recipeId().orElse(null)));
         }
         return texts;
     }

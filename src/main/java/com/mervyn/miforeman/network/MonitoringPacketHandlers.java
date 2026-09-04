@@ -93,10 +93,7 @@ public class MonitoringPacketHandlers {
                         primaryRate = rates.values().iterator().next(); // Fallback to first output
                     }
 
-                    // lastRecipeId (actually crafting) and saturatedRecipeId (blocked, would craft
-                    // once its output clears) are mutually exclusive -- whichever is set is the
-                    // recipe worth showing the player.
-                    ResourceLocation displayRecipeId = tracker.lastRecipeId != null ? tracker.lastRecipeId : tracker.saturatedRecipeId;
+                    ResourceLocation displayRecipeId = ServerMonitoringManager.resolveDisplayRecipeId(tracker);
                     list.add(new LiveMonitoringPayload.MachineStatusData(pos, status, reason, primaryRate, tracker.disposalRatio, blockId, Optional.ofNullable(displayRecipeId)));
                 }
             }

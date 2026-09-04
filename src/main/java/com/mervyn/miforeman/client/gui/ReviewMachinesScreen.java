@@ -1,6 +1,5 @@
 package com.mervyn.miforeman.client.gui;
 
-import com.mervyn.miforeman.client.DisplayFormat;
 import com.mervyn.miforeman.client.gui.widget.ClipboardButton;
 import com.mervyn.miforeman.client.gui.widget.ReviewListPanel;
 import com.mervyn.miforeman.client.gui.widget.SearchState;
@@ -183,13 +182,7 @@ public class ReviewMachinesScreen extends Screen {
     private Map<GlobalPos, List<String>> searchableTexts(List<ReviewListPanel.ReviewRow> rows) {
         Map<GlobalPos, List<String>> texts = new HashMap<>();
         for (ReviewListPanel.ReviewRow row : rows) {
-            List<String> rowTexts = new ArrayList<>();
-            rowTexts.add(DisplayFormat.formatId(row.machineId()));
-            if (row.productLabel() != null) {
-                rowTexts.add(row.productLabel());
-            }
-            rowTexts.addAll(state.endProductNames(row.recipeId()));
-            texts.put(row.pos(), rowTexts);
+            texts.put(row.pos(), state.rowSearchableTexts(row.machineId(), row.productLabel(), row.recipeId()));
         }
         return texts;
     }

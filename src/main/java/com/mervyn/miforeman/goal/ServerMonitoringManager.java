@@ -138,18 +138,40 @@ public class ServerMonitoringManager {
     public static double computeDisposalRatio(UnifiedCrafter crafter) {
         double maxRatio = 0.0;
         for (ConfigurableItemStack stack : crafter.getItemOutputs()) {
-            long capacity = stack.getCapacity();
-            if (capacity > 0) {
-                maxRatio = Math.max(maxRatio, (double) stack.getAmount() / capacity);
-            }
+            maxRatio = Math.max(maxRatio, ratioIfPositive(stack.getAmount(), stack.getCapacity()));
         }
         for (ConfigurableFluidStack stack : crafter.getFluidOutputs()) {
-            long capacity = stack.getCapacity();
-            if (capacity > 0) {
-                maxRatio = Math.max(maxRatio, (double) stack.getAmount() / capacity);
-            }
+            maxRatio = Math.max(maxRatio, ratioIfPositive(stack.getAmount(), stack.getCapacity()));
         }
         return maxRatio;
+    }
+
+    private static double ratioIfPositive(long amount, long capacity) {
+        return capacity > 0 ? (double) amount / capacity : 0.0;
+    }
+
+    /** Recipe id worth showing the player for this machine: {@code lastRecipeId} (actually
+     *  crafting) and {@code saturatedRecipeId} (blocked, would craft once its output clears) are
+     *  mutually exclusive -- whichever is set wins. Neither is set for a RED (STARVED/DEAD_LOOP)
+     *  machine, so falls back to {@code lastKnownRecipeId} -- history the tracker already keeps
+     *  -- so RED machines still get a product label/graph-node match instead of silently having
+     *  none. Extracted from {@code MonitoringPacketHandlers.handleRequest} so it's unit-testable. */
+    public static @Nullable ResourceLocation resolveDisplayRecipeId(MachineTracker tracker) {
+        if (tracker.lastRecipeId != null) return tracker.lastRecipeId;
+        if (tracker.saturatedRecipeId != null) return tracker.saturatedRecipeId;
+        return tracker.lastKnownRecipeId;
+    }
+
+    /** Unions every linking goal's cyclic-resource set: a resource counts as "on a recycling
+     *  loop" for a shared machine if any goal that links it says so, rather than picking one
+     *  goal's context arbitrarily. Extracted from {@link #onServerTick} so it's unit-testable
+     *  without a real server tick/player. */
+    public static Set<ResourceLocation> unionCyclicResourceIds(List<ProductionGoal> linkingGoals) {
+        Set<ResourceLocation> cyclicResourceIds = new HashSet<>();
+        for (ProductionGoal linkingGoal : linkingGoals) {
+            cyclicResourceIds.addAll(RecipeGraphTraverser.peekCyclicResourceIds(linkingGoal));
+        }
+        return cyclicResourceIds;
     }
 
     @SubscribeEvent
@@ -159,11 +181,12 @@ public class ServerMonitoringManager {
         }
 
         // Pass 1: collect this tick's monitored set across all players and hands, and remember
-        // which goal linked each position -- used below for cheap (cache-only) dead-loop
-        // detection. If more than one goal links the same machine, the last one wins; that's
-        // fine, this classification is a best-effort hint, not load-bearing state.
+        // every goal that links each position -- used below for cheap (cache-only) dead-loop
+        // detection. A machine can be linked by more than one goal at once (e.g. two players);
+        // keep all of them per position rather than letting the last one iterated silently win,
+        // so dead-loop classification doesn't flip nondeterministically with player/hand order.
         Set<GlobalPos> activeKeys = new HashSet<>();
-        Map<GlobalPos, ProductionGoal> goalByPos = new HashMap<>();
+        Map<GlobalPos, List<ProductionGoal>> goalsByPos = new HashMap<>();
         for (ServerPlayer player : event.getServer().getPlayerList().getPlayers()) {
             for (var hand : net.minecraft.world.InteractionHand.values()) {
                 ItemStack stack = player.getItemInHand(hand);
@@ -172,7 +195,7 @@ public class ServerMonitoringManager {
                     if (goal != null) {
                         activeKeys.addAll(goal.linkedMachines());
                         for (GlobalPos pos : goal.linkedMachines()) {
-                            goalByPos.put(pos, goal);
+                            goalsByPos.computeIfAbsent(pos, k -> new ArrayList<>()).add(goal);
                         }
                     }
                 }
@@ -236,10 +259,8 @@ public class ServerMonitoringManager {
                         tracker.lastRecipeId = null;
                         tracker.lastUsedEnergy = 0;
                         tracker.lastRecipeEnergy = 0;
-                        ProductionGoal goal = goalByPos.get(GlobalPos.of(entry.getKey(), pos));
-                        Set<ResourceLocation> cyclicResourceIds = goal != null
-                                ? RecipeGraphTraverser.peekCyclicResourceIds(goal)
-                                : Set.of();
+                        List<ProductionGoal> linkingGoals = goalsByPos.getOrDefault(GlobalPos.of(entry.getKey(), pos), List.of());
+                        Set<ResourceLocation> cyclicResourceIds = unionCyclicResourceIds(linkingGoals);
                         PassiveStatus passive = getMachinePassiveStatusDetailed(crafter, level, cyclicResourceIds,
                                 tracker.lastKnownRecipeId);
                         tracker.status = passive.status();
@@ -459,19 +480,29 @@ public class ServerMonitoringManager {
         MachineStatus status = tracker.status;
         FailureReason reason = tracker.failureReason;
         if (status == MachineStatus.GREEN) {
+            // rates.entrySet() has no guaranteed order, so if a machine underperforms on more
+            // than one resource at once, scan for a cyclic one first rather than breaking on
+            // whichever resource the HashMap iterates first -- a real dead-loop must never be
+            // hidden behind an arbitrarily-chosen ordinary shortfall.
+            Set<ResourceLocation> cyclicIds = RecipeGraphTraverser.peekCyclicResourceIds(goal);
             ResourceLocation underperformingResource = null;
             for (var entry : rates.entrySet()) {
                 ResourceLocation resourceId = entry.getKey();
                 double actualTotal = totalRates.getOrDefault(resourceId, 0.0);
                 double expected = getExpectedRate(goal, resourceId);
                 if (expected > 0.0 && actualTotal < expected * goal.threshold()) {
-                    underperformingResource = resourceId;
-                    break;
+                    if (underperformingResource == null) {
+                        underperformingResource = resourceId;
+                    }
+                    if (cyclicIds.contains(resourceId)) {
+                        underperformingResource = resourceId;
+                        break;
+                    }
                 }
             }
             if (underperformingResource != null) {
                 status = MachineStatus.YELLOW;
-                if (RecipeGraphTraverser.peekCyclicResourceIds(goal).contains(underperformingResource)) {
+                if (cyclicIds.contains(underperformingResource)) {
                     reason = FailureReason.DEAD_LOOP;
                 } else if (tracker.disposalRatio >= DISPOSAL_THROTTLE_THRESHOLD) {
                     reason = FailureReason.DISPOSAL_THROTTLED;

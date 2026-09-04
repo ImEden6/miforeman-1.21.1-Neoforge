@@ -219,6 +219,22 @@ class MonitoringState {
                 .toList();
     }
 
+    /** Search text for one row: machine name, immediate product, and every resource between this
+     *  machine and the goal's final target (see {@link #endProductNames}). Shared by
+     *  {@code MonitoringScreen}/{@code ReviewMachinesScreen} so the two screens' search behavior
+     *  can't silently drift apart -- each screen's own row type differs (nested vs. flat fields),
+     *  so they extract these three arguments themselves and call this instead of duplicating the
+     *  text-list construction. */
+    List<String> rowSearchableTexts(ResourceLocation machineId, @Nullable String productLabel, @Nullable ResourceLocation recipeId) {
+        List<String> texts = new ArrayList<>();
+        texts.add(DisplayFormat.formatId(machineId));
+        if (productLabel != null) {
+            texts.add(productLabel);
+        }
+        texts.addAll(endProductNames(recipeId));
+        return texts;
+    }
+
     /**
      * Resolves a recipe ID to formatted product names, or null if the recipe cannot
      * be found.

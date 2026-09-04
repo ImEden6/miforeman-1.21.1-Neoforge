@@ -1080,7 +1080,111 @@ public class ForemanGameTests {
             return;
         }
 
+        // Case 5: shortfall on BOTH a cyclic and a non-cyclic resource at once -> DEAD_LOOP must
+        // win regardless of the rates map's (unordered) iteration order, not whichever resource
+        // a HashMap happens to visit first.
+        tracker.disposalRatio = 0.0;
+        var bothUnderperformingResult = ServerMonitoringManager.classifyLiveStatus(goal, tracker,
+                Map.of(cyclicResource, 1.0, nonCyclicResource, 1.0),
+                Map.of(cyclicResource, 2.0, nonCyclicResource, 2.0));
+        if (bothUnderperformingResult.reason() != com.mervyn.miforeman.goal.FailureReason.DEAD_LOOP) {
+            helper.fail("Expected a simultaneous cyclic+non-cyclic shortfall to always report DEAD_LOOP, "
+                    + "but got: " + bothUnderperformingResult.reason());
+            return;
+        }
+
         RecipeGraphTraverser.clearGraphCache();
+        helper.succeed();
+    }
+
+    /** Verifies {@code ServerMonitoringManager.unionCyclicResourceIds}: a resource shared by two
+     *  goals linking the same machine is treated as cyclic if EITHER goal's graph says so,
+     *  regardless of list order -- fixes the old "last goal wins" nondeterminism in
+     *  {@code onServerTick}'s {@code goalByPos}. */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testUnionCyclicResourceIdsAcrossGoals(GameTestHelper helper) {
+        var level = helper.getLevel();
+        RecipeGraphTraverser.clearGraphCache();
+
+        ResourceLocation cyclicTargetId = ResourceLocation.parse("modern_industrialization:quantum_upgrade");
+        ProductionGoal cyclicGoal = new ProductionGoal("union_cyclic_test", ProductionGoal.TargetType.ITEM, cyclicTargetId, 1.0);
+        var cyclicGraph = RecipeGraphTraverser.computeRecipeGraph(level, cyclicGoal);
+        if (cyclicGraph.cyclicResourceIds().isEmpty()) {
+            helper.fail("Expected quantum_upgrade's graph to have at least one cyclic resource to build this test on.");
+            return;
+        }
+        ResourceLocation cyclicResource = cyclicGraph.cyclicResourceIds().iterator().next();
+
+        ResourceLocation nonCyclicTargetId = ResourceLocation.parse("modern_industrialization:iron_dust");
+        ProductionGoal nonCyclicGoal = new ProductionGoal("union_noncyclic_test", ProductionGoal.TargetType.ITEM, nonCyclicTargetId, 1.0);
+        var nonCyclicGraph = RecipeGraphTraverser.computeRecipeGraph(level, nonCyclicGoal);
+        if (nonCyclicGraph.cyclicResourceIds().contains(cyclicResource)) {
+            helper.fail("Test assumption broken: expected iron_dust's graph to NOT consider " + cyclicResource + " cyclic.");
+            return;
+        }
+
+        // Union in either order must include the cyclic resource -- the whole point of unioning
+        // instead of picking one goal's set is that order can't hide it.
+        var unionForward = ServerMonitoringManager.unionCyclicResourceIds(List.of(nonCyclicGoal, cyclicGoal));
+        var unionBackward = ServerMonitoringManager.unionCyclicResourceIds(List.of(cyclicGoal, nonCyclicGoal));
+        if (!unionForward.contains(cyclicResource) || !unionBackward.contains(cyclicResource)) {
+            helper.fail("Expected the union of two linking goals' cyclic-resource sets to contain " + cyclicResource
+                    + " regardless of list order, but got forward=" + unionForward + " backward=" + unionBackward);
+            return;
+        }
+
+        var nonCyclicOnly = ServerMonitoringManager.unionCyclicResourceIds(List.of(nonCyclicGoal));
+        if (nonCyclicOnly.contains(cyclicResource)) {
+            helper.fail("Expected a single non-cyclic-linking goal to not contribute " + cyclicResource + ", but got: " + nonCyclicOnly);
+            return;
+        }
+
+        RecipeGraphTraverser.clearGraphCache();
+        helper.succeed();
+    }
+
+    /** Verifies {@code ServerMonitoringManager.resolveDisplayRecipeId} falls back through
+     *  lastRecipeId -> saturatedRecipeId -> lastKnownRecipeId, so a RED (STARVED/DEAD_LOOP)
+     *  machine -- which never sets the first two -- still reports a recipe id when it has run
+     *  before, fixing the bug where RED machines couldn't be colored on the recipe graph or
+     *  matched by "search by end product" (both keyed on this field). */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testResolveDisplayRecipeIdFallsBackToLastKnown(GameTestHelper helper) {
+        var tracker = new ServerMonitoringManager.MachineTracker(new BlockPos(0, 0, 0));
+        ResourceLocation active = ResourceLocation.parse("modern_industrialization:materials/iron/compressor/main");
+        ResourceLocation saturated = ResourceLocation.parse("modern_industrialization:materials/copper/compressor/main");
+        ResourceLocation lastKnown = ResourceLocation.parse("modern_industrialization:materials/gold/compressor/main");
+
+        // Never run at all -> null.
+        if (ServerMonitoringManager.resolveDisplayRecipeId(tracker) != null) {
+            helper.fail("Expected a never-run tracker to resolve to a null display recipe id.");
+            return;
+        }
+
+        // RED, but has run before -> falls back to lastKnownRecipeId (the bug this fixes).
+        tracker.lastKnownRecipeId = lastKnown;
+        if (!lastKnown.equals(ServerMonitoringManager.resolveDisplayRecipeId(tracker))) {
+            helper.fail("Expected a RED tracker with no active/saturated recipe to fall back to lastKnownRecipeId="
+                    + lastKnown + ", but got: " + ServerMonitoringManager.resolveDisplayRecipeId(tracker));
+            return;
+        }
+
+        // ORANGE/CLOG_LOCK -> saturatedRecipeId wins over the stale lastKnownRecipeId.
+        tracker.saturatedRecipeId = saturated;
+        if (!saturated.equals(ServerMonitoringManager.resolveDisplayRecipeId(tracker))) {
+            helper.fail("Expected saturatedRecipeId to take priority over lastKnownRecipeId, but got: "
+                    + ServerMonitoringManager.resolveDisplayRecipeId(tracker));
+            return;
+        }
+
+        // GREEN/active -> lastRecipeId wins over everything else.
+        tracker.lastRecipeId = active;
+        if (!active.equals(ServerMonitoringManager.resolveDisplayRecipeId(tracker))) {
+            helper.fail("Expected lastRecipeId to take top priority, but got: "
+                    + ServerMonitoringManager.resolveDisplayRecipeId(tracker));
+            return;
+        }
+
         helper.succeed();
     }
 

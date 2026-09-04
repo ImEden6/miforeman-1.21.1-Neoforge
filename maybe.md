@@ -80,6 +80,17 @@ resource-node rate-satisfied/deficit coloring this bullet also described was
 deliberately left out -- it needs joining `RecipeGraphNode.getRequiredRate()`
 against summed live rates across all producing machines, materially more
 plumbing than the direct per-machine status coloring that shipped.)
+- **`cyclicResourceIds` out-param threading** — `RecipeGraphTraverser.propagateRates` accepts
+  a `Set<ResourceLocation> cyclicResourceIds` purely to forward it unchanged into `collectDag`
+  (the actual writer, at its back-edge branch), which already takes 7 parameters. A code review
+  flagged this as a mild Collection/Primitive Obsession smell -- bundling the traversal's
+  out-params (`structNodes`/`nodes`/`edges`/`cyclicResourceIds`, plus `collectDag`'s own
+  `forwardEdges`/`inDegree`/`onStack`/`done`) into one small mutable accumulator object passed
+  once would let a future "collect X while traversing" feature add an accumulator without
+  touching every signature in the chain again. Deliberately not done as part of the disposal-
+  ratio/bottleneck-view review-fix batch (2026-09-04) -- it touches a recursive DFS with
+  dedicated tests (`testRecipeGraphCyclicResourceIdsCaptured`, `testGraphCacheHitAndInvalidation`)
+  and no bug is attached to it, just a real-but-optional cleanup.
 
 ## Data pipeline (if we ever export/share recipe datasets)
 
