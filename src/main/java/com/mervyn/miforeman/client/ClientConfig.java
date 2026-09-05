@@ -30,6 +30,14 @@ public class ClientConfig {
             .comment("Monitor list \"Located\" button colour (ARGB hex). Empty = default.")
             .define("colourLocatedButton", "");
 
+    public static final ModConfigSpec.ConfigValue<String> COLOUR_INPUT_PANEL = BUILDER
+            .comment("Detail card inputs panel background colour (ARGB hex). Empty = default.")
+            .define("colourInputPanel", "");
+
+    public static final ModConfigSpec.ConfigValue<String> COLOUR_OUTPUT_PANEL = BUILDER
+            .comment("Detail card outputs panel background colour (ARGB hex). Empty = default.")
+            .define("colourOutputPanel", "");
+
     public static final ModConfigSpec SPEC = BUILDER.build();
 
     private ClientConfig() {

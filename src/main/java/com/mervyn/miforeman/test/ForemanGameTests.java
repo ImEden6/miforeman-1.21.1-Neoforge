@@ -89,7 +89,7 @@ public class ForemanGameTests {
                 List.of(GlobalPos.of(net.minecraft.world.level.Level.OVERWORLD, new BlockPos(4, 5, 6))),
                 new com.mervyn.miforeman.goal.ClipboardUiState(1, 12.5, -3.0, 2.0f,
                         com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.MACHINES_ONLY, false, true, true,
-                        false));
+                        false, true));
 
         @SuppressWarnings("deprecation")
         var buf = new net.minecraft.network.RegistryFriendlyByteBuf(io.netty.buffer.Unpooled.buffer(),
@@ -141,6 +141,33 @@ public class ForemanGameTests {
                 helper.fail("GraphViewMode.STREAM_CODEC failed round-trip for " + mode + ", got: " + decodedMode);
                 return;
             }
+        }
+
+        helper.succeed();
+    }
+
+    /** Verifies {@code ClipboardUiState.STREAM_CODEC} round-trips every field directly -- until
+     *  now this only got incidental coverage via testProductionGoalStreamCodecParity's sample
+     *  goal, not a dedicated test of its own, unlike every other STREAM_CODEC in this codebase. */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testClipboardUiStateStreamCodecParity(GameTestHelper helper) {
+        var level = helper.getLevel();
+
+        var state = new com.mervyn.miforeman.goal.ClipboardUiState(3, 7.5, -2.25, 1.5f,
+                com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.ITEMS_ONLY,
+                true, true, false, false, true);
+
+        @SuppressWarnings("deprecation")
+        var buf = new net.minecraft.network.RegistryFriendlyByteBuf(io.netty.buffer.Unpooled.buffer(),
+                level.registryAccess());
+        com.mervyn.miforeman.goal.ClipboardUiState.STREAM_CODEC.encode(buf, state);
+        var decoded = com.mervyn.miforeman.goal.ClipboardUiState.STREAM_CODEC.decode(buf);
+
+        if (!decoded.equals(state)) {
+            helper.fail("STREAM_CODEC round-trip does not match original ClipboardUiState -- a field was "
+                    + "likely added to the record without updating STREAM_CODEC (or vice versa). Original: "
+                    + state + ", decoded: " + decoded);
+            return;
         }
 
         helper.succeed();
@@ -631,6 +658,45 @@ public class ForemanGameTests {
         var nullResult = RecipeGraphTraverser.collectUpstreamResourceIds(graph, null);
         if (!nullResult.isEmpty()) {
             helper.fail("Expected a null recipe id to produce an empty upstream set, but got: " + nullResult);
+            return;
+        }
+
+        helper.succeed();
+    }
+
+    /** Verifies {@code RecipeGraphTraverser.collectByproductRates}, which powers the DetailCard
+     *  "Outputs" panel: every returned rate must be positive, no returned resourceId may already
+     *  be tracked as a demanded resource elsewhere in the graph (including the target itself --
+     *  the plan already accounts for those, so they aren't "excess" production), and a
+     *  sufficiently complex real recipe chain must produce at least one genuine byproduct. */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testCollectByproductRates(GameTestHelper helper) {
+        var level = helper.getLevel();
+        ResourceLocation targetId = ResourceLocation.parse("modern_industrialization:quantum_upgrade");
+        ProductionGoal goal = new ProductionGoal("byproduct_test", ProductionGoal.TargetType.ITEM, targetId, 1.0);
+        var graph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
+
+        var byproductRates = RecipeGraphTraverser.collectByproductRates(graph);
+
+        for (var entry : byproductRates.entrySet()) {
+            ResourceLocation id = entry.getKey();
+            double rate = entry.getValue();
+            if (rate <= 0.0) {
+                helper.fail("Expected every collectByproductRates entry to have a positive rate, but " + id
+                        + " has: " + rate);
+                return;
+            }
+            if (graph.nodes().containsKey(id)) {
+                helper.fail("Expected collectByproductRates to exclude " + id
+                        + " -- it's already tracked as a demanded resource elsewhere in the graph, "
+                        + "so this machine's incidental production of it isn't excess.");
+                return;
+            }
+        }
+
+        if (byproductRates.isEmpty()) {
+            helper.fail("Expected quantum_upgrade's graph to have at least one genuine byproduct "
+                    + "(a real recipe output the plan didn't itself demand) to build this test on.");
             return;
         }
 

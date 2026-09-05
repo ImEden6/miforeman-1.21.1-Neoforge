@@ -86,6 +86,7 @@ public class ClipboardScreen extends Screen {
     private float cameraZoom;
     private int detailScrollOffset = 0;
     private boolean detailCardCollapsed;
+    private boolean detailCardExpanded;
     private com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode graphViewMode;
     private boolean graphDragEnabled;
     private boolean showMachineNumbers;
@@ -135,6 +136,7 @@ public class ClipboardScreen extends Screen {
         this.graphViewMode = ui.graphViewMode();
         this.graphDragEnabled = ui.graphDragEnabled();
         this.detailCardCollapsed = ui.detailCardCollapsed();
+        this.detailCardExpanded = ui.detailCardExpanded();
         this.isMinimized = ui.isMinimized();
         this.showMachineNumbers = ui.showMachineNumbers();
     }
@@ -144,7 +146,7 @@ public class ClipboardScreen extends Screen {
         super.removed();
         ClipboardUiState snapshot = new ClipboardUiState(
                 currentStep, cameraX, cameraY, cameraZoom,
-                graphViewMode, graphDragEnabled, detailCardCollapsed, isMinimized, showMachineNumbers);
+                graphViewMode, graphDragEnabled, detailCardCollapsed, isMinimized, showMachineNumbers, detailCardExpanded);
         // goalDraft.graphLayout tracks node drags live (see the onLayoutChange callback
         // in
         // buildStepReviewPlan) but is otherwise only sent to the server via an explicit
@@ -390,8 +392,8 @@ public class ClipboardScreen extends Screen {
         int contentH = btnY - rowGap - canvasY;
 
         if (this.goalDraft.currentPlan != null && this.goalDraft.currentPlan.graph() != null) {
-            int detailWidth = detailCardCollapsed ? 0 : (int) (contentW * 0.42);
-            int canvasWidth = contentW - (detailCardCollapsed ? 0 : detailWidth + 6);
+            int detailWidth = detailCardCollapsed ? 0 : detailCardExpanded ? contentW : (int) (contentW * 0.42);
+            int canvasWidth = detailCardExpanded ? 0 : contentW - (detailCardCollapsed ? 0 : detailWidth + 6);
 
             graphCanvas = new GraphCanvas(contentX, canvasY, canvasWidth, contentH,
                     this.goalDraft.currentPlan.graph(), this.goalDraft.graphLayout, cameraX, cameraY, cameraZoom,
@@ -416,7 +418,14 @@ public class ClipboardScreen extends Screen {
                     },
                     graphViewMode,
                     graphDragEnabled);
-            this.addRenderableWidget(graphCanvas);
+            // Still constructed even when expanded (so Undo/Redo/Reset/View/Edit-mode's lambdas,
+            // which close over graphCanvas directly, stay valid) but deliberately not added as a
+            // renderable widget in that case -- at canvasWidth=0 its own overlay UI (search bar
+            // toggle, hidden-nodes drawer tab) would otherwise still render, anchored at the
+            // canvas's own origin, which is the same contentX DetailCard now occupies.
+            if (!detailCardExpanded) {
+                this.addRenderableWidget(graphCanvas);
+            }
 
             if (!detailCardCollapsed) {
                 RecipeGraphNode selectedNode = selectedNodeId != null
@@ -464,18 +473,33 @@ public class ClipboardScreen extends Screen {
                         }, resId -> {
                             return this.goalDraft.graphLayout != null && this.goalDraft.graphLayout.isHidden(resId);
                         }, this::expandMaterialNode);
-                detailCard = new DetailCard(contentX + canvasWidth + 6, canvasY, detailWidth, contentH, selectedNode,
-                        this.goalDraft.currentPlan, this.goalDraft.perHour, showMachineNumbers, detailCardCallbacks,
-                        detailScrollOffset, v -> this.detailScrollOffset = v);
+                int detailX = detailCardExpanded ? contentX : contentX + canvasWidth + 6;
+                detailCard = new DetailCard(detailX, canvasY, detailWidth, contentH, selectedNode,
+                        this.goalDraft.currentPlan, this.goalDraft.perHour, showMachineNumbers, detailCardExpanded,
+                        detailCardCallbacks, detailScrollOffset, v -> this.detailScrollOffset = v);
                 this.addRenderableWidget(detailCard);
             } else {
                 detailCard = null;
             }
 
+            // 3-state cycle: Sidebar -> Expanded -> Hidden -> Sidebar. Label shows the CURRENT
+            // state, matching the "View Mode"/"Edit Mode" and "View: X" buttons in this same row
+            // -- all three cycle/toggle buttons in the toolbar use that convention, so this one
+            // shouldn't be the odd one out showing the target state instead.
+            String detailButtonLabel = detailCardCollapsed ? "Details: Hidden"
+                    : detailCardExpanded ? "Details: Expanded" : "Details: Sidebar";
             toggleDetailButton = new ClipboardButton(contentX + contentW - 90, topButtonRowY, 90, 12,
-                    Component.literal(detailCardCollapsed ? "Show Details" : "Hide Details"),
+                    Component.literal(detailButtonLabel),
                     b -> {
-                        detailCardCollapsed = !detailCardCollapsed;
+                        if (detailCardCollapsed) {
+                            detailCardCollapsed = false;
+                            detailCardExpanded = false;
+                        } else if (!detailCardExpanded) {
+                            detailCardExpanded = true;
+                        } else {
+                            detailCardCollapsed = true;
+                            detailCardExpanded = false;
+                        }
                         rebuildStep(STEP_REVIEW_PLAN);
                     });
             this.addRenderableWidget(toggleDetailButton);

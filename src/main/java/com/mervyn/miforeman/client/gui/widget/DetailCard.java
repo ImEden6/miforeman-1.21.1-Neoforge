@@ -1,21 +1,28 @@
 package com.mervyn.miforeman.client.gui.widget;
 
 import com.mervyn.miforeman.client.DisplayFormat;
+import com.mervyn.miforeman.client.gui.ColourPalette;
+import com.mervyn.miforeman.client.gui.ColourPalette.ColourKey;
 import com.mervyn.miforeman.goal.RecipeGraphNode;
 import com.mervyn.miforeman.goal.GraphEdge;
 import com.mervyn.miforeman.goal.NodeType;
+import com.mervyn.miforeman.goal.RecipeGraph;
 import com.mervyn.miforeman.goal.ProductionGoal.FactoryPlan;
 import com.mervyn.miforeman.goal.ProductionGoal.MachineRequirement;
-import com.mervyn.miforeman.goal.ProductionGoal.MaterialFlow;
+import com.mervyn.miforeman.goal.ProductionGoal.TargetType;
 import com.mervyn.miforeman.goal.RecipeGraphTraverser;
+import aztech.modern_industrialization.client.util.RenderHelper;
 import aztech.modern_industrialization.machines.recipe.MachineRecipe;
+import aztech.modern_industrialization.thirdparty.fabrictransfer.api.fluid.FluidVariant;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
+import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
@@ -52,14 +59,28 @@ public class DetailCard extends AbstractWidget {
         }
     }
 
+    private static final int ICON_SIZE = 16;
+    private static final int RESOURCE_ROW_HEIGHT = 18;
+
     private @Nullable RecipeGraphNode node;
     private final FactoryPlan plan;
     private final boolean perHour;
     private final boolean showNumbers;
+    /** Whether this card is filling the whole content width (GraphCanvas hidden) rather than
+     *  sitting as a narrow sidebar next to it -- see ClipboardScreen's 3-state detail toggle.
+     *  Drives whether the Summary Mode Inputs/Outputs panels lay out side-by-side (reliably wide
+     *  here) or stacked (reliably narrow in sidebar mode). */
+    private final boolean expanded;
     private final Callbacks callbacks;
     private final IntConsumer onScrollChange;
     private int scrollOffset;
     private int totalContentHeight = 0;
+
+    /** Set during the row loop when the mouse is over a resource icon, drawn once at the very
+     *  end of renderWidget (after disableScissor) so it's never clipped by the scroll area. */
+    private @Nullable Component pendingTooltip;
+    private int pendingTooltipX;
+    private int pendingTooltipY;
 
     // Boundaries of the inline cycle recipe box (for mouse click detection)
     private int cycleBoxX = 0;
@@ -90,13 +111,14 @@ public class DetailCard extends AbstractWidget {
     private boolean isExpandBoxHovered = false;
 
     public DetailCard(int x, int y, int width, int height, @Nullable RecipeGraphNode node,
-                      FactoryPlan plan, boolean perHour, boolean showNumbers, Callbacks callbacks,
+                      FactoryPlan plan, boolean perHour, boolean showNumbers, boolean expanded, Callbacks callbacks,
                       int initialScrollOffset, IntConsumer onScrollChange) {
         super(x, y, width, height, Component.literal("Detail Card"));
         this.node = node;
         this.plan = plan;
         this.perHour = perHour;
         this.showNumbers = showNumbers;
+        this.expanded = expanded;
         this.callbacks = callbacks;
         this.scrollOffset = initialScrollOffset;
         this.onScrollChange = onScrollChange;
@@ -115,6 +137,64 @@ public class DetailCard extends AbstractWidget {
                 && callbacks.onExpandMaterial() != null
                 && Minecraft.getInstance().level != null
                 && !RecipeGraphTraverser.getCandidateRecipes(Minecraft.getInstance().level, node.getId()).isEmpty();
+    }
+
+    private record ResourceRow(ResourceLocation id, double rate) {}
+
+    /** Renders one colored Inputs/Outputs panel (title, background tint, bordered outline, and
+     *  one icon+rate row per resource) and returns its total height so the caller can position
+     *  whatever comes next. */
+    private int renderResourcePanel(GuiGraphics guiGraphics, String title, ColourKey colourKey,
+                                     List<ResourceRow> rows, int x, int y, int width, int mouseX, int mouseY) {
+        Minecraft mc = Minecraft.getInstance();
+        int headerHeight = 12;
+        int rowsHeight = Math.max(1, rows.size()) * RESOURCE_ROW_HEIGHT;
+        int panelHeight = headerHeight + rowsHeight + 4;
+
+        guiGraphics.fill(x, y, x + width, y + panelHeight, ColourPalette.get(colourKey));
+        guiGraphics.renderOutline(x, y, width, panelHeight, COLOUR_BORDER);
+        guiGraphics.drawString(mc.font, title, x + 4, y + 3, COLOUR_TITLE, false);
+
+        int rowY = y + headerHeight;
+        if (rows.isEmpty()) {
+            guiGraphics.drawString(mc.font, "None", x + 4, rowY + 4, COLOUR_MUTED, false);
+        } else {
+            for (ResourceRow row : rows) {
+                renderResourceRow(guiGraphics, row.id(), row.rate(), x + 4, rowY, mouseX, mouseY);
+                rowY += RESOURCE_ROW_HEIGHT;
+            }
+        }
+        return panelHeight;
+    }
+
+    /** One icon + rate row. The resource's name isn't drawn as text (there's rarely room for it
+     *  next to an icon in the sidebar-width case) -- it shows as a hover tooltip instead, the
+     *  same way a vanilla inventory slot works. */
+    private void renderResourceRow(GuiGraphics guiGraphics, ResourceLocation resourceId, double rate,
+                                    int x, int y, int mouseX, int mouseY) {
+        Minecraft mc = Minecraft.getInstance();
+        renderResourceIcon(guiGraphics, resourceId, x, y);
+
+        double rateVal = rate * (perHour ? 60.0 : 1.0);
+        String rateText = String.format("%.1f/%s", rateVal, perHour ? "h" : "m");
+        guiGraphics.drawString(mc.font, rateText, x + ICON_SIZE + 4, y + (ICON_SIZE - 9) / 2, COLOUR_TEXT, false);
+
+        if (RenderHelper.isPointWithinRectangle(x, y, ICON_SIZE, ICON_SIZE, mouseX, mouseY)) {
+            pendingTooltip = Component.literal(DisplayFormat.formatId(resourceId));
+            pendingTooltipX = mouseX;
+            pendingTooltipY = mouseY;
+        }
+    }
+
+    /** Draws an item or fluid's icon via MI's own {@code RenderHelper} rather than hand-rolling
+     *  NeoForge's sprite-blitting path for fluids. */
+    private void renderResourceIcon(GuiGraphics guiGraphics, ResourceLocation resourceId, int x, int y) {
+        if (RecipeGraphTraverser.getItemOrFluidType(resourceId) == TargetType.FLUID) {
+            RenderHelper.drawFluidInGui(guiGraphics, FluidVariant.of(BuiltInRegistries.FLUID.get(resourceId)), x, y);
+        } else {
+            RenderHelper.renderAndDecorateItem(guiGraphics, Minecraft.getInstance().font,
+                    new ItemStack(BuiltInRegistries.ITEM.get(resourceId)), x, y);
+        }
     }
 
     @Override
@@ -143,28 +223,48 @@ public class DetailCard extends AbstractWidget {
         isExpandBoxHovered = false;
         expandBoxW = 0;
         expandBoxH = 0;
+        pendingTooltip = null;
 
         if (node == null) {
             // Summary Mode
-            guiGraphics.drawString(fontSource.font, "Factory Summary", getX() + 6, currentY, COLOUR_TITLE, false);
-            currentY += 15;
+            RecipeGraph graph = plan.graph();
+            String title = graph != null ? DisplayFormat.formatId(graph.target()) : "Factory Summary";
+            guiGraphics.drawString(fontSource.font, title, getX() + 6, currentY, COLOUR_TITLE, false);
+            currentY += 12;
 
-            // Goal Output
-            guiGraphics.drawString(fontSource.font, "Target Goal:", getX() + 6, currentY, COLOUR_LABEL, false);
-            currentY += 10;
-            String targetText = String.format(" - %.2f/%s %s",
-                    plan.graph() != null ? plan.graph().targetRate() * (perHour ? 60.0 : 1.0) : 1.0,
-                    perHour ? "h" : "m",
-                    plan.graph() != null ? DisplayFormat.formatId(plan.graph().target()) : "Goal");
-            guiGraphics.drawString(fontSource.font, targetText, getX() + 10, currentY, COLOUR_TEXT, false);
-            currentY += 15;
-
-            // Total Power Demand
             long totalPower = plan.totalPowerDemandEu();
-            if (totalPower > 0) {
-                String powerLine = String.format("Total Power: %d EU/t", totalPower);
-                guiGraphics.drawString(fontSource.font, powerLine, getX() + 6, currentY, COLOUR_AMBER, false);
-                currentY += 14;
+            String metaLine = totalPower > 0
+                    ? String.format("%d machines · %d EU/t", plan.machines().size(), totalPower)
+                    : String.format("%d machines", plan.machines().size());
+            guiGraphics.drawString(fontSource.font, metaLine, getX() + 6, currentY, COLOUR_MUTED, false);
+            currentY += 15;
+
+            // Inputs / Outputs panels. Sidebar mode is reliably narrow (~42% of a screen that's
+            // itself capped at a small minimum width) so panels stack; expanded mode is reliably
+            // wide (the full content width, GraphCanvas hidden) so they sit side-by-side -- no
+            // runtime width-threshold guessing either way.
+            List<ResourceRow> inputRows = plan.rawInputs().stream()
+                    .map(flow -> new ResourceRow(flow.resourceId(), flow.rate())).toList();
+            List<ResourceRow> outputRows = graph == null ? List.of()
+                    : RecipeGraphTraverser.collectByproductRates(graph).entrySet().stream()
+                            .map(e -> new ResourceRow(e.getKey(), e.getValue()))
+                            .toList();
+
+            if (expanded) {
+                int gap = 6;
+                int panelWidth = (getWidth() - 12 - gap) / 2;
+                int panelStartY = currentY;
+                int inputsHeight = renderResourcePanel(guiGraphics, "Inputs", ColourKey.INPUT_PANEL,
+                        inputRows, getX() + 6, panelStartY, panelWidth, mouseX, mouseY);
+                int outputsHeight = renderResourcePanel(guiGraphics, "Outputs", ColourKey.OUTPUT_PANEL,
+                        outputRows, getX() + 6 + panelWidth + gap, panelStartY, panelWidth, mouseX, mouseY);
+                currentY = panelStartY + Math.max(inputsHeight, outputsHeight) + 8;
+            } else {
+                int panelWidth = getWidth() - 12;
+                currentY += renderResourcePanel(guiGraphics, "Inputs", ColourKey.INPUT_PANEL,
+                        inputRows, getX() + 6, currentY, panelWidth, mouseX, mouseY) + 6;
+                currentY += renderResourcePanel(guiGraphics, "Outputs", ColourKey.OUTPUT_PANEL,
+                        outputRows, getX() + 6, currentY, panelWidth, mouseX, mouseY) + 8;
             }
 
             // Machines Needed Header + Toggle Pill
@@ -203,23 +303,6 @@ public class DetailCard extends AbstractWidget {
                         machLine = String.format(" - %s", DisplayFormat.formatId(req.machineId()));
                     }
                     guiGraphics.drawString(fontSource.font, machLine, getX() + 10, currentY, COLOUR_TEXT, false);
-                    currentY += 10;
-                }
-            }
-            currentY += 5;
-
-            // Raw Inputs Needed
-            guiGraphics.drawString(fontSource.font, "Raw Inputs:", getX() + 6, currentY, COLOUR_CYAN, false);
-            currentY += 10;
-            List<MaterialFlow> rawInputs = plan.rawInputs();
-            if (rawInputs.isEmpty()) {
-                guiGraphics.drawString(fontSource.font, " - None", getX() + 10, currentY, COLOUR_MUTED, false);
-                currentY += 10;
-            } else {
-                for (MaterialFlow flow : rawInputs) {
-                    double rateVal = flow.rate() * (perHour ? 60.0 : 1.0);
-                    String flowLine = String.format(" - %.1f/%s %s", rateVal, perHour ? "h" : "m", DisplayFormat.formatId(flow.resourceId()));
-                    guiGraphics.drawString(fontSource.font, flowLine, getX() + 10, currentY, COLOUR_TEXT, false);
                     currentY += 10;
                 }
             }
@@ -403,6 +486,12 @@ public class DetailCard extends AbstractWidget {
             int scrollbarY = getY() + 2 + (int) (((double) scrollOffset / maxScroll) * (getHeight() - scrollbarHeight - 4));
 
             guiGraphics.fill(scrollbarX, scrollbarY, scrollbarX + scrollbarWidth, scrollbarY + scrollbarHeight, COLOUR_BORDER);
+        }
+
+        // Drawn last, after disableScissor, so a tooltip near the scroll boundary never gets
+        // clipped by the card's own scissor rect.
+        if (pendingTooltip != null) {
+            guiGraphics.renderTooltip(fontSource.font, pendingTooltip, pendingTooltipX, pendingTooltipY);
         }
     }
 

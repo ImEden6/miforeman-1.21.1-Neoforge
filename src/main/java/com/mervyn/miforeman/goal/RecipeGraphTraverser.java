@@ -319,6 +319,43 @@ public final class RecipeGraphTraverser {
         return resourceIds;
     }
 
+    /** Byproducts: outputs a machine's real recipe produces beyond what the plan demanded from
+     *  it, aggregated across every MACHINE node and returned as resourceId -> rate (units/minute,
+     *  matching this codebase's rate convention). This graph is a pure top-down demand tree (see
+     *  {@link #finalizeResourceNode}): every non-target resource node exists because it was
+     *  specifically demanded, and gets exactly one output edge, to whatever demanded it, the
+     *  moment it's created. A recipe's other outputs, the ones nobody asked for, are never
+     *  modeled as graph nodes. So this reads the real recipe data directly: for each MACHINE
+     *  node, its {@code itemOutputs}/{@code fluidOutputs}, with each rate computed the same way
+     *  {@code ServerMonitoringManager.getActualRates} does (machines &times; amount &times;
+     *  probability per craft, scaled by the recipe's duration). A resourceId already tracked
+     *  elsewhere in the graph is excluded -- the plan already relies on it, so it isn't excess
+     *  production even if this machine also produces some as a side effect. */
+    public static Map<ResourceLocation, Double> collectByproductRates(RecipeGraph graph) {
+        Map<ResourceLocation, Double> byproductRates = new LinkedHashMap<>();
+        for (RecipeGraphNode machineNode : graph.nodes().values()) {
+            if (machineNode.getType() != NodeType.MACHINE) continue;
+            MachineRecipe recipe = machineNode.getRecipe();
+            double machineCount = machineNode.getMachineCount();
+            if (recipe == null || machineCount <= 0 || recipe.duration <= 0) continue;
+
+            // 1200 ticks/minute -- same conversion constant ServerMonitoringManager.getActualRates uses.
+            double runsPerMinute = machineCount * 1200.0 / recipe.duration;
+
+            for (var out : recipe.itemOutputs) {
+                ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(out.variant().getItem());
+                if (graph.nodes().containsKey(itemId)) continue;
+                byproductRates.merge(itemId, runsPerMinute * out.amount() * out.probability(), Double::sum);
+            }
+            for (var out : recipe.fluidOutputs) {
+                ResourceLocation fluidId = BuiltInRegistries.FLUID.getKey(out.fluid());
+                if (graph.nodes().containsKey(fluidId)) continue;
+                byproductRates.merge(fluidId, runsPerMinute * out.amount() * out.probability(), Double::sum);
+            }
+        }
+        return byproductRates;
+    }
+
     public static RecipeGraph computeRecipeGraph(Level level, ProductionGoal goal) {
         GraphCacheKey key = new GraphCacheKey(goal.type(), goal.targetId(), goal.rate(),
                 new HashMap<>(goal.recipeSelections()));

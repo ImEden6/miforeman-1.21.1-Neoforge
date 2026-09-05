@@ -20,7 +20,8 @@ public record ClipboardUiState(
         boolean graphDragEnabled,
         boolean detailCardCollapsed,
         boolean isMinimized,
-        boolean showMachineNumbers
+        boolean showMachineNumbers,
+        boolean detailCardExpanded
 ) {
     public enum GraphViewMode implements StringRepresentable {
         ALL("all"),
@@ -52,13 +53,13 @@ public record ClipboardUiState(
     }
 
     public static final ClipboardUiState EMPTY =
-            new ClipboardUiState(2, 0.0, 0.0, 1.0f, GraphViewMode.ALL, true, false, false, true);
+            new ClipboardUiState(2, 0.0, 0.0, 1.0f, GraphViewMode.ALL, true, false, false, true, false);
 
     public ClipboardUiState(int lastStep, double cameraX, double cameraY, float cameraZoom,
                             boolean showMachineNodes, boolean graphDragEnabled, boolean detailCardCollapsed, boolean isMinimized) {
         this(lastStep, cameraX, cameraY, cameraZoom,
                 showMachineNodes ? GraphViewMode.ALL : GraphViewMode.ITEMS_ONLY,
-                graphDragEnabled, detailCardCollapsed, isMinimized, true);
+                graphDragEnabled, detailCardCollapsed, isMinimized, true, false);
     }
 
     public boolean showMachineNodes() {
@@ -74,7 +75,8 @@ public record ClipboardUiState(
             Codec.BOOL.fieldOf("graph_drag_enabled").forGetter(ClipboardUiState::graphDragEnabled),
             Codec.BOOL.fieldOf("detail_card_collapsed").forGetter(ClipboardUiState::detailCardCollapsed),
             Codec.BOOL.fieldOf("minimized").forGetter(ClipboardUiState::isMinimized),
-            Codec.BOOL.optionalFieldOf("show_machine_numbers", true).forGetter(ClipboardUiState::showMachineNumbers)
+            Codec.BOOL.optionalFieldOf("show_machine_numbers", true).forGetter(ClipboardUiState::showMachineNumbers),
+            Codec.BOOL.optionalFieldOf("detail_card_expanded", false).forGetter(ClipboardUiState::detailCardExpanded)
     ).apply(instance, ClipboardUiState::new));
 
     public static final StreamCodec<RegistryFriendlyByteBuf, ClipboardUiState> STREAM_CODEC =
@@ -90,8 +92,9 @@ public record ClipboardUiState(
             boolean detailCardCollapsed = ByteBufCodecs.BOOL.decode(buf);
             boolean isMinimized = ByteBufCodecs.BOOL.decode(buf);
             boolean showMachineNumbers = ByteBufCodecs.BOOL.decode(buf);
+            boolean detailCardExpanded = ByteBufCodecs.BOOL.decode(buf);
             return new ClipboardUiState(lastStep, cameraX, cameraY, cameraZoom,
-                    graphViewMode, graphDragEnabled, detailCardCollapsed, isMinimized, showMachineNumbers);
+                    graphViewMode, graphDragEnabled, detailCardCollapsed, isMinimized, showMachineNumbers, detailCardExpanded);
         }
 
         @Override
@@ -105,6 +108,7 @@ public record ClipboardUiState(
             ByteBufCodecs.BOOL.encode(buf, state.detailCardCollapsed());
             ByteBufCodecs.BOOL.encode(buf, state.isMinimized());
             ByteBufCodecs.BOOL.encode(buf, state.showMachineNumbers());
+            ByteBufCodecs.BOOL.encode(buf, state.detailCardExpanded());
         }
     };
 }
