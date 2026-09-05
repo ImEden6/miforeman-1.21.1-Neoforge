@@ -16,10 +16,16 @@ public class GraphCamera {
     private @Nullable NodePosition dragNodeOriginalPos;
     private @Nullable NodePosition liveDragPos;
     private double dragAccumPixels;
+    /** True from beginDrag through onRelease even when nothing was hit -- lets onRelease tell
+     *  "no mouse-down/up cycle happened" (DragEnd.NONE, e.g. a stray call) apart from "the user
+     *  clicked empty canvas space" (clickedEmptySpace), which draggingNodeId alone can't express
+     *  since it's null in both cases. */
+    private boolean dragActive;
 
     public record DragEnd(@Nullable ResourceLocation committedNodeId, @Nullable NodePosition committedFrom,
-                    @Nullable NodePosition committedTo, @Nullable ResourceLocation clickedNodeId) {
-        public static final DragEnd NONE = new DragEnd(null, null, null, null);
+                    @Nullable NodePosition committedTo, @Nullable ResourceLocation clickedNodeId,
+                    boolean clickedEmptySpace) {
+        public static final DragEnd NONE = new DragEnd(null, null, null, null, false);
     }
 
     public GraphCamera(double panX, double panY, float zoom) {
@@ -61,6 +67,7 @@ public class GraphCamera {
         draggingNodeId = hitNodeId;
         dragNodeOriginalPos = hitNodePos;
         liveDragPos = hitNodePos;
+        dragActive = true;
     }
 
     /** Returns true if this drag operation panned the camera instead of moving a node. */
@@ -83,14 +90,19 @@ public class GraphCamera {
     private static final double CLICK_DRAG_THRESHOLD = 4.0;
 
     DragEnd onRelease(boolean dragEnabled) {
-        if (draggingNodeId == null) {
+        if (!dragActive) {
             return DragEnd.NONE;
         }
         DragEnd result;
-        if (dragEnabled && dragAccumPixels > CLICK_DRAG_THRESHOLD && liveDragPos != null && dragNodeOriginalPos != null) {
-            result = new DragEnd(draggingNodeId, dragNodeOriginalPos, liveDragPos, null);
+        if (draggingNodeId == null) {
+            // Started on empty canvas space, not a node.
+            result = dragAccumPixels <= CLICK_DRAG_THRESHOLD
+                    ? new DragEnd(null, null, null, null, true)
+                    : DragEnd.NONE; // panned past the threshold -- already applied live in onDrag()
+        } else if (dragEnabled && dragAccumPixels > CLICK_DRAG_THRESHOLD && liveDragPos != null && dragNodeOriginalPos != null) {
+            result = new DragEnd(draggingNodeId, dragNodeOriginalPos, liveDragPos, null, false);
         } else if (dragAccumPixels <= CLICK_DRAG_THRESHOLD) {
-            result = new DragEnd(null, null, null, draggingNodeId);
+            result = new DragEnd(null, null, null, draggingNodeId, false);
         } else {
             // View mode, dragged past the threshold starting on a node -- already panned live in
             // onDrag(), nothing to commit.
@@ -99,6 +111,7 @@ public class GraphCamera {
         liveDragPos = null;
         dragNodeOriginalPos = null;
         draggingNodeId = null;
+        dragActive = false;
         return result;
     }
 

@@ -662,6 +662,11 @@ public class GraphCanvas extends AbstractWidget {
         } else if (end.clickedNodeId() != null) {
             selectedNodeId = end.clickedNodeId();
             onSelect.accept(end.clickedNodeId());
+        } else if (end.clickedEmptySpace() && selectedNodeId != null) {
+            // Clicking empty canvas space deselects -- otherwise there's no way back from Node
+            // Details Mode to DetailCard's Summary Mode short of closing and reopening the screen.
+            selectedNodeId = null;
+            onSelect.accept(null);
         }
     }
 
