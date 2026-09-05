@@ -375,31 +375,7 @@ public class ServerMonitoringManager {
         if (holder.isEmpty() || !(holder.get().value() instanceof MachineRecipe recipe)) {
             return false;
         }
-        for (var in : recipe.itemInputs) {
-            for (var item : in.getInputItems()) {
-                if (cyclicResourceIds.contains(BuiltInRegistries.ITEM.getKey(item))) {
-                    return true;
-                }
-            }
-        }
-        for (var in : recipe.fluidInputs) {
-            for (var fluid : in.getInputFluids()) {
-                if (cyclicResourceIds.contains(BuiltInRegistries.FLUID.getKey(fluid))) {
-                    return true;
-                }
-            }
-        }
-        for (var out : recipe.itemOutputs) {
-            if (cyclicResourceIds.contains(BuiltInRegistries.ITEM.getKey(out.variant().getItem()))) {
-                return true;
-            }
-        }
-        for (var out : recipe.fluidOutputs) {
-            if (cyclicResourceIds.contains(BuiltInRegistries.FLUID.getKey(out.fluid()))) {
-                return true;
-            }
-        }
-        return false;
+        return !Collections.disjoint(RecipeGraphTraverser.recipeResourceIds(recipe), cyclicResourceIds);
     }
 
     public static double getExpectedRate(ProductionGoal goal, ResourceLocation resourceId) {

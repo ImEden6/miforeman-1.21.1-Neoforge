@@ -71,6 +71,16 @@ class MonitoringState {
         return new MonitoringState();
     }
 
+    /** Refreshes the cached graph {@link #endProductNames} searches. {@code ClipboardScreen}
+     *  constructs one {@code MonitoringState} up front and reuses it for the screen's whole
+     *  lifetime, so without this the graph snapshot from {@link #fromGoal} goes stale the moment
+     *  the goal is edited (or stays permanently null for a blank-clipboard {@link #defaults()}
+     *  session) -- called from {@code ClipboardScreen.buildStepMonitor()} with the plan's
+     *  already-computed graph, right before either list screen can be opened. */
+    void refreshGraph(@Nullable com.mervyn.miforeman.goal.RecipeGraph graph) {
+        this.graph = graph;
+    }
+
     void applyLink(GlobalPos pos, Runnable onChange) {
         boolean wasLinked = linkedMachines.contains(pos);
         if (!wasLinked)

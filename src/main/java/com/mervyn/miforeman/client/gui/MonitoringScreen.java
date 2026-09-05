@@ -123,7 +123,7 @@ public class MonitoringScreen extends Screen {
                 .map(m -> new MonitoringListPanel.MonitoringRow(m, m.recipeId().map(MonitoringState::resolveProductLabel).orElse(null)))
                 .toList();
 
-        searchState.setQuery(searchQuery, searchableTexts(rows));
+        searchState.setQuery(searchQuery, searchQuery.isBlank() ? Map.of() : searchableTexts(rows));
         if (!searchState.isSearching()) {
             return rows;
         }

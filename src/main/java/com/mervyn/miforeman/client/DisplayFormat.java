@@ -22,6 +22,12 @@ public final class DisplayFormat {
         return sb.toString().trim();
     }
 
+    /** Formats a rate as "12.3/m", or "12.3/h" (scaling by 60) when {@code perHour} is true. */
+    public static String formatRate(double rate, boolean perHour) {
+        double rateVal = rate * (perHour ? 60.0 : 1.0);
+        return String.format("%.1f/%s", rateVal, perHour ? "h" : "m");
+    }
+
     /** Short player-facing suffix for a {@link FailureReason}, e.g. " (dead-loop: wire in a
      *  source)". Empty when there's nothing more specific to say than the status color itself. */
     public static String formatFailureReason(FailureReason reason) {

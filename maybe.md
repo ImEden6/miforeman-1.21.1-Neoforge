@@ -130,3 +130,23 @@ instead, the same math the live monitoring system already uses.)
 - **Avoid hardcoded constants** - the code is full of hardcoded constants, which should be replaced
   with `Constants`.
 (Basically just use lang files.)
+
+## Deferred from the 2026-09-05 three-skill code review
+
+Findings from running `code-review`, `code-review-skill`, and `mattpocock-skills:code-review`
+against everything since the 1.0.1 changelog. The correctness/efficiency findings were fixed
+directly; these four are lower-value or need a design call, not a blind patch.
+
+- **GraphCanvas live-status colouring is keyed by `lastKnownRecipeId`**, which can miss a
+  just-re-linked machine's node until the physical machine actually runs its newly-assigned
+  recipe. Arguably correct (no live data exists yet for the new assignment) rather than a bug --
+  worth a real design decision about what to show for "no data under the current assignment" before
+  touching it, not a patch guessed at blind.
+- **`DetailCard`'s constructor has three consecutive booleans** (`perHour, showNumbers, expanded`)
+  -- real "data clump"/parameter-sprawl smell, but only one call site exists and nothing has broken
+  from it yet. Worth bundling into a small options type before a fourth boolean joins.
+- **`ColourPalette.INPUT_PANEL`/`OUTPUT_PANEL` hardcode RGB literals** that duplicate
+  `MachineStatus.colour()`'s RED/GREEN values with a different alpha nibble instead of deriving
+  from it -- if the status hues ever get tuned, the panel tints silently go stale.
+- **`GraphCamera.dragActive`** is a boolean that duplicates state already implied by the
+  begin/end-drag call sequence; could likely be inferred instead of tracked separately.

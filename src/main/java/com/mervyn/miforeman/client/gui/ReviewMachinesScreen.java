@@ -125,7 +125,7 @@ public class ReviewMachinesScreen extends Screen {
         this.addRenderableWidget(searchField);
 
         List<ReviewListPanel.ReviewRow> rows = state.buildReviewRows();
-        searchState.setQuery(searchQuery, searchableTexts(rows));
+        searchState.setQuery(searchQuery, searchQuery.isBlank() ? Map.of() : searchableTexts(rows));
         int listY = contentY + 18;
         listPanel = new ReviewListPanel(contentX, listY, contentW, btnY - 6 - listY,
                 visibleRows(rows), this::handleReviewToggle, this::handleRejectCandidateRequest, this::handleUnreject,
@@ -170,7 +170,7 @@ public class ReviewMachinesScreen extends Screen {
             return;
         }
         List<ReviewListPanel.ReviewRow> rows = state.buildReviewRows();
-        searchState.setQuery(searchQuery, searchableTexts(rows));
+        searchState.setQuery(searchQuery, searchQuery.isBlank() ? Map.of() : searchableTexts(rows));
         listPanel.updateRows(visibleRows(rows));
         state.updateWorldHighlightPositions(rows);
     }

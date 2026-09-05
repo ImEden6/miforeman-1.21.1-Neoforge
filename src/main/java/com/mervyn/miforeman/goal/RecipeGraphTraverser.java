@@ -356,6 +356,31 @@ public final class RecipeGraphTraverser {
         return byproductRates;
     }
 
+    /** Every item/fluid resource id a recipe touches, inputs and outputs combined, ignoring rates
+     *  and probabilities -- used where only "does this recipe touch resource X at all" matters
+     *  (e.g. {@code ServerMonitoringManager.recipeTouchesCycle}), as opposed to the rate-aware
+     *  walks elsewhere in this class. */
+    public static Set<ResourceLocation> recipeResourceIds(MachineRecipe recipe) {
+        Set<ResourceLocation> ids = new HashSet<>();
+        for (var in : recipe.itemInputs) {
+            for (var item : in.getInputItems()) {
+                ids.add(BuiltInRegistries.ITEM.getKey(item));
+            }
+        }
+        for (var in : recipe.fluidInputs) {
+            for (var fluid : in.getInputFluids()) {
+                ids.add(BuiltInRegistries.FLUID.getKey(fluid));
+            }
+        }
+        for (var out : recipe.itemOutputs) {
+            ids.add(BuiltInRegistries.ITEM.getKey(out.variant().getItem()));
+        }
+        for (var out : recipe.fluidOutputs) {
+            ids.add(BuiltInRegistries.FLUID.getKey(out.fluid()));
+        }
+        return ids;
+    }
+
     public static RecipeGraph computeRecipeGraph(Level level, ProductionGoal goal) {
         GraphCacheKey key = new GraphCacheKey(goal.type(), goal.targetId(), goal.rate(),
                 new HashMap<>(goal.recipeSelections()));

@@ -64,6 +64,11 @@ public class DetailCard extends AbstractWidget {
 
     private @Nullable RecipeGraphNode node;
     private final FactoryPlan plan;
+    /** Summary Mode's Inputs/Byproducts rows, computed once here rather than every render frame --
+     *  {@code plan} is final and this widget is always freshly reconstructed when the plan changes
+     *  (see {@code ClipboardScreen.buildStepReviewPlan}), so there's nothing to invalidate. */
+    private final List<ResourceRow> summaryInputRows;
+    private final List<ResourceRow> summaryOutputRows;
     private final boolean perHour;
     private final boolean showNumbers;
     /** Whether this card is filling the whole content width (GraphCanvas hidden) rather than
@@ -116,6 +121,13 @@ public class DetailCard extends AbstractWidget {
         super(x, y, width, height, Component.literal("Detail Card"));
         this.node = node;
         this.plan = plan;
+        this.summaryInputRows = plan.rawInputs().stream()
+                .map(flow -> new ResourceRow(flow.resourceId(), flow.rate())).toList();
+        RecipeGraph summaryGraph = plan.graph();
+        this.summaryOutputRows = summaryGraph == null ? List.of()
+                : RecipeGraphTraverser.collectByproductRates(summaryGraph).entrySet().stream()
+                        .map(e -> new ResourceRow(e.getKey(), e.getValue()))
+                        .toList();
         this.perHour = perHour;
         this.showNumbers = showNumbers;
         this.expanded = expanded;
@@ -175,8 +187,7 @@ public class DetailCard extends AbstractWidget {
         Minecraft mc = Minecraft.getInstance();
         renderResourceIcon(guiGraphics, resourceId, x, y);
 
-        double rateVal = rate * (perHour ? 60.0 : 1.0);
-        String rateText = String.format("%.1f/%s", rateVal, perHour ? "h" : "m");
+        String rateText = DisplayFormat.formatRate(rate, perHour);
         guiGraphics.drawString(mc.font, rateText, x + ICON_SIZE + 4, y + (ICON_SIZE - 9) / 2, COLOUR_TEXT, false);
 
         if (RenderHelper.isPointWithinRectangle(x, y, ICON_SIZE, ICON_SIZE, mouseX, mouseY)) {
@@ -239,16 +250,19 @@ public class DetailCard extends AbstractWidget {
             guiGraphics.drawString(fontSource.font, metaLine, getX() + 6, currentY, COLOUR_MUTED, false);
             currentY += 15;
 
-            // Inputs / Outputs panels. Sidebar mode is reliably narrow (~42% of a screen that's
+            if (graph != null) {
+                String targetLine = "Target: " + DisplayFormat.formatRate(graph.targetRate(), perHour)
+                        + " " + DisplayFormat.formatId(graph.target());
+                guiGraphics.drawString(fontSource.font, targetLine, getX() + 6, currentY, COLOUR_LABEL, false);
+                currentY += 12;
+            }
+
+            // Inputs / Byproducts panels. Sidebar mode is reliably narrow (~42% of a screen that's
             // itself capped at a small minimum width) so panels stack; expanded mode is reliably
             // wide (the full content width, GraphCanvas hidden) so they sit side-by-side -- no
             // runtime width-threshold guessing either way.
-            List<ResourceRow> inputRows = plan.rawInputs().stream()
-                    .map(flow -> new ResourceRow(flow.resourceId(), flow.rate())).toList();
-            List<ResourceRow> outputRows = graph == null ? List.of()
-                    : RecipeGraphTraverser.collectByproductRates(graph).entrySet().stream()
-                            .map(e -> new ResourceRow(e.getKey(), e.getValue()))
-                            .toList();
+            List<ResourceRow> inputRows = summaryInputRows;
+            List<ResourceRow> outputRows = summaryOutputRows;
 
             if (expanded) {
                 int gap = 6;
@@ -256,14 +270,14 @@ public class DetailCard extends AbstractWidget {
                 int panelStartY = currentY;
                 int inputsHeight = renderResourcePanel(guiGraphics, "Inputs", ColourKey.INPUT_PANEL,
                         inputRows, getX() + 6, panelStartY, panelWidth, mouseX, mouseY);
-                int outputsHeight = renderResourcePanel(guiGraphics, "Outputs", ColourKey.OUTPUT_PANEL,
+                int outputsHeight = renderResourcePanel(guiGraphics, "Byproducts", ColourKey.OUTPUT_PANEL,
                         outputRows, getX() + 6 + panelWidth + gap, panelStartY, panelWidth, mouseX, mouseY);
                 currentY = panelStartY + Math.max(inputsHeight, outputsHeight) + 8;
             } else {
                 int panelWidth = getWidth() - 12;
                 currentY += renderResourcePanel(guiGraphics, "Inputs", ColourKey.INPUT_PANEL,
                         inputRows, getX() + 6, currentY, panelWidth, mouseX, mouseY) + 6;
-                currentY += renderResourcePanel(guiGraphics, "Outputs", ColourKey.OUTPUT_PANEL,
+                currentY += renderResourcePanel(guiGraphics, "Byproducts", ColourKey.OUTPUT_PANEL,
                         outputRows, getX() + 6, currentY, panelWidth, mouseX, mouseY) + 8;
             }
 
@@ -374,8 +388,7 @@ public class DetailCard extends AbstractWidget {
                     currentY += 10;
                 } else {
                     for (GraphEdge edge : node.getInputs()) {
-                        double rateVal = edge.rate() * (perHour ? 60.0 : 1.0);
-                        String inputLine = String.format(" - %.1f/%s %s", rateVal, perHour ? "h" : "m", DisplayFormat.formatId(edge.from()));
+                        String inputLine = " - " + DisplayFormat.formatRate(edge.rate(), perHour) + " " + DisplayFormat.formatId(edge.from());
                         guiGraphics.drawString(fontSource.font, inputLine, getX() + 10, currentY, COLOUR_TEXT, false);
                         currentY += 10;
                     }
@@ -390,8 +403,7 @@ public class DetailCard extends AbstractWidget {
                     currentY += 10;
                 } else {
                     for (GraphEdge edge : node.getOutputs()) {
-                        double rateVal = edge.rate() * (perHour ? 60.0 : 1.0);
-                        String outputLine = String.format(" - %.1f/%s %s", rateVal, perHour ? "h" : "m", DisplayFormat.formatId(edge.to()));
+                        String outputLine = " - " + DisplayFormat.formatRate(edge.rate(), perHour) + " " + DisplayFormat.formatId(edge.to());
                         guiGraphics.drawString(fontSource.font, outputLine, getX() + 10, currentY, COLOUR_TEXT, false);
                         currentY += 10;
                     }

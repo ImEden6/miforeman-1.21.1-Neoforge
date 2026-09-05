@@ -665,7 +665,7 @@ public class ForemanGameTests {
     }
 
     /** Verifies {@code RecipeGraphTraverser.collectByproductRates}, which powers the DetailCard
-     *  "Outputs" panel: every returned rate must be positive, no returned resourceId may already
+     *  "Byproducts" panel: every returned rate must be positive, no returned resourceId may already
      *  be tracked as a demanded resource elsewhere in the graph (including the target itself --
      *  the plan already accounts for those, so they aren't "excess" production), and a
      *  sufficiently complex real recipe chain must produce at least one genuine byproduct. */
@@ -700,6 +700,66 @@ public class ForemanGameTests {
             return;
         }
 
+        helper.succeed();
+    }
+
+    /** Verifies {@code RecipeGraphTraverser.recipeResourceIds}, the shared input/output-to-resource-id
+     *  walk {@code ServerMonitoringManager.recipeTouchesCycle} now reuses instead of re-implementing
+     *  its own copy. Cross-checks the walk against the same quantum_upgrade graph's own input/output
+     *  edges (built from this exact recipe by the graph builder) rather than a hand-picked recipe id,
+     *  so it can't drift from real recipe data. */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testRecipeResourceIdsCollectsInputsAndOutputs(GameTestHelper helper) {
+        var level = helper.getLevel();
+        ResourceLocation targetId = ResourceLocation.parse("modern_industrialization:quantum_upgrade");
+        ProductionGoal goal = new ProductionGoal("recipe_resource_ids_test", ProductionGoal.TargetType.ITEM, targetId, 1.0);
+        var graph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
+
+        var machineNode = graph.nodes().values().stream()
+                .filter(n -> n.getType() == com.mervyn.miforeman.goal.NodeType.MACHINE && n.getRecipe() != null)
+                .findFirst().orElse(null);
+        if (machineNode == null) {
+            helper.fail("Expected quantum_upgrade's graph to contain at least one MACHINE node with a recipe.");
+            return;
+        }
+
+        var ids = RecipeGraphTraverser.recipeResourceIds(machineNode.getRecipe());
+        if (ids.isEmpty()) {
+            helper.fail("Expected recipeResourceIds(...) to return at least one resource id for a real recipe, but got an empty set.");
+            return;
+        }
+        for (var edge : machineNode.getInputs()) {
+            if (!ids.contains(edge.from())) {
+                helper.fail("Expected recipeResourceIds(...) to include input resource " + edge.from()
+                        + " that the graph itself has as an input edge.");
+                return;
+            }
+        }
+        for (var edge : machineNode.getOutputs()) {
+            if (!ids.contains(edge.to())) {
+                helper.fail("Expected recipeResourceIds(...) to include output resource " + edge.to()
+                        + " that the graph itself has as an output edge.");
+                return;
+            }
+        }
+
+        helper.succeed();
+    }
+
+    /** Verifies {@code DisplayFormat.formatRate}, extracted from three byte-identical inline copies
+     *  in {@code DetailCard} (see the 2026-09-05 code-review cleanup pass). */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testDisplayFormatFormatRate(GameTestHelper helper) {
+        String perMinute = com.mervyn.miforeman.client.DisplayFormat.formatRate(2.0, false);
+        if (!perMinute.equals("2.0/m")) {
+            helper.fail("Expected formatRate(2.0, false) to be \"2.0/m\", but got: " + perMinute);
+            return;
+        }
+        String perHour = com.mervyn.miforeman.client.DisplayFormat.formatRate(2.0, true);
+        if (!perHour.equals("120.0/h")) {
+            helper.fail("Expected formatRate(2.0, true) to be \"120.0/h\" (rate scaled by 60), but got: " + perHour);
+            return;
+        }
         helper.succeed();
     }
 

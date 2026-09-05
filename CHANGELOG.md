@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-09-05
+
+### Fixed
+- The graph screen's summary panel no longer shows your target rate as
+  missing, and its byproducts list is now correctly labelled instead of
+  called "Outputs."
+- Fixed the search bars on the Review Machines and Monitoring screens
+  needlessly redoing work in the background when you weren't searching.
+- Ctrl+F no longer gets swallowed silently when the graph is hidden behind
+  an expanded detail panel.
+- Fixed the recipe graph occasionally holding onto stale data after you
+  left it for the monitoring screen.
+
 ## [1.1.0] - 2026-09-05
 
 ### Added

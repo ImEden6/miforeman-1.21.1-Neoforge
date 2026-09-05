@@ -568,6 +568,8 @@ public class ClipboardScreen extends Screen {
     }
 
     private void buildStepMonitor() {
+        monitoringState.refreshGraph(this.goalDraft.currentPlan != null ? this.goalDraft.currentPlan.graph() : null);
+
         int left = (this.width - guiWidth()) / 2;
         int top = (this.height - guiHeight()) / 2;
 
@@ -697,7 +699,7 @@ public class ClipboardScreen extends Screen {
         if (currentStep == STEP_MONITOR) {
             updateMonitoringButtonLabels();
         }
-        if (graphCanvas != null) {
+        if (currentStep == STEP_REVIEW_PLAN && graphCanvas != null) {
             graphCanvas.updateLiveStatus(data);
         }
     }
@@ -897,7 +899,7 @@ public class ClipboardScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (currentStep == STEP_REVIEW_PLAN && graphCanvas != null) {
+        if (currentStep == STEP_REVIEW_PLAN && !detailCardExpanded && graphCanvas != null) {
             // Ctrl+F / Cmd+F toggles search
             if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_F && hasControlDown()) {
                 graphCanvas.toggleSearch();
@@ -918,7 +920,7 @@ public class ClipboardScreen extends Screen {
 
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
-        if (currentStep == STEP_REVIEW_PLAN && graphCanvas != null && graphCanvas.isSearchFocused()) {
+        if (currentStep == STEP_REVIEW_PLAN && !detailCardExpanded && graphCanvas != null && graphCanvas.isSearchFocused()) {
             if (graphCanvas.charTyped(codePoint, modifiers)) {
                 return true;
             }
