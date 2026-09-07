@@ -112,6 +112,34 @@ public class GraphCanvas extends AbstractWidget {
         updateDrawerPosition();
         computeFilteredView();
         computeAutoLayout();
+        centerOnGraphIfUntouched();
+    }
+
+    /** Centers the camera on the whole graph's bounding box the first time this screen opens for a
+     *  goal. A fresh {@code ClipboardUiState} (or one whose camera was never moved) hands this a
+     *  plain {@code panX=panY=0, zoom=1}, which alone only brings a node sitting at canvas-origin
+     *  into view -- everything else in a multi-node graph rendered outside the widget's scissored
+     *  area until the player panned manually or used search (the only other caller of
+     *  {@link GraphCamera#centerOn}, see {@link #onSearchMatchChanged}).
+     *  <p>This widget is rebuilt fresh on most screen interactions rather than mutated in place,
+     *  so this runs again on every reconstruction. That's intentional and cheap. It keeps
+     *  recentering until the player's own pan/zoom, or a restored saved position, moves the camera
+     *  off these exact defaults -- at which point it's a no-op. */
+    private void centerOnGraphIfUntouched() {
+        if (camera.panX() != 0 || camera.panY() != 0 || camera.zoom() != 1.0f || visibleNodes.isEmpty()) {
+            return;
+        }
+        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE;
+        for (RecipeGraphNode node : visibleNodes.values()) {
+            NodePosition pos = positionOf(node);
+            if (pos == null) continue;
+            minX = Math.min(minX, pos.x());
+            minY = Math.min(minY, pos.y());
+            maxX = Math.max(maxX, pos.x() + NODE_WIDTH);
+            maxY = Math.max(maxY, pos.y() + NODE_HEIGHT);
+        }
+        if (minX > maxX) return;
+        camera.centerOn(getWidth(), getHeight(), minX, minY, maxX - minX, maxY - minY);
     }
 
     /** Refreshes the live machine-status coloring from a fresh monitoring poll. Called whenever
