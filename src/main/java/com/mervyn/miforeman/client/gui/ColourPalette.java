@@ -1,6 +1,7 @@
 package com.mervyn.miforeman.client.gui;
 
 import com.mervyn.miforeman.client.ClientConfig;
+import com.mervyn.miforeman.goal.MachineStatus;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 import java.util.EnumMap;
@@ -16,10 +17,15 @@ public final class ColourPalette {
         SELECTED(0xFF33E6F2, "Located machine"),
         LOCATE_BUTTON(0xFFD8C3A5, "Locate button"),
         LOCATED_BUTTON(0xFF9FE8EE, "Located button"),
-        // Translucent so icon/text rows drawn on top stay legible; reuse the same red/green hues
-        // MachineStatus.colour() already uses for RED/GREEN, for consistency across the mod.
-        INPUT_PANEL(0x33CC3333, "Detail card inputs panel"),
-        OUTPUT_PANEL(0x332E7D32, "Detail card outputs panel");
+        // Translucent so icon/text rows drawn on top stay legible; derived from MachineStatus's
+        // RED/GREEN so the hues can't drift out of sync if those are ever retuned. Inlined rather
+        // than calling ColourPalette.withAlpha(...) here -- a static method call on the OUTER
+        // class from inside this nested enum's own constant initializers forces ColourPalette's
+        // <clinit> to run mid-way through ColourKey's. Its static block then does
+        // CONFIG.put(ColourKey.INPUT_PANEL, ...) before INPUT_PANEL has been assigned, putting a
+        // null key into the EnumMap and throwing. Keep this self-contained to MachineStatus only.
+        INPUT_PANEL((0x33 << 24) | (MachineStatus.RED.colour() & 0xFFFFFF), "Detail card inputs panel"),
+        OUTPUT_PANEL((0x33 << 24) | (MachineStatus.GREEN.colour() & 0xFFFFFF), "Detail card outputs panel");
 
         public final int defaultArgb;
         public final String label;

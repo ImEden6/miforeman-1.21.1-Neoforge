@@ -47,7 +47,7 @@ public class ReviewMachinesScreen extends Screen {
     private String searchQuery = "";
 
     public ReviewMachinesScreen(MonitoringState state, Runnable onChange, Screen backTarget) {
-        super(Component.literal("Review Machines"));
+        super(Component.translatable("miforeman.screen.review_machines.title"));
         this.state = state;
         this.onChange = onChange;
         this.backTarget = backTarget;
@@ -79,7 +79,8 @@ public class ReviewMachinesScreen extends Screen {
         int btnY = top + guiHeight() - PADDING - ClipboardChrome.MAIN_BORDER - 22;
 
         Button showRejectedButton = new ClipboardButton(contentX, contentY, 90, 14,
-                Component.literal(state.showRejected ? "Hide Rejected" : "Show Rejected"),
+                state.showRejected ? Component.translatable("miforeman.button.hide_rejected")
+                        : Component.translatable("miforeman.button.show_rejected"),
                 b -> {
                     state.showRejected = !state.showRejected;
                     rebuild();
@@ -88,7 +89,7 @@ public class ReviewMachinesScreen extends Screen {
         this.addRenderableWidget(showRejectedButton);
 
         Button undoButton = new ClipboardButton(contentX + 94, contentY, 40, 14,
-                Component.literal("Undo"), b -> {
+                Component.translatable("miforeman.button.undo"), b -> {
             MachineLinkHistory.UndoResult result = state.machineLinkHistory.undo();
             if (result != null) {
                 state.applyLinkHistoryResult(result, onChange);
@@ -99,7 +100,7 @@ public class ReviewMachinesScreen extends Screen {
         this.addRenderableWidget(undoButton);
 
         Button redoButton = new ClipboardButton(contentX + 138, contentY, 40, 14,
-                Component.literal("Redo"), b -> {
+                Component.translatable("miforeman.button.redo"), b -> {
             MachineLinkHistory.UndoResult result = state.machineLinkHistory.redo();
             if (result != null) {
                 state.applyLinkHistoryResult(result, onChange);
@@ -112,7 +113,7 @@ public class ReviewMachinesScreen extends Screen {
         EditBox searchField = new EditBox(this.font, contentX + contentW - SEARCH_FIELD_WIDTH, contentY,
                 SEARCH_FIELD_WIDTH, 14, Component.literal("Search"));
         searchField.setMaxLength(128);
-        searchField.setHint(Component.literal("Search...").withColor(0xFF8A7A68));
+        searchField.setHint(Component.translatable("miforeman.screen.search_hint").withColor(0xFF8A7A68));
         // setValue() unconditionally fires whatever responder is attached -- set the restored
         // value first, while the responder is still EditBox's own no-op default, so restoring
         // the query on rebuild() doesn't redundantly re-trigger refreshData() before listPanel
@@ -134,7 +135,7 @@ public class ReviewMachinesScreen extends Screen {
         state.updateWorldHighlightPositions(rows);
 
         Button backButton = new ClipboardButton(contentX, btnY, 80, 16,
-                Component.literal("<- Back"),
+                Component.translatable("miforeman.button.back"),
                 b -> Minecraft.getInstance().setScreen(backTarget)
         );
         this.addRenderableWidget(backButton);
@@ -143,12 +144,12 @@ public class ReviewMachinesScreen extends Screen {
         long linkedCount = rows.stream().filter(ReviewListPanel.ReviewRow::linked).count();
 
         Button addAllButton = new ClipboardButton(contentX + contentW - 90, btnY, 90, 16,
-                Component.literal("Add All"), b -> handleAddAll());
+                Component.translatable("miforeman.button.add_all"), b -> handleAddAll());
         addAllButton.active = addableCount > 0;
         this.addRenderableWidget(addAllButton);
 
         Button removeAllButton = new ClipboardButton(contentX + contentW - 90 - 90 - 6, btnY, 90, 16,
-                Component.literal("Remove All"), b -> handleRemoveAllRequest());
+                Component.translatable("miforeman.button.remove_all"), b -> handleRemoveAllRequest());
         removeAllButton.active = linkedCount > 0;
         this.addRenderableWidget(removeAllButton);
     }
@@ -241,8 +242,8 @@ public class ReviewMachinesScreen extends Screen {
                         rebuild();
                     }
                 },
-                Component.literal("Unlink all " + linked.size() + " machines?"),
-                Component.literal("They will become unlinked candidates again. Confirm?")
+                Component.translatable("miforeman.review.unlink_all.title", linked.size()),
+                Component.translatable("miforeman.review.unlink_all.message")
         ));
     }
 
@@ -265,8 +266,8 @@ public class ReviewMachinesScreen extends Screen {
                         rebuild();
                     }
                 },
-                Component.literal("Reject this machine?"),
-                Component.literal("It will be hidden from future scans until un-rejected. Confirm?")
+                Component.translatable("miforeman.review.reject.title"),
+                Component.translatable("miforeman.review.reject.message")
         ));
     }
 
@@ -296,7 +297,7 @@ public class ReviewMachinesScreen extends Screen {
 
         int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
         int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 2;
-        guiGraphics.drawString(this.font, Component.literal("Review Machines"), contentX, contentY, COLOUR_TITLE);
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.screen.review_machines.title"), contentX, contentY, COLOUR_TITLE);
 
         super.render(guiGraphics, mouseX, mouseY, partialTick);
     }

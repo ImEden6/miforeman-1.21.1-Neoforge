@@ -1,8 +1,11 @@
 package com.mervyn.miforeman.client.gui.widget;
 
 import com.mervyn.miforeman.client.DisplayFormat;
+import com.mervyn.miforeman.client.gui.ColourPalette.ColourKey;
+import com.mervyn.miforeman.goal.MachineStatus;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.core.GlobalPos;
@@ -25,10 +28,11 @@ public class ReviewListPanel extends AbstractWidget {
     private static final int COLOUR_BORDER = 0xFF6B5030;
     private static final int COLOUR_TEXT = 0xFF3A2A18;
     private static final int COLOUR_MUTED = 0xFF8A7A68;
-    private static final int COLOUR_LINKED = 0xFF2E7D32;
-    private static final int COLOUR_CANDIDATE = 0xFF9A6C00;
+    private static final int COLOUR_LINKED = MachineStatus.GREEN.colour();
+    private static final int COLOUR_CANDIDATE = MachineStatus.YELLOW.colour();
     private static final int COLOUR_REJECTED = 0xFF8A7A68;
     private static final int COLOUR_HOVER = 0x156B5030;
+    private static final int COLOUR_ACTION_BUTTON = ColourKey.LOCATE_BUTTON.defaultArgb;
     private static final int CHECKBOX_SIZE = 10;
     private static final int ACTION_BUTTON_WIDTH = 46;
     private static final int ACTION_BUTTON_HEIGHT = 14;
@@ -108,9 +112,9 @@ public class ReviewListPanel extends AbstractWidget {
                 String name = DisplayFormat.formatId(row.machineId());
                 int colour = row.rejected() ? COLOUR_REJECTED : (row.linked() ? COLOUR_LINKED : COLOUR_CANDIDATE);
                 if (row.rejected()) {
-                    name = "[rejected] " + name;
+                    name = I18n.get("miforeman.review.rejected_prefix") + name;
                 } else if (row.isNewCandidate()) {
-                    name = "[new] " + name;
+                    name = I18n.get("miforeman.review.new_prefix") + name;
                 }
                 int maxTextWidth = actionButtonX() - textX - 4;
                 if (mc.font.width(name) > maxTextWidth && maxTextWidth > 0) {
@@ -128,15 +132,15 @@ public class ReviewListPanel extends AbstractWidget {
                 if (showUnreject) {
                     int btnX = actionButtonX();
                     int btnY = actionButtonY(currentY);
-                    guiGraphics.fill(btnX, btnY, btnX + ACTION_BUTTON_WIDTH, btnY + ACTION_BUTTON_HEIGHT, 0xFFD8C3A5);
+                    guiGraphics.fill(btnX, btnY, btnX + ACTION_BUTTON_WIDTH, btnY + ACTION_BUTTON_HEIGHT, COLOUR_ACTION_BUTTON);
                     guiGraphics.renderOutline(btnX, btnY, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT, COLOUR_BORDER);
-                    guiGraphics.drawString(mc.font, "Unreject", btnX + 3, btnY + 3, COLOUR_TEXT, false);
+                    guiGraphics.drawString(mc.font, I18n.get("miforeman.button.unreject"), btnX + 3, btnY + 3, COLOUR_TEXT, false);
                 } else if (row.isNewCandidate() && !row.linked()) {
                     int btnX = actionButtonX();
                     int btnY = actionButtonY(currentY);
-                    guiGraphics.fill(btnX, btnY, btnX + ACTION_BUTTON_WIDTH, btnY + ACTION_BUTTON_HEIGHT, 0xFFD8C3A5);
+                    guiGraphics.fill(btnX, btnY, btnX + ACTION_BUTTON_WIDTH, btnY + ACTION_BUTTON_HEIGHT, COLOUR_ACTION_BUTTON);
                     guiGraphics.renderOutline(btnX, btnY, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT, COLOUR_BORDER);
-                    guiGraphics.drawString(mc.font, "Reject", btnX + 8, btnY + 3, COLOUR_TEXT, false);
+                    guiGraphics.drawString(mc.font, I18n.get("miforeman.button.reject"), btnX + 8, btnY + 3, COLOUR_TEXT, false);
                 }
             }
             currentY += ROW_HEIGHT;

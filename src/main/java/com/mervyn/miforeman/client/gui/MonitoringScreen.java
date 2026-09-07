@@ -46,7 +46,7 @@ public class MonitoringScreen extends Screen {
     private String searchQuery = "";
 
     public MonitoringScreen(MonitoringState state, boolean perHour, Screen backTarget) {
-        super(Component.literal("Live Monitoring"));
+        super(Component.translatable("miforeman.screen.live_monitoring.title"));
         this.state = state;
         this.perHour = perHour;
         this.backTarget = backTarget;
@@ -79,7 +79,7 @@ public class MonitoringScreen extends Screen {
 
         EditBox searchField = new EditBox(this.font, contentX, contentY, contentW, 14, Component.literal("Search"));
         searchField.setMaxLength(128);
-        searchField.setHint(Component.literal("Search...").withColor(0xFF8A7A68));
+        searchField.setHint(Component.translatable("miforeman.screen.search_hint").withColor(0xFF8A7A68));
         // setValue() unconditionally fires whatever responder is attached -- set the restored
         // value first, while the responder is still EditBox's own no-op default, so restoring
         // the query on rebuild() doesn't redundantly re-trigger refreshData().
@@ -97,7 +97,7 @@ public class MonitoringScreen extends Screen {
         this.addRenderableWidget(listPanel);
 
         Button backButton = new ClipboardButton(contentX, btnY, 80, 16,
-                Component.literal("<- Back"),
+                Component.translatable("miforeman.button.back"),
                 b -> Minecraft.getInstance().setScreen(backTarget)
         );
         this.addRenderableWidget(backButton);
@@ -193,7 +193,7 @@ public class MonitoringScreen extends Screen {
 
         int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
         int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 2;
-        guiGraphics.drawString(this.font, Component.literal("Live Monitoring"), contentX, contentY, COLOUR_TITLE);
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.screen.live_monitoring.title"), contentX, contentY, COLOUR_TITLE);
 
         super.render(guiGraphics, mouseX, mouseY, partialTick);
     }

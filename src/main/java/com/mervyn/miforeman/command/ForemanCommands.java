@@ -25,6 +25,7 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
 
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -82,7 +83,7 @@ public class ForemanCommands {
         try {
             player = source.getPlayerOrException();
         } catch (Exception e) {
-            source.sendFailure(Component.literal("Only players can execute this command."));
+            source.sendFailure(Component.translatable("miforeman.command.error.players_only"));
             return 0;
         }
 
@@ -90,7 +91,7 @@ public class ForemanCommands {
         try {
             type = ProductionGoal.TargetType.valueOf(typeStr.toUpperCase());
         } catch (IllegalArgumentException e) {
-            source.sendFailure(Component.literal("Invalid target type: must be 'item' or 'fluid'."));
+            source.sendFailure(Component.translatable("miforeman.command.error.invalid_target_type"));
             return 0;
         }
 
@@ -104,7 +105,7 @@ public class ForemanCommands {
         }
 
         player.setItemInHand(InteractionHand.MAIN_HAND, stack);
-        source.sendSuccess(() -> Component.literal("Successfully created and equipped MI Foreman's Clipboard with goal: " + name), true);
+        source.sendSuccess(() -> Component.translatable("miforeman.command.set_goal.success", name), true);
 
         return Command.SINGLE_SUCCESS;
     }
@@ -114,21 +115,22 @@ public class ForemanCommands {
         try {
             player = source.getPlayerOrException();
         } catch (Exception e) {
-            source.sendFailure(Component.literal("Only players can execute this command."));
+            source.sendFailure(Component.translatable("miforeman.command.error.players_only"));
             return 0;
         }
 
         ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
         if (stack.isEmpty() || !stack.is(ModItems.FOREMAN_CLIPBOARD_ITEM.get())) {
-            source.sendFailure(Component.literal("You must be holding a Foreman's Clipboard in your main hand."));
+            source.sendFailure(Component.translatable("miforeman.command.error.not_holding_clipboard"));
             return 0;
         }
 
         ProductionGoal goal = stack.get(ModComponents.PRODUCTION_GOAL.get());
         if (goal == null) {
-            source.sendSuccess(() -> Component.literal("The held Foreman's Clipboard has no production goal defined."), false);
+            source.sendSuccess(() -> Component.translatable("miforeman.command.error.no_goal_defined"), false);
         } else {
-            source.sendSuccess(() -> Component.literal("Held Foreman's Clipboard Production Goal:\n- Name: " + goal.name() + "\n- Target Type: " + goal.type() + "\n- Target ID: " + goal.targetId() + "\n- Rate: " + goal.rate()), false);
+            source.sendSuccess(() -> Component.translatable("miforeman.command.show_goal",
+                    goal.name(), goal.type(), goal.targetId(), goal.rate()), false);
         }
 
         return Command.SINGLE_SUCCESS;
@@ -139,19 +141,19 @@ public class ForemanCommands {
         try {
             player = source.getPlayerOrException();
         } catch (Exception e) {
-            source.sendFailure(Component.literal("Only players can execute this command."));
+            source.sendFailure(Component.translatable("miforeman.command.error.players_only"));
             return 0;
         }
 
         ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
         if (stack.isEmpty() || !stack.is(ModItems.FOREMAN_CLIPBOARD_ITEM.get())) {
-            source.sendFailure(Component.literal("You must be holding a Foreman's Clipboard in your main hand."));
+            source.sendFailure(Component.translatable("miforeman.command.error.not_holding_clipboard"));
             return 0;
         }
 
         ProductionGoal goal = stack.get(ModComponents.PRODUCTION_GOAL.get());
         if (goal == null) {
-            source.sendFailure(Component.literal("The held Foreman's Clipboard has no production goal defined."));
+            source.sendFailure(Component.translatable("miforeman.command.error.no_goal_defined"));
             return 0;
         }
 
@@ -160,28 +162,30 @@ public class ForemanCommands {
         stack.set(ModComponents.PRODUCTION_GOAL.get(), updatedGoal);
         player.setItemInHand(InteractionHand.MAIN_HAND, stack);
 
-        source.sendSuccess(() -> Component.literal("Successfully calculated production plan for: " + goal.name()), true);
+        source.sendSuccess(() -> Component.translatable("miforeman.command.calculate.success", goal.name()), true);
 
-        source.sendSuccess(() -> Component.literal("Machines required:"), false);
+        source.sendSuccess(() -> Component.translatable("miforeman.command.calculate.machines_header"), false);
         for (var req : plan.machines()) {
-            source.sendSuccess(() -> Component.literal(String.format("  - %s: %.2f", req.machineId(), req.count())), false);
+            source.sendSuccess(() -> Component.translatable("miforeman.command.calculate.machine_row",
+                    req.machineId(), String.format(Locale.ROOT, "%.2f", req.count())), false);
         }
 
-        source.sendSuccess(() -> Component.literal("Raw inputs needed:"), false);
+        source.sendSuccess(() -> Component.translatable("miforeman.command.calculate.inputs_header"), false);
         for (var flow : plan.rawInputs()) {
-            source.sendSuccess(() -> Component.literal(String.format("  - %s: %.2f/s (%s)", flow.resourceId(), flow.rate(), flow.type())), false);
+            source.sendSuccess(() -> Component.translatable("miforeman.command.calculate.input_row",
+                    flow.resourceId(), String.format(Locale.ROOT, "%.2f", flow.rate()), flow.type()), false);
         }
 
         if (!plan.ambiguities().isEmpty()) {
-            source.sendSuccess(() -> Component.literal("WARNING: Unresolved ambiguities found!"), false);
+            source.sendSuccess(() -> Component.translatable("miforeman.command.calculate.ambiguity_warning"), false);
             for (var amb : plan.ambiguities()) {
                 boolean hasSelection = goal.recipeSelections().containsKey(amb.resourceId());
-                source.sendSuccess(() -> Component.literal(String.format("  - %s (Selection: %s). Options:",
+                source.sendSuccess(() -> Component.translatable("miforeman.command.calculate.ambiguity_row",
                         amb.resourceId(),
                         hasSelection ? goal.recipeSelections().get(amb.resourceId()) : "none"
-                )), false);
+                ), false);
                 for (var opt : amb.recipeIds()) {
-                    source.sendSuccess(() -> Component.literal("    - " + opt), false);
+                    source.sendSuccess(() -> Component.translatable("miforeman.command.calculate.ambiguity_option", opt), false);
                 }
             }
         }
@@ -194,19 +198,19 @@ public class ForemanCommands {
         try {
             player = source.getPlayerOrException();
         } catch (Exception e) {
-            source.sendFailure(Component.literal("Only players can execute this command."));
+            source.sendFailure(Component.translatable("miforeman.command.error.players_only"));
             return 0;
         }
 
         ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
         if (stack.isEmpty() || !stack.is(ModItems.FOREMAN_CLIPBOARD_ITEM.get())) {
-            source.sendFailure(Component.literal("You must be holding a Foreman's Clipboard in your main hand."));
+            source.sendFailure(Component.translatable("miforeman.command.error.not_holding_clipboard"));
             return 0;
         }
 
         ProductionGoal goal = stack.get(ModComponents.PRODUCTION_GOAL.get());
         if (goal == null) {
-            source.sendFailure(Component.literal("The held Foreman's Clipboard has no production goal defined."));
+            source.sendFailure(Component.translatable("miforeman.command.error.no_goal_defined"));
             return 0;
         }
 
@@ -221,7 +225,7 @@ public class ForemanCommands {
         stack.set(ModComponents.PRODUCTION_GOAL.get(), updatedGoal);
         player.setItemInHand(InteractionHand.MAIN_HAND, stack);
 
-        source.sendSuccess(() -> Component.literal(String.format("Successfully selected recipe %s for %s", recipe, target)), true);
+        source.sendSuccess(() -> Component.translatable("miforeman.command.select_recipe.success", recipe, target), true);
         return Command.SINGLE_SUCCESS;
     }
 
@@ -234,16 +238,16 @@ public class ForemanCommands {
 
         for (var entry : byType.entrySet()) {
             var recipes = entry.getValue();
-            source.sendSuccess(() -> Component.literal("Recipe Type: " + entry.getKey() + " - " + recipes.size() + " recipes"), false);
+            source.sendSuccess(() -> Component.translatable("miforeman.command.list_recipes.type_header", entry.getKey(), recipes.size()), false);
             totalRecipes += recipes.size();
             for (var recipeHolder : recipes) {
                 var recipe = recipeHolder.value();
-                source.sendSuccess(() -> Component.literal("  - " + recipeHolder.id() + " (" + recipe.duration + " ticks, " + recipe.eu + " EU/t)"), false);
+                source.sendSuccess(() -> Component.translatable("miforeman.command.list_recipes.row", recipeHolder.id(), recipe.duration, recipe.eu), false);
             }
         }
 
         int finalTotal = totalRecipes;
-        source.sendSuccess(() -> Component.literal("Total MI Recipes read: " + finalTotal), true);
+        source.sendSuccess(() -> Component.translatable("miforeman.command.list_recipes.total", finalTotal), true);
         return Command.SINGLE_SUCCESS;
     }
 }

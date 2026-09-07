@@ -5,6 +5,7 @@ import com.mervyn.miforeman.client.gui.ColourPalette;
 import com.mervyn.miforeman.client.gui.ColourPalette.ColourKey;
 import com.mervyn.miforeman.goal.RecipeGraphNode;
 import com.mervyn.miforeman.goal.GraphEdge;
+import com.mervyn.miforeman.goal.MachineStatus;
 import com.mervyn.miforeman.goal.NodeType;
 import com.mervyn.miforeman.goal.RecipeGraph;
 import com.mervyn.miforeman.goal.ProductionGoal.FactoryPlan;
@@ -37,10 +38,10 @@ public class DetailCard extends AbstractWidget {
     private static final int COLOUR_LABEL = 0xFF6B5030;
     private static final int COLOUR_TEXT = 0xFF3A2A18;
     private static final int COLOUR_MUTED = 0xFF8A7A68;
-    private static final int COLOUR_GREEN = 0xFF2E7D32;
+    private static final int COLOUR_GREEN = MachineStatus.GREEN.colour();
     private static final int COLOUR_CYAN = 0xFF006080;
-    private static final int COLOUR_AMBER = 0xFF9A6C00;
-    private static final int COLOUR_CYCLE_BOX = 0xFFD8C3A5;
+    private static final int COLOUR_AMBER = MachineStatus.YELLOW.colour();
+    private static final int COLOUR_CYCLE_BOX = ColourKey.LOCATE_BUTTON.defaultArgb;
     private static final int COLOUR_CYCLE_HOVER = 0xFFEAE7D9;
 
     /** Bundles DetailCard's UI-interaction callbacks so they travel as one typed unit instead
@@ -57,6 +58,12 @@ public class DetailCard extends AbstractWidget {
         public Callbacks(BiConsumer<ResourceLocation, ResourceLocation> onAmbiguity, Runnable onToggleNumbers) {
             this(onAmbiguity, onToggleNumbers, null, null, null, null);
         }
+    }
+
+    /** Bundles the three display-mode flags that shape rendering so they travel as one typed unit
+     *  instead of three consecutive same-typed boolean parameters that are easy to transpose at a
+     *  call site. */
+    public record DisplayOptions(boolean perHour, boolean showNumbers, boolean expanded) {
     }
 
     private static final int ICON_SIZE = 16;
@@ -116,7 +123,7 @@ public class DetailCard extends AbstractWidget {
     private boolean isExpandBoxHovered = false;
 
     public DetailCard(int x, int y, int width, int height, @Nullable RecipeGraphNode node,
-                      FactoryPlan plan, boolean perHour, boolean showNumbers, boolean expanded, Callbacks callbacks,
+                      FactoryPlan plan, DisplayOptions options, Callbacks callbacks,
                       int initialScrollOffset, IntConsumer onScrollChange) {
         super(x, y, width, height, Component.literal("Detail Card"));
         this.node = node;
@@ -128,9 +135,9 @@ public class DetailCard extends AbstractWidget {
                 : RecipeGraphTraverser.collectByproductRates(summaryGraph).entrySet().stream()
                         .map(e -> new ResourceRow(e.getKey(), e.getValue()))
                         .toList();
-        this.perHour = perHour;
-        this.showNumbers = showNumbers;
-        this.expanded = expanded;
+        this.perHour = options.perHour();
+        this.showNumbers = options.showNumbers();
+        this.expanded = options.expanded();
         this.callbacks = callbacks;
         this.scrollOffset = initialScrollOffset;
         this.onScrollChange = onScrollChange;

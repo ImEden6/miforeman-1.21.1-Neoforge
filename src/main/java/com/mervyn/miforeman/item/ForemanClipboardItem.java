@@ -6,6 +6,7 @@ import com.mervyn.miforeman.network.MachineLinkSyncPayload;
 import com.mervyn.miforeman.registry.ModComponents;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.GlobalPos;
@@ -43,7 +44,7 @@ public class ForemanClipboardItem extends Item {
                 ItemStack stack = context.getItemInHand();
                 ProductionGoal goal = stack.get(ModComponents.PRODUCTION_GOAL.get());
                 if (goal == null) {
-                    player.sendSystemMessage(Component.literal("No active production goal on this clipboard! Set a goal first.").withStyle(ChatFormatting.RED));
+                    player.sendSystemMessage(Component.translatable("miforeman.clipboard.no_active_goal").withStyle(ChatFormatting.RED));
                     return InteractionResult.SUCCESS;
                 }
 
@@ -56,13 +57,13 @@ public class ForemanClipboardItem extends Item {
                     linked.remove(globalPos);
                     history = goal.machineLinkHistory().withToggle(globalPos, true, false);
                     updatedGoal = goal.withLinkedMachines(linked, history);
-                    player.sendSystemMessage(Component.literal("Unlinked machine at " + pos.toShortString()).withStyle(ChatFormatting.YELLOW));
+                    player.sendSystemMessage(Component.translatable("miforeman.clipboard.unlinked_machine", pos.toShortString()).withStyle(ChatFormatting.YELLOW));
                 } else {
                     linked.add(globalPos);
                     history = goal.machineLinkHistory().withToggle(globalPos, false, true);
                     // manual link always clears a sticky rejection
                     updatedGoal = goal.withLinkedMachines(linked, history).withoutRejectedMachine(globalPos);
-                    player.sendSystemMessage(Component.literal("Linked machine at " + pos.toShortString()).withStyle(ChatFormatting.GREEN));
+                    player.sendSystemMessage(Component.translatable("miforeman.clipboard.linked_machine", pos.toShortString()).withStyle(ChatFormatting.GREEN));
                 }
                 stack.set(ModComponents.PRODUCTION_GOAL.get(), updatedGoal);
 
@@ -90,15 +91,16 @@ public class ForemanClipboardItem extends Item {
     public void appendHoverText(ItemStack stack, Item.TooltipContext context, List<Component> tooltip, TooltipFlag flag) {
         ProductionGoal goal = stack.get(ModComponents.PRODUCTION_GOAL.get());
         if (goal == null) {
-            tooltip.add(Component.literal("No active production goal").withStyle(ChatFormatting.GRAY, ChatFormatting.ITALIC));
+            tooltip.add(Component.translatable("miforeman.clipboard.tooltip.no_goal").withStyle(ChatFormatting.GRAY, ChatFormatting.ITALIC));
         } else {
-            tooltip.add(Component.literal("Goal: ").withStyle(ChatFormatting.GOLD)
+            tooltip.add(Component.translatable("miforeman.clipboard.tooltip.goal_label").withStyle(ChatFormatting.GOLD)
                     .append(Component.literal(goal.name()).withStyle(ChatFormatting.WHITE)));
-            tooltip.add(Component.literal("Target: ").withStyle(ChatFormatting.GRAY)
+            tooltip.add(Component.translatable("miforeman.clipboard.tooltip.target_label").withStyle(ChatFormatting.GRAY)
                     .append(Component.literal(goal.targetId().toString()).withStyle(ChatFormatting.AQUA))
-                    .append(Component.literal(" (" + goal.type().getSerializedName() + ")").withStyle(ChatFormatting.DARK_GRAY)));
-            tooltip.add(Component.literal("Rate: ").withStyle(ChatFormatting.GRAY)
-                    .append(Component.literal(String.format("%.2f / min", goal.rate())).withStyle(ChatFormatting.GREEN)));
+                    .append(Component.translatable("miforeman.clipboard.tooltip.target_type_suffix", goal.type().getSerializedName()).withStyle(ChatFormatting.DARK_GRAY)));
+            tooltip.add(Component.translatable("miforeman.clipboard.tooltip.rate_label").withStyle(ChatFormatting.GRAY)
+                    .append(Component.translatable("miforeman.clipboard.tooltip.rate_per_min",
+                            String.format(Locale.ROOT, "%.2f", goal.rate())).withStyle(ChatFormatting.GREEN)));
         }
         super.appendHoverText(stack, context, tooltip, flag);
     }

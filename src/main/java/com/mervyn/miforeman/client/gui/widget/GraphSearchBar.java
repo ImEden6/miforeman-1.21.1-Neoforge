@@ -1,5 +1,6 @@
 package com.mervyn.miforeman.client.gui.widget;
 
+import com.mervyn.miforeman.goal.MachineStatus;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
@@ -20,7 +21,7 @@ public class GraphSearchBar {
     private static final int COLOUR_BORDER_DARK = 0xFF4A3620;
     private static final int COLOUR_TEXT = 0xFF3A2A18;
     private static final int COLOUR_MUTED = 0xFF8A7A68;
-    private static final int COLOUR_ERROR = 0xFFCC3333;
+    private static final int COLOUR_ERROR = MachineStatus.RED.colour();
     private static final int COLOUR_HOVER_BTN = 0x22000000;
 
     private static final int BAR_WIDTH = 172;
@@ -46,7 +47,7 @@ public class GraphSearchBar {
         this.editBox = new EditBox(font, 0, 0, 76, 12, Component.literal("Search"));
         this.editBox.setBordered(false);
         this.editBox.setTextColor(COLOUR_TEXT);
-        this.editBox.setHint(Component.literal("Search...").withColor(COLOUR_MUTED));
+        this.editBox.setHint(Component.translatable("miforeman.screen.search_hint").withColor(COLOUR_MUTED));
         this.editBox.setResponder(query -> {
             onMatchChanged.run();
         });

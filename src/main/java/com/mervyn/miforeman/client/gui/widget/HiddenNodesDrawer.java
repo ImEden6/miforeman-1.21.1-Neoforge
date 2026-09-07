@@ -1,7 +1,9 @@
 package com.mervyn.miforeman.client.gui.widget;
 
 import com.mervyn.miforeman.client.DisplayFormat;
+import com.mervyn.miforeman.client.gui.ColourPalette.ColourKey;
 import com.mervyn.miforeman.goal.GraphLayoutState;
+import com.mervyn.miforeman.goal.MachineStatus;
 import com.mervyn.miforeman.goal.NodeType;
 import com.mervyn.miforeman.goal.RecipeGraph;
 import com.mervyn.miforeman.goal.RecipeGraphNode;
@@ -30,9 +32,9 @@ public class HiddenNodesDrawer {
     private static final int COLOUR_TITLE = 0xFF4A2E0A;
     private static final int COLOUR_TEXT = 0xFF3A2A18;
     private static final int COLOUR_MUTED = 0xFF8A7A68;
-    private static final int COLOUR_GREEN = 0xFF2E7D32;
+    private static final int COLOUR_GREEN = MachineStatus.GREEN.colour();
     private static final int COLOUR_HOVER_BTN = 0x22000000;
-    private static final int COLOUR_PILL_BG = 0xFFD8C3A5;
+    private static final int COLOUR_PILL_BG = ColourKey.LOCATE_BUTTON.defaultArgb;
     private static final int COLOUR_PILL_HOVER = 0xFFEAE7D9;
 
     public static final int TAB_WIDTH = 28; // matches GraphSearchBar's ICON_BTN_SIZE -- a square tab

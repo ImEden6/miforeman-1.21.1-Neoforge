@@ -61,7 +61,7 @@ public class EmiTargetPickerScreen extends AbstractContainerScreen<EmiTargetPick
     private final ClipboardScreen parent;
 
     public EmiTargetPickerScreen(ClipboardScreen parent) {
-        super(new HostMenu(), Minecraft.getInstance().player.getInventory(), Component.literal("Pick Target From EMI"));
+        super(new HostMenu(), Minecraft.getInstance().player.getInventory(), Component.translatable("miforeman.screen.emi_picker.title"));
         this.parent = parent;
     }
 
@@ -77,7 +77,7 @@ public class EmiTargetPickerScreen extends AbstractContainerScreen<EmiTargetPick
         this.topPos = (this.height - this.imageHeight) / 2;
 
         Button cancel = new ClipboardButton(leftPos + PADDING, topPos + imageHeight - PADDING - 16, 80, 16,
-                Component.literal("Cancel"), b -> Minecraft.getInstance().setScreen(parent));
+                Component.translatable("miforeman.button.cancel"), b -> Minecraft.getInstance().setScreen(parent));
         this.addRenderableWidget(cancel);
     }
 
@@ -148,14 +148,13 @@ public class EmiTargetPickerScreen extends AbstractContainerScreen<EmiTargetPick
         // mods' own
         // screen-corner icons (seen in testing), so centering avoids that entirely.
         int titleY = iconCenterY - ICON_SIZE / 2 - 16;
-        Component titleComp = Component.literal("Pick Target From EMI");
+        Component titleComp = Component.translatable("miforeman.screen.emi_picker.title");
         guiGraphics.drawString(this.font, titleComp, iconCenterX - this.font.width(titleComp) / 2,
                 titleY, COLOUR_TEXT, false);
 
-        String hint = EmiCompat.isLoaded()
-                ? "Drag an item or fluid from the sidebar onto the clipboard"
-                : "EMI is not installed";
-        Component hintComp = Component.literal(hint);
+        Component hintComp = EmiCompat.isLoaded()
+                ? Component.translatable("miforeman.screen.emi_picker.hint_loaded")
+                : Component.translatable("miforeman.screen.emi_picker.hint_not_loaded");
         guiGraphics.drawString(this.font, hintComp, iconCenterX - this.font.width(hintComp) / 2,
                 titleY + this.font.lineHeight + 4, COLOUR_TEXT, false);
 

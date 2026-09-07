@@ -3,6 +3,7 @@ package com.mervyn.miforeman.client.gui;
 import com.mervyn.miforeman.compat.emi.EmiCompat;
 import com.mervyn.miforeman.goal.ClipboardCloseSync;
 import com.mervyn.miforeman.goal.ClipboardUiState;
+import com.mervyn.miforeman.goal.MachineStatus;
 import com.mervyn.miforeman.goal.ProductionGoal;
 import com.mervyn.miforeman.goal.ProductionGoal.TargetType;
 import com.mervyn.miforeman.registry.ModComponents;
@@ -23,6 +24,7 @@ import aztech.modern_industrialization.machines.recipe.MachineRecipe;
 import net.minecraft.world.item.crafting.RecipeHolder;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
@@ -55,10 +57,10 @@ public class ClipboardScreen extends Screen {
     // --- Text Colours ---
     private static final int COLOUR_TITLE = 0xFFDAA520;
     private static final int COLOUR_LABEL = 0xFF8B7355;
-    private static final int COLOUR_ERROR = 0xFFCC3333;
-    private static final int COLOUR_GREEN = 0xFF2E7D32;
+    private static final int COLOUR_ERROR = MachineStatus.RED.colour();
+    private static final int COLOUR_GREEN = MachineStatus.GREEN.colour();
     private static final int COLOUR_CYAN = 0xFF006080;
-    private static final int COLOUR_AMBER = 0xFF9A6C00;
+    private static final int COLOUR_AMBER = MachineStatus.YELLOW.colour();
     private static final int COLOUR_TEXT = 0xFF3A2A18;
     private static final int COLOUR_MUTED = 0xFF8A7A68;
 
@@ -118,7 +120,7 @@ public class ClipboardScreen extends Screen {
     private final InteractionHand hand;
 
     public ClipboardScreen(ItemStack stack, InteractionHand hand) {
-        super(Component.literal("Clipboard Goal Editor"));
+        super(Component.translatable("miforeman.screen.clipboard.title"));
 
         this.hand = hand;
         ProductionGoal goal = stack.get(ModComponents.PRODUCTION_GOAL.get());
@@ -196,7 +198,7 @@ public class ClipboardScreen extends Screen {
         int top = (this.height - guiHeight) / 2;
 
         toggleModeButton = new ClipboardButton(left + guiWidth - 54, top + 8, 46, 14,
-                Component.literal(this.isMinimized ? "Edit" : "View"),
+                this.isMinimized ? Component.translatable("miforeman.button.edit") : Component.translatable("miforeman.button.view"),
                 b -> {
                     this.isMinimized = !this.isMinimized;
                     rebuildStep(this.currentStep);
@@ -204,7 +206,7 @@ public class ClipboardScreen extends Screen {
         this.addRenderableWidget(toggleModeButton);
 
         Button coloursButton = new ClipboardButton(left + guiWidth - 54 - 54, top + 8, 50, 14,
-                Component.literal("Colours"), b -> Minecraft.getInstance().setScreen(new ColourPickerScreen(this)));
+                Component.translatable("miforeman.screen.colours.title"), b -> Minecraft.getInstance().setScreen(new ColourPickerScreen(this)));
         this.addRenderableWidget(coloursButton);
 
         if (this.isMinimized) {
@@ -216,6 +218,10 @@ public class ClipboardScreen extends Screen {
             case STEP_REVIEW_PLAN -> buildStepReviewPlan();
             case STEP_MONITOR -> buildStepMonitor();
         }
+    }
+
+    private static Component perHourLabel(boolean perHour) {
+        return Component.translatable(perHour ? "miforeman.button.per_hour" : "miforeman.button.per_min");
     }
 
     private void buildStepDefineGoal() {
@@ -264,7 +270,7 @@ public class ClipboardScreen extends Screen {
 
         if (emiLoaded) {
             Button pickFromEmiButton = new ClipboardButton(contentX + 60 + targetIdWidth + EMI_PICK_BUTTON_GAP, y + 10,
-                    EMI_PICK_BUTTON_WIDTH, FIELD_HEIGHT, Component.literal("From EMI"),
+                    EMI_PICK_BUTTON_WIDTH, FIELD_HEIGHT, Component.translatable("miforeman.button.from_emi"),
                     b -> Minecraft.getInstance().setScreen(new EmiTargetPickerScreen(this)));
             this.addRenderableWidget(pickFromEmiButton);
         }
@@ -284,9 +290,9 @@ public class ClipboardScreen extends Screen {
         this.addRenderableWidget(rateField);
 
         Button unitButton = new ClipboardButton(contentX + contentW - 70, y + 10, 70, FIELD_HEIGHT,
-                Component.literal(this.goalDraft.perHour ? "Per Hour" : "Per Min"), b -> {
+                perHourLabel(this.goalDraft.perHour), b -> {
                     this.goalDraft.perHour = !this.goalDraft.perHour;
-                    b.setMessage(Component.literal(this.goalDraft.perHour ? "Per Hour" : "Per Min"));
+                    b.setMessage(perHourLabel(this.goalDraft.perHour));
                     revalidateDefineGoal();
                 });
         this.addRenderableWidget(unitButton);
@@ -308,11 +314,11 @@ public class ClipboardScreen extends Screen {
 
         int btnY = top + guiHeight() - PADDING - ClipboardChrome.MAIN_BORDER - 22;
 
-        Button cancelButton = new ClipboardButton(contentX, btnY, 80, 16, Component.literal("Cancel"),
+        Button cancelButton = new ClipboardButton(contentX, btnY, 80, 16, Component.translatable("miforeman.button.cancel"),
                 b -> this.onClose());
         this.addRenderableWidget(cancelButton);
 
-        defineNextButton = new ClipboardButton(contentX + contentW - 80, btnY, 80, 16, Component.literal("Next ->"),
+        defineNextButton = new ClipboardButton(contentX + contentW - 80, btnY, 80, 16, Component.translatable("miforeman.button.next"),
                 b -> {
                     GoalFormResult result = new GoalFormResult(
                             this.goalDraft.goalName, this.goalDraft.targetType, this.goalDraft.targetIdStr,
@@ -475,7 +481,8 @@ public class ClipboardScreen extends Screen {
                         }, this::expandMaterialNode);
                 int detailX = detailCardExpanded ? contentX : contentX + canvasWidth + 6;
                 detailCard = new DetailCard(detailX, canvasY, detailWidth, contentH, selectedNode,
-                        this.goalDraft.currentPlan, this.goalDraft.perHour, showMachineNumbers, detailCardExpanded,
+                        this.goalDraft.currentPlan,
+                        new DetailCard.DisplayOptions(this.goalDraft.perHour, showMachineNumbers, detailCardExpanded),
                         detailCardCallbacks, detailScrollOffset, v -> this.detailScrollOffset = v);
                 this.addRenderableWidget(detailCard);
             } else {
@@ -486,10 +493,11 @@ public class ClipboardScreen extends Screen {
             // state, matching the "View Mode"/"Edit Mode" and "View: X" buttons in this same row
             // -- all three cycle/toggle buttons in the toolbar use that convention, so this one
             // shouldn't be the odd one out showing the target state instead.
-            String detailButtonLabel = detailCardCollapsed ? "Details: Hidden"
-                    : detailCardExpanded ? "Details: Expanded" : "Details: Sidebar";
+            Component detailButtonLabel = detailCardCollapsed ? Component.translatable("miforeman.button.details_hidden")
+                    : detailCardExpanded ? Component.translatable("miforeman.button.details_expanded")
+                    : Component.translatable("miforeman.button.details_sidebar");
             toggleDetailButton = new ClipboardButton(contentX + contentW - 90, topButtonRowY, 90, 12,
-                    Component.literal(detailButtonLabel),
+                    detailButtonLabel,
                     b -> {
                         if (detailCardCollapsed) {
                             detailCardCollapsed = false;
@@ -505,26 +513,26 @@ public class ClipboardScreen extends Screen {
             this.addRenderableWidget(toggleDetailButton);
 
             undoLayoutButton = new ClipboardButton(contentX, topButtonRowY, 40, 12,
-                    Component.literal("Undo"), b -> graphCanvas.undo());
+                    Component.translatable("miforeman.button.undo"), b -> graphCanvas.undo());
             undoLayoutButton.active = graphCanvas.canUndo();
             this.addRenderableWidget(undoLayoutButton);
 
             redoLayoutButton = new ClipboardButton(contentX + 44, topButtonRowY, 40, 12,
-                    Component.literal("Redo"), b -> graphCanvas.redo());
+                    Component.translatable("miforeman.button.redo"), b -> graphCanvas.redo());
             redoLayoutButton.active = graphCanvas.canRedo();
             this.addRenderableWidget(redoLayoutButton);
 
             resetLayoutButton = new ClipboardButton(contentX + 88, topButtonRowY, 40, 12,
-                    Component.literal("Reset"), b -> graphCanvas.resetLayout());
+                    Component.translatable("miforeman.button.reset"), b -> graphCanvas.resetLayout());
             this.addRenderableWidget(resetLayoutButton);
 
-            String viewLabel = switch (graphViewMode) {
-                case ALL -> "View: All";
-                case ITEMS_ONLY -> "View: Items";
-                case MACHINES_ONLY -> "View: Machines";
+            Component viewLabel = switch (graphViewMode) {
+                case ALL -> Component.translatable("miforeman.button.view_all");
+                case ITEMS_ONLY -> Component.translatable("miforeman.button.view_items");
+                case MACHINES_ONLY -> Component.translatable("miforeman.button.view_machines");
             };
             toggleMachineViewButton = new ClipboardButton(contentX + 132, topButtonRowY, 86, 12,
-                    Component.literal(viewLabel),
+                    viewLabel,
                     b -> {
                         graphViewMode = graphViewMode.next();
                         // The canvas can no longer highlight a now-hidden node -- clear
@@ -547,7 +555,7 @@ public class ClipboardScreen extends Screen {
             this.addRenderableWidget(toggleMachineViewButton);
 
             toggleDragModeButton = new ClipboardButton(contentX + 222, topButtonRowY, 86, 12,
-                    Component.literal(graphDragEnabled ? "Edit Mode" : "View Mode"),
+                    graphDragEnabled ? Component.translatable("miforeman.button.edit_mode") : Component.translatable("miforeman.button.view_mode"),
                     b -> {
                         graphDragEnabled = !graphDragEnabled;
                         rebuildStep(STEP_REVIEW_PLAN);
@@ -556,11 +564,11 @@ public class ClipboardScreen extends Screen {
         }
 
         backButton = new ClipboardButton(contentX, btnY, 80, 16,
-                Component.literal("<- Back"), b -> goToStep(STEP_DEFINE_GOAL));
+                Component.translatable("miforeman.button.back"), b -> goToStep(STEP_DEFINE_GOAL));
         this.addRenderableWidget(backButton);
 
         nextButton = new ClipboardButton(contentX + contentW - 110, btnY, 110, 16,
-                Component.literal("Save & Monitor"), b -> {
+                Component.translatable("miforeman.button.save_and_monitor"), b -> {
                     save();
                     goToStep(STEP_MONITOR);
                 });
@@ -578,11 +586,12 @@ public class ClipboardScreen extends Screen {
         int contentW = guiWidth() - (PADDING + ClipboardChrome.MAIN_BORDER) * 2 - 4;
 
         Button scanButton = new ClipboardButton(contentX, contentY + 28, 90, 14,
-                Component.literal("Scan Nearby"), b -> triggerScan());
+                Component.translatable("miforeman.button.scan_nearby"), b -> triggerScan());
         this.addRenderableWidget(scanButton);
 
         Button highlightsButton = new ClipboardButton(contentX + 94, contentY + 28, 90, 14,
-                Component.literal(monitoringState.showInWorldHighlights ? "Highlights: On" : "Highlights: Off"),
+                monitoringState.showInWorldHighlights ? Component.translatable("miforeman.button.highlights_on")
+                        : Component.translatable("miforeman.button.highlights_off"),
                 b -> {
                     monitoringState.showInWorldHighlights = !monitoringState.showInWorldHighlights;
                     WorldHighlightRenderer.setEnabled(monitoringState.showInWorldHighlights);
@@ -595,7 +604,7 @@ public class ClipboardScreen extends Screen {
 
         int halfW = (contentW - 6) / 2;
         reviewButton = new ClipboardButton(contentX, contentY + 46, halfW, 16,
-                Component.literal("Review Machines (" + rows.size() + ")"),
+                Component.translatable("miforeman.button.review_machines", rows.size()),
                 b -> Minecraft.getInstance().setScreen(new ReviewMachinesScreen(
                         monitoringState, this::onMonitoringStateChanged, this)));
         this.addRenderableWidget(reviewButton);
@@ -604,18 +613,18 @@ public class ClipboardScreen extends Screen {
                 ? monitoringState.linkedMachines.size()
                 : monitoringState.liveData.size();
         monitoringButton = new ClipboardButton(contentX + halfW + 6, contentY + 46, halfW, 16,
-                Component.literal("View Monitoring (" + monitoredCount + ")"),
+                Component.translatable("miforeman.button.view_monitoring", monitoredCount),
                 b -> Minecraft.getInstance().setScreen(new MonitoringScreen(
                         monitoringState, goalDraft.perHour, this)));
         this.addRenderableWidget(monitoringButton);
 
         int btnY = top + guiHeight() - PADDING - ClipboardChrome.MAIN_BORDER - 22;
         backButton = new ClipboardButton(contentX, btnY, 80, 16,
-                Component.literal("<- Back"), b -> goToStep(STEP_REVIEW_PLAN));
+                Component.translatable("miforeman.button.back"), b -> goToStep(STEP_REVIEW_PLAN));
         this.addRenderableWidget(backButton);
 
         nextButton = new ClipboardButton(contentX + contentW - 80, btnY, 80, 16,
-                Component.literal("Done"), b -> this.onClose());
+                Component.translatable("miforeman.button.done"), b -> this.onClose());
         this.addRenderableWidget(nextButton);
 
         new RequestMonitoringUpdatePayload(monitoringState.hand).sendToServer();
@@ -623,13 +632,13 @@ public class ClipboardScreen extends Screen {
 
     private void updateMonitoringButtonLabels() {
         if (reviewButton != null) {
-            reviewButton.setMessage(Component.literal("Review Machines (" + monitoringState.buildReviewRows().size() + ")"));
+            reviewButton.setMessage(Component.translatable("miforeman.button.review_machines", monitoringState.buildReviewRows().size()));
         }
         if (monitoringButton != null) {
             int count = monitoringState.liveData.isEmpty()
                     ? monitoringState.linkedMachines.size()
                     : monitoringState.liveData.size();
-            monitoringButton.setMessage(Component.literal("View Monitoring (" + count + ")"));
+            monitoringButton.setMessage(Component.translatable("miforeman.button.view_monitoring", count));
         }
     }
 
@@ -751,64 +760,65 @@ public class ClipboardScreen extends Screen {
         int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
         int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
 
-        guiGraphics.drawString(this.font, Component.literal("Production Goal Summary"), contentX, contentY,
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.clipboard.summary_title"), contentX, contentY,
                 COLOUR_TITLE);
 
         int currentY = contentY + 20;
 
-        guiGraphics.drawString(this.font, Component.literal("Goal Name:"), contentX, currentY, COLOUR_LABEL, false);
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.label.goal_name"), contentX, currentY, COLOUR_LABEL, false);
         guiGraphics.drawString(this.font, Component.literal(this.goalDraft.goalName), contentX + 80, currentY,
                 COLOUR_TEXT, false);
         currentY += 15;
 
-        guiGraphics.drawString(this.font, Component.literal("Target ID:"), contentX, currentY, COLOUR_LABEL, false);
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.label.target_id"), contentX, currentY, COLOUR_LABEL, false);
         guiGraphics.drawString(this.font, Component.literal(this.goalDraft.targetIdStr), contentX + 80, currentY,
                 COLOUR_TEXT, false);
         currentY += 15;
 
-        guiGraphics.drawString(this.font, Component.literal("Target Type:"), contentX, currentY, COLOUR_LABEL, false);
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.label.target_type"), contentX, currentY, COLOUR_LABEL, false);
         guiGraphics.drawString(this.font, Component.literal(this.goalDraft.targetType.name()), contentX + 80, currentY,
                 COLOUR_TEXT, false);
         currentY += 15;
 
         String rateStr = String.format("%.2f units/%s", this.goalDraft.rate, this.goalDraft.perHour ? "hour" : "min");
-        guiGraphics.drawString(this.font, Component.literal("Desired Rate:"), contentX, currentY, COLOUR_LABEL, false);
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.label.desired_rate"), contentX, currentY, COLOUR_LABEL, false);
         guiGraphics.drawString(this.font, Component.literal(rateStr), contentX + 80, currentY, COLOUR_TEXT, false);
         currentY += 15;
 
         String thresholdStr = String.format("%d%%", (int) (this.goalDraft.threshold * 100));
-        guiGraphics.drawString(this.font, Component.literal("Threshold:"), contentX, currentY, COLOUR_LABEL, false);
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.label.threshold"), contentX, currentY, COLOUR_LABEL, false);
         guiGraphics.drawString(this.font, Component.literal(thresholdStr), contentX + 80, currentY, COLOUR_TEXT, false);
         currentY += 20;
 
-        String statusStr = "Status: Planning Complete";
+        Component statusComp = Component.translatable("miforeman.clipboard.status.planning_complete");
         int statusColour = COLOUR_GREEN;
         if (currentStep == STEP_MONITOR) {
-            statusStr = "Status: Live Monitoring Active (" + this.monitoringState.liveData.size() + " nodes)";
+            statusComp = Component.translatable("miforeman.clipboard.status.live_monitoring_active", this.monitoringState.liveData.size());
             statusColour = COLOUR_CYAN;
         } else if (currentStep == STEP_DEFINE_GOAL) {
-            statusStr = "Status: Goal Definition Draft";
+            statusComp = Component.translatable("miforeman.clipboard.status.goal_definition_draft");
             statusColour = COLOUR_AMBER;
         }
-        guiGraphics.drawString(this.font, Component.literal(statusStr), contentX, currentY, statusColour, false);
+        guiGraphics.drawString(this.font, statusComp, contentX, currentY, statusColour, false);
     }
 
     private void renderStepDefineGoal(GuiGraphics guiGraphics, int left, int top) {
         int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
         int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
 
-        guiGraphics.drawString(this.font, Component.literal("Define Goal"), contentX, contentY, COLOUR_TITLE);
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.clipboard.define_goal_title"), contentX, contentY, COLOUR_TITLE);
 
         int y = contentY + 16;
-        guiGraphics.drawString(this.font, Component.literal("Goal Name"), contentX, y, COLOUR_LABEL, false);
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.field.goal_name"), contentX, y, COLOUR_LABEL, false);
         y += 10 + FIELD_HEIGHT + 8;
-        guiGraphics.drawString(this.font, Component.literal("Target Type & ID"), contentX, y, COLOUR_LABEL, false);
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.field.target_type_and_id"), contentX, y, COLOUR_LABEL, false);
         y += 10 + FIELD_HEIGHT + 8;
         guiGraphics.drawString(this.font,
-                Component.literal(this.goalDraft.perHour ? "Rate (units/hour)" : "Rate (units/min)"), contentX, y,
+                this.goalDraft.perHour ? Component.translatable("miforeman.field.rate_per_hour")
+                        : Component.translatable("miforeman.field.rate_per_min"), contentX, y,
                 COLOUR_LABEL, false);
         y += 10 + FIELD_HEIGHT + 8;
-        guiGraphics.drawString(this.font, Component.literal("Threshold (%)"), contentX, y, COLOUR_LABEL, false);
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.field.threshold_percent"), contentX, y, COLOUR_LABEL, false);
         y += 10 + FIELD_HEIGHT + 6;
 
         if (this.goalDraft.errorMessage != null) {
@@ -820,18 +830,18 @@ public class ClipboardScreen extends Screen {
     private void renderStepReviewPlan(GuiGraphics guiGraphics, int left, int top) {
         int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
         int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
-        guiGraphics.drawString(this.font, Component.literal("Factory Plan"), contentX, contentY, COLOUR_TITLE);
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.clipboard.factory_plan_title"), contentX, contentY, COLOUR_TITLE);
     }
 
     private void renderStepMonitor(GuiGraphics guiGraphics, int left, int top) {
         int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
         int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
 
-        guiGraphics.drawString(this.font, Component.literal("Factory Monitoring"), contentX, contentY, COLOUR_TITLE);
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.clipboard.factory_monitoring_title"), contentX, contentY, COLOUR_TITLE);
 
         int currentY = contentY + 16;
         if (this.monitoringState.liveData.isEmpty()) {
-            guiGraphics.drawString(this.font, Component.literal(" - None linked yet"), contentX + 4, currentY,
+            guiGraphics.drawString(this.font, Component.translatable("miforeman.clipboard.none_linked_yet"), contentX + 4, currentY,
                     COLOUR_MUTED, false);
             return;
         }
@@ -848,11 +858,11 @@ public class ClipboardScreen extends Screen {
 
         // Counts lead with RED/ORANGE (what actually needs attention), not machine
         // order.
-        String prefix = this.monitoringState.liveData.size() + " machines: ";
+        String prefix = I18n.get("miforeman.clipboard.machines_count", this.monitoringState.liveData.size());
         guiGraphics.drawString(this.font, Component.literal(prefix), contentX + 4, currentY, COLOUR_TEXT, false);
         int segX = contentX + 4 + this.font.width(prefix);
         segX = drawStatusCount(guiGraphics, segX, currentY, red, "RED", COLOUR_ERROR);
-        segX = drawStatusCount(guiGraphics, segX, currentY, orange, "ORANGE", 0xFFE67700);
+        segX = drawStatusCount(guiGraphics, segX, currentY, orange, "ORANGE", MachineStatus.ORANGE.colour());
         segX = drawStatusCount(guiGraphics, segX, currentY, yellow, "YELLOW", COLOUR_AMBER);
         drawStatusCount(guiGraphics, segX, currentY, green, "GREEN", COLOUR_GREEN);
     }

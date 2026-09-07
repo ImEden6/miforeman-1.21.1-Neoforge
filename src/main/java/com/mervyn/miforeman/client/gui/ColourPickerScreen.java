@@ -3,6 +3,7 @@ package com.mervyn.miforeman.client.gui;
 import com.mervyn.miforeman.client.gui.ColourPalette.ColourKey;
 import com.mervyn.miforeman.client.gui.widget.ChannelSlider;
 import com.mervyn.miforeman.client.gui.widget.ClipboardButton;
+import com.mervyn.miforeman.goal.MachineStatus;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -25,7 +26,7 @@ public class ColourPickerScreen extends Screen {
     private static final int COLOUR_TITLE = 0xFFDAA520;
     private static final int COLOUR_LABEL = 0xFF8B7355;
     private static final int COLOUR_TEXT = 0xFF3A2A18;
-    private static final int COLOUR_ERROR = 0xFFCC3333;
+    private static final int COLOUR_ERROR = MachineStatus.RED.colour();
     private static final int ROW_HEIGHT = 16;
     private static final int SWATCH_SIZE = 12;
     private static final int PREVIEW_HEIGHT = SWATCH_SIZE * 2;
@@ -73,7 +74,7 @@ public class ColourPickerScreen extends Screen {
     private int editorLabelY, editorSwatchY, editorModeY, editorSlider1Y, editorSlider2Y, editorSlider3Y, editorHexY, editorResetY, editorHintY;
 
     public ColourPickerScreen(Screen backTarget) {
-        super(Component.literal("Colours"));
+        super(Component.translatable("miforeman.screen.colours.title"));
         this.backTarget = backTarget;
     }
 
@@ -139,7 +140,7 @@ public class ColourPickerScreen extends Screen {
         channelC = channels[2];
 
         Button modeButton = new ClipboardButton(editorX, editorModeY, 90, 14,
-                Component.literal("Mode: " + mode.name()), b -> {
+                Component.translatable("miforeman.colour_picker.mode_button", mode.name()), b -> {
             mode = mode.next();
             rebuild();
         });
@@ -177,7 +178,7 @@ public class ColourPickerScreen extends Screen {
         hexInvalid = false;
 
         Button resetOne = new ClipboardButton(editorX, editorResetY, 100, 14,
-                Component.literal("Reset This"), b -> {
+                Component.translatable("miforeman.button.reset_this"), b -> {
             ColourPalette.resetToDefault(selectedKey);
             resetCachedHueForCurrentColour();
             rebuild();
@@ -185,7 +186,7 @@ public class ColourPickerScreen extends Screen {
         this.addRenderableWidget(resetOne);
 
         Button resetAll = new ClipboardButton(contentX, btnY, 90, 16,
-                Component.literal("Reset All"), b -> {
+                Component.translatable("miforeman.button.reset_all"), b -> {
             for (ColourKey key : ColourKey.values()) {
                 ColourPalette.resetToDefault(key);
             }
@@ -195,7 +196,7 @@ public class ColourPickerScreen extends Screen {
         this.addRenderableWidget(resetAll);
 
         Button done = new ClipboardButton(contentX + guiWidth() - (PADDING + ClipboardChrome.MAIN_BORDER) * 2 - 4 - 90, btnY, 90, 16,
-                Component.literal("Done"), b -> {
+                Component.translatable("miforeman.button.done"), b -> {
                     ColourPalette.persist();
                     Minecraft.getInstance().setScreen(backTarget);
                 });
@@ -293,7 +294,7 @@ public class ColourPickerScreen extends Screen {
 
         int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
         int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 2;
-        guiGraphics.drawString(this.font, Component.literal("Colours"), contentX, contentY, COLOUR_TITLE);
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.screen.colours.title"), contentX, contentY, COLOUR_TITLE);
 
         for (ColourKey key : ColourKey.values()) {
             int y = rowY.get(key);
@@ -308,9 +309,9 @@ public class ColourPickerScreen extends Screen {
         guiGraphics.renderOutline(editorX, editorSwatchY, SWATCH_SIZE * 4, PREVIEW_HEIGHT, COLOUR_LABEL);
 
         if (hexInvalid) {
-            guiGraphics.drawString(this.font, Component.literal("Invalid hex (need #AARRGGBB)"), editorX, editorHintY, COLOUR_ERROR);
+            guiGraphics.drawString(this.font, Component.translatable("miforeman.colour_picker.invalid_hex"), editorX, editorHintY, COLOUR_ERROR);
         } else {
-            guiGraphics.drawString(this.font, Component.literal("#AARRGGBB"), editorX, editorHintY, COLOUR_TEXT);
+            guiGraphics.drawString(this.font, Component.translatable("miforeman.colour_picker.hex_placeholder"), editorX, editorHintY, COLOUR_TEXT);
         }
 
         super.render(guiGraphics, mouseX, mouseY, partialTick);
