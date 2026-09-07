@@ -230,64 +230,42 @@ public interface UnifiedCrafter {
             return 0.0f;
         }
 
-        @Override
+        /** Shared by getItemInputs/getFluidInputs/getItemOutputs/getFluidOutputs -- all four were
+         *  the same reflection dance (resolve the inventory via getInvMethod, invoke the given
+         *  accessor on it, swallow any failure into an empty list) differing only in which method
+         *  they invoked and their generic return type. */
         @SuppressWarnings("unchecked")
+        private <T> List<T> invokeListAccessor(@Nullable Method accessorMethod) {
+            try {
+                if (accessorMethod != null) {
+                    Object inv = accessors.getInvMethod != null ? accessors.getInvMethod.invoke(component) : component;
+                    if (inv != null) {
+                        return (List<T>) accessorMethod.invoke(inv);
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+            return Collections.emptyList();
+        }
+
+        @Override
         public List<ConfigurableItemStack> getItemInputs() {
-            try {
-                if (accessors.getItemInputsMethod != null) {
-                    Object inv = accessors.getInvMethod != null ? accessors.getInvMethod.invoke(component) : component;
-                    if (inv != null) {
-                        return (List<ConfigurableItemStack>) accessors.getItemInputsMethod.invoke(inv);
-                    }
-                }
-            } catch (Throwable ignored) {
-            }
-            return Collections.emptyList();
+            return invokeListAccessor(accessors.getItemInputsMethod);
         }
 
         @Override
-        @SuppressWarnings("unchecked")
         public List<ConfigurableFluidStack> getFluidInputs() {
-            try {
-                if (accessors.getFluidInputsMethod != null) {
-                    Object inv = accessors.getInvMethod != null ? accessors.getInvMethod.invoke(component) : component;
-                    if (inv != null) {
-                        return (List<ConfigurableFluidStack>) accessors.getFluidInputsMethod.invoke(inv);
-                    }
-                }
-            } catch (Throwable ignored) {
-            }
-            return Collections.emptyList();
+            return invokeListAccessor(accessors.getFluidInputsMethod);
         }
 
         @Override
-        @SuppressWarnings("unchecked")
         public List<ConfigurableItemStack> getItemOutputs() {
-            try {
-                if (accessors.getItemOutputsMethod != null) {
-                    Object inv = accessors.getInvMethod != null ? accessors.getInvMethod.invoke(component) : component;
-                    if (inv != null) {
-                        return (List<ConfigurableItemStack>) accessors.getItemOutputsMethod.invoke(inv);
-                    }
-                }
-            } catch (Throwable ignored) {
-            }
-            return Collections.emptyList();
+            return invokeListAccessor(accessors.getItemOutputsMethod);
         }
 
         @Override
-        @SuppressWarnings("unchecked")
         public List<ConfigurableFluidStack> getFluidOutputs() {
-            try {
-                if (accessors.getFluidOutputsMethod != null) {
-                    Object inv = accessors.getInvMethod != null ? accessors.getInvMethod.invoke(component) : component;
-                    if (inv != null) {
-                        return (List<ConfigurableFluidStack>) accessors.getFluidOutputsMethod.invoke(inv);
-                    }
-                }
-            } catch (Throwable ignored) {
-            }
-            return Collections.emptyList();
+            return invokeListAccessor(accessors.getFluidOutputsMethod);
         }
 
         @Override
