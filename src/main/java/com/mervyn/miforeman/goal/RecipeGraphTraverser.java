@@ -113,21 +113,29 @@ public final class RecipeGraphTraverser {
         indexMachineRecipeCollection(recipeManager.getRecipes(), itemByRecipeId, fluidByRecipeId);
 
         // Addons can supply recipes via a ProxyableMachineRecipeType (e.g. Extended
-        // Industrialization's
-        // runtime-generated canning/bucket recipes) that never register through
-        // RecipeManager at all --
-        // recipeManager.getRecipes() above can't see them. Off by default: see Config's
-        // comment for why
-        // (ClipboardScreen's client-side preview can't reflect this even when enabled).
-        if (com.mervyn.miforeman.Config.INCLUDE_PROXIED_RECIPE_TYPES.get()
-                && level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+        // Industrialization's runtime-generated canning/bucket recipes) that never register
+        // through RecipeManager at all -- recipeManager.getRecipes() above can't see them. Off by
+        // default -- see Config's comment for why. It changes default ambiguous-recipe selection
+        // across every plan, even with zero addons, since MI's own FurnaceMachineRecipeType
+        // synthesizes a MachineRecipe for every vanilla smelting recipe.
+        //
+        // getRecipesWithCache(ServerLevel) is preferred when available -- throttled and cached,
+        // cheap for repeated server-side calls. getRecipesWithoutCache(Level) is its plain-Level
+        // sibling on the same class (ProxyableMachineRecipeType.java); it only touches
+        // level.getRecipeManager(), nothing server-exclusive, so it works identically on a
+        // ClientLevel. There's no actual API gap here for ClipboardScreen's client-side preview.
+        // An earlier version of this code (and this config's own comment) assumed there was,
+        // because it only looked at getRecipesWithCache's ServerLevel-typed signature.
+        if (com.mervyn.miforeman.Config.INCLUDE_PROXIED_RECIPE_TYPES.get()) {
             for (var recipeType : net.minecraft.core.registries.BuiltInRegistries.RECIPE_TYPE) {
                 if (!(recipeType instanceof aztech.modern_industrialization.machines.recipe.ProxyableMachineRecipeType proxyable)) {
                     continue;
                 }
                 try {
-                    indexMachineRecipeCollection(proxyable.getRecipesWithCache(serverLevel), itemByRecipeId,
-                            fluidByRecipeId);
+                    var proxied = level instanceof net.minecraft.server.level.ServerLevel serverLevel
+                            ? proxyable.getRecipesWithCache(serverLevel)
+                            : proxyable.getRecipesWithoutCache(level);
+                    indexMachineRecipeCollection(proxied, itemByRecipeId, fluidByRecipeId);
                 } catch (Exception e) {
                     ResourceLocation typeId = net.minecraft.core.registries.BuiltInRegistries.RECIPE_TYPE
                             .getKey(recipeType);

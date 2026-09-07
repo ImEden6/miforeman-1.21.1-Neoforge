@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
 import com.mervyn.miforeman.command.ForemanCommands;
+import com.mervyn.miforeman.goal.RecipeGraphTraverser;
 import com.mervyn.miforeman.registry.ModComponents;
 import com.mervyn.miforeman.registry.ModItems;
 import com.mervyn.miforeman.test.ForemanGameTests;
@@ -13,6 +14,7 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
+import net.neoforged.fml.event.config.ModConfigEvent;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
@@ -57,6 +59,19 @@ public class MIForeman {
         // CONTRIBUTING.md's documented config-location convention -- registering it here would
         // make a dedicated server needlessly create a meaningless client config file.
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+
+        // RecipeGraphTraverser's GRAPH_CACHE and cachedIndex are keyed on (target, rate,
+        // selections) and (RecipeManager, dimension) respectively -- neither key touches this
+        // config's value. So toggling includeProxiedRecipeTypes mid-session did nothing, until a
+        // RecipeManager reload (leaving and rejoining the world) happened to invalidate
+        // cachedIndex by coincidence. Clear both explicitly on every reload of this spec (in-game
+        // config screen Done, or a toml edit) -- the tests already do this by hand around every
+        // Config.INCLUDE_PROXIED_RECIPE_TYPES.set() call.
+        modEventBus.addListener((ModConfigEvent.Reloading event) -> {
+            if (event.getConfig().getSpec() == Config.SPEC) {
+                RecipeGraphTraverser.clearGraphCache();
+            }
+        });
     }
 
     // Add the items to creative tabs

@@ -30,9 +30,10 @@ public class Config {
                     + "smelting recipe on top of whatever's already registered. So enabling this changes "
                     + "candidate recipe sets -- and therefore default ambiguous-recipe selection -- across plans, "
                     + "even with zero addons installed. Off by default so existing plans/graphs are unaffected. "
-                    + "Only affects server-side plan computation (commands, packet handlers) -- the live plan "
-                    + "preview in ClipboardScreen runs client-side and will NOT reflect proxied recipes even with "
-                    + "this enabled, since the API has no client-side equivalent.")
+                    + "Applies equally to server-side plan computation (commands, packet handlers) and "
+                    + "ClipboardScreen's client-side live preview -- RecipeGraphTraverser picks "
+                    + "getRecipesWithCache(ServerLevel) or its plain-Level sibling getRecipesWithoutCache(Level) "
+                    + "depending on which side is computing.")
             .define("includeProxiedRecipeTypes", false);
 
     public static final ModConfigSpec SPEC = BUILDER.build();
