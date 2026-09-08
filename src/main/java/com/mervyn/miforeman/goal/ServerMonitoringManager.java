@@ -56,7 +56,7 @@ public class ServerMonitoringManager {
         public long lastUsedEnergy = 0;
         public long lastRecipeEnergy = 0;
         /** How full this machine's fullest output slot is, 0.0 (empty) to 1.0 (full/backed up).
-         *  Refreshed every tick regardless of active/passive status -- see
+         *  Refreshed every tick regardless of active or passive status. See
          *  {@link ServerMonitoringManager#computeDisposalRatio}. */
         public double disposalRatio = 0.0;
         public final Deque<EnergyEvent> energyEvents = new ArrayDeque<>();
@@ -126,15 +126,14 @@ public class ServerMonitoringManager {
         return UnifiedCrafter.from(machine);
     }
 
-    /** actual/expected ratio at or above this marks a running (GREEN) but underperforming
-     *  machine as {@link FailureReason#DISPOSAL_THROTTLED} rather than plain underperformance --
-     *  see {@link #classifyLiveStatus}. */
+    /** An actual/expected ratio at or above this marks a running (GREEN) but underperforming
+     *  machine as {@link FailureReason#DISPOSAL_THROTTLED} rather than plain underperformance.
+     *  See {@link #classifyLiveStatus}. */
     private static final double DISPOSAL_THROTTLE_THRESHOLD = 0.85;
 
-    /** How full this machine's fullest output slot is, 0.0 (empty) to 1.0 (full/backed up).
-     *  Uses {@code getCapacity()}, not {@code getAdjustedCapacity()} -- for a non-64-stackable
-     *  item output, the adjusted capacity alone ignores the item's own max stack size and would
-     *  understate how close the slot actually is to full. See maybe.md's "disposal ratio" note. */
+    /** How full this machine's fullest output slot is, from 0.0 (empty) to 1.0 (full/backed up).
+     *  Uses {@code getCapacity()} rather than {@code getAdjustedCapacity()} so non-64-stackable
+     *  items account for their max stack size. */
     public static double computeDisposalRatio(UnifiedCrafter crafter) {
         double maxRatio = 0.0;
         for (ConfigurableItemStack stack : crafter.getItemOutputs()) {
@@ -151,22 +150,17 @@ public class ServerMonitoringManager {
     }
 
     /** Records that {@code recipeId} is now the actively-running recipe. Overwrites both
-     *  {@code lastRecipeId} (cleared whenever the machine goes idle) and
-     *  {@code lastKnownRecipeId} (never cleared -- see its own doc comment) every time a recipe
-     *  is genuinely active, so {@code lastKnownRecipeId} always reflects the latest recipe this
-     *  machine actually ran, never a stale one left over from an earlier, different recipe.
-     *  Extracted from {@link #onServerTick} so that freshness guarantee is unit-testable. */
+     *  {@code lastRecipeId} (cleared when the machine goes idle) and {@code lastKnownRecipeId}
+     *  (preserved across idleness) whenever a recipe runs. Extracted from {@link #onServerTick}
+     *  for unit tests. */
     public static void recordActiveRecipe(MachineTracker tracker, ResourceLocation recipeId) {
         tracker.lastRecipeId = recipeId;
         tracker.lastKnownRecipeId = recipeId;
     }
 
-    /** Recipe id worth showing the player for this machine: {@code lastRecipeId} (actually
-     *  crafting) and {@code saturatedRecipeId} (blocked, would craft once its output clears) are
-     *  mutually exclusive -- whichever is set wins. Neither is set for a RED (STARVED/DEAD_LOOP)
-     *  machine, so falls back to {@code lastKnownRecipeId} -- history the tracker already keeps
-     *  -- so RED machines still get a product label/graph-node match instead of silently having
-     *  none. Extracted from {@code MonitoringPacketHandlers.handleRequest} so it's unit-testable. */
+    /** Recipe id to display for this machine. Prefers active crafting or blocked saturation
+     *  recipes. For RED machines (starved or dead-loop), falls back to {@code lastKnownRecipeId}
+     *  so nodes retain product labels. */
     public static @Nullable ResourceLocation resolveDisplayRecipeId(MachineTracker tracker) {
         if (tracker.lastRecipeId != null) return tracker.lastRecipeId;
         if (tracker.saturatedRecipeId != null) return tracker.saturatedRecipeId;
@@ -191,11 +185,9 @@ public class ServerMonitoringManager {
             return;
         }
 
-        // Pass 1: collect this tick's monitored set across all players and hands, and remember
-        // every goal that links each position -- used below for cheap (cache-only) dead-loop
-        // detection. A machine can be linked by more than one goal at once (e.g. two players);
-        // keep all of them per position rather than letting the last one iterated silently win,
-        // so dead-loop classification doesn't flip nondeterministically with player/hand order.
+        // Pass 1: collect monitored positions across all players and hands, recording every
+        // goal linking each position for cached dead-loop detection. Keeping all goals per
+        // position prevents iteration order from causing nondeterministic status flips.
         Set<GlobalPos> activeKeys = new HashSet<>();
         Map<GlobalPos, List<ProductionGoal>> goalsByPos = new HashMap<>();
         for (ServerPlayer player : event.getServer().getPlayerList().getPlayers()) {
@@ -359,9 +351,8 @@ public class ServerMonitoringManager {
             }
         }
 
-        // Starving. If this machine was never seen running a recipe touching a recycling loop,
-        // it's ordinary starvation (fix: increase upstream supply); otherwise it's a dead-loop
-        // (fix: wire in a source) -- see FailureReason.
+        // Starving. Recipes touching a recycling loop are classified as dead-loop failures,
+        // while others indicate ordinary starvation.
         boolean touchesCycle = recipeTouchesCycle(level, lastKnownRecipeId, cyclicResourceIds);
         return new PassiveStatus(MachineStatus.RED, null, touchesCycle ? FailureReason.DEAD_LOOP : FailureReason.STARVED);
     }
@@ -466,10 +457,8 @@ public class ServerMonitoringManager {
         MachineStatus status = tracker.status;
         FailureReason reason = tracker.failureReason;
         if (status == MachineStatus.GREEN) {
-            // rates.entrySet() has no guaranteed order, so if a machine underperforms on more
-            // than one resource at once, scan for a cyclic one first rather than breaking on
-            // whichever resource the HashMap iterates first -- a real dead-loop must never be
-            // hidden behind an arbitrarily-chosen ordinary shortfall.
+            // Prioritize cyclic resources if multiple resources underperform, so dead loops
+            // are not masked by arbitrary iteration order.
             Set<ResourceLocation> cyclicIds = RecipeGraphTraverser.peekCyclicResourceIds(goal);
             ResourceLocation underperformingResource = null;
             for (var entry : rates.entrySet()) {

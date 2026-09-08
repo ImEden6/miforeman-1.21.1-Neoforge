@@ -54,9 +54,8 @@ public record RecipeGraph(
         }
     }
 
-    /** Deep-enough copy for handing a graph out of a shared cache -- see
-     *  {@link RecipeGraphNode#copy()}. Edges are already immutable records, so the edge list
-     *  itself just needs a fresh backing list, not a per-edge copy. */
+    /** Defensive copy for returning a graph from shared cache. See {@link RecipeGraphNode#copy()}.
+     *  Edges are immutable records, so the edge list only needs a fresh backing list. */
     public RecipeGraph copy() {
         Map<ResourceLocation, RecipeGraphNode> copiedNodes = new java.util.HashMap<>();
         for (var entry : nodes.entrySet()) {

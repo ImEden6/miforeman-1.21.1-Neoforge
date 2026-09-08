@@ -230,10 +230,8 @@ public interface UnifiedCrafter {
             return 0.0f;
         }
 
-        /** Shared by getItemInputs/getFluidInputs/getItemOutputs/getFluidOutputs -- all four were
-         *  the same reflection dance (resolve the inventory via getInvMethod, invoke the given
-         *  accessor on it, swallow any failure into an empty list) differing only in which method
-         *  they invoked and their generic return type. */
+        /** Shared helper for inventory list accessors via reflection. Invokes the accessor
+         *  on the resolved inventory and returns an empty list on failure. */
         @SuppressWarnings("unchecked")
         private <T> List<T> invokeListAccessor(@Nullable Method accessorMethod) {
             try {

@@ -61,10 +61,8 @@ public class MachineScanner {
                     if (crafter == null) continue;
                     RecipeHolder<MachineRecipe> active = crafter.getActiveRecipe();
                     ResourceLocation recipeId = active != null ? active.id() : null;
-                    // Edge case (accepted, not fixed): a just-loaded machine may have activeRecipe==null
-                    // but a pending delayedActiveRecipe about to populate next tick. This scan skips it
-                    // rather than reflecting on a second CrafterComponent field -- small false-negative
-                    // window, player can re-scan. Revisit only if this proves annoying in practice.
+                    // A recently loaded machine may have activeRecipe == null while delayedActiveRecipe
+                    // is still pending. The scan skips it to avoid reflecting on internal fields.
                     if (recipeId == null || !recipeIndex.contains(recipeId)) continue;
                     ResourceLocation machineId = BuiltInRegistries.BLOCK.getKey(machine.getBlockState().getBlock());
                     found.add(new ScanCandidate(GlobalPos.of(level.dimension(), be.getBlockPos()), machineId, recipeId));

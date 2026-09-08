@@ -16,7 +16,7 @@ public enum FailureReason {
      *  output is full. Fix: add a drawer/trash. */
     CLOG_LOCK,
     /** YELLOW: the machine is actively crafting but running below expected rate because its own
-     *  output is nearly full ({@code disposalRatio} past threshold) -- it will clog-lock soon.
-     *  Same fix as {@link #CLOG_LOCK}, caught earlier as a leading indicator. */
+     *  output is nearly full. It will clog-lock soon. Same fix as {@link #CLOG_LOCK}, caught earlier
+     *  as a leading indicator. */
     DISPOSAL_THROTTLED
 }

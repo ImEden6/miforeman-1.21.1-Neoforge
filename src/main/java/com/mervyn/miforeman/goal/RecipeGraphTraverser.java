@@ -112,20 +112,12 @@ public final class RecipeGraphTraverser {
 
         indexMachineRecipeCollection(recipeManager.getRecipes(), itemByRecipeId, fluidByRecipeId);
 
-        // Addons can supply recipes via a ProxyableMachineRecipeType (e.g. Extended
-        // Industrialization's runtime-generated canning/bucket recipes) that never register
-        // through RecipeManager at all -- recipeManager.getRecipes() above can't see them. Off by
-        // default -- see Config's comment for why. It changes default ambiguous-recipe selection
-        // across every plan, even with zero addons, since MI's own FurnaceMachineRecipeType
-        // synthesizes a MachineRecipe for every vanilla smelting recipe.
+        // Addons can supply recipes via a ProxyableMachineRecipeType (such as Extended
+        // Industrialization's runtime-generated canning or bucket recipes) that never register
+        // through RecipeManager. Off by default; see Config for details.
         //
-        // getRecipesWithCache(ServerLevel) is preferred when available -- throttled and cached,
-        // cheap for repeated server-side calls. getRecipesWithoutCache(Level) is its plain-Level
-        // sibling on the same class (ProxyableMachineRecipeType.java); it only touches
-        // level.getRecipeManager(), nothing server-exclusive, so it works identically on a
-        // ClientLevel. There's no actual API gap here for ClipboardScreen's client-side preview.
-        // An earlier version of this code (and this config's own comment) assumed there was,
-        // because it only looked at getRecipesWithCache's ServerLevel-typed signature.
+        // getRecipesWithCache(ServerLevel) is preferred when available because it is cached.
+        // getRecipesWithoutCache(Level) works with a plain Level and operates on ClientLevel.
         if (com.mervyn.miforeman.Config.INCLUDE_PROXIED_RECIPE_TYPES.get()) {
             for (var recipeType : net.minecraft.core.registries.BuiltInRegistries.RECIPE_TYPE) {
                 if (!(recipeType instanceof aztech.modern_industrialization.machines.recipe.ProxyableMachineRecipeType proxyable)) {
@@ -140,7 +132,7 @@ public final class RecipeGraphTraverser {
                     ResourceLocation typeId = net.minecraft.core.registries.BuiltInRegistries.RECIPE_TYPE
                             .getKey(recipeType);
                     com.mervyn.miforeman.MIForeman.LOGGER.warn(
-                            "Skipping proxied machine recipe type {} -- its recipe list threw while building", typeId,
+                            "Skipping proxied machine recipe type {}: its recipe list threw while building", typeId,
                             e);
                 }
             }
@@ -215,13 +207,9 @@ public final class RecipeGraphTraverser {
             Map<ResourceLocation, ResourceLocation> selections) {
     }
 
-    // Bounded (LRU-evicted) since every distinct (target, rate, selections) combination is a
-    // separate key -- unbounded would grow forever across a long session of slider drags.
-    // Not a ConcurrentHashMap. LinkedHashMap's removeEldestEntry hook needs external
-    // synchronization anyway (get-then-put isn't atomic), so every access below is wrapped in
-    // synchronized(GRAPH_CACHE) instead. This cache is genuinely reached from two different
-    // threads in singleplayer, the client render thread (ClipboardScreen -> GoalDraft.computePlan)
-    // and the integrated/dedicated server thread (GoalUpdateHandler, ForemanCommands).
+    // Bounded LRU cache. Every distinct (target, rate, selections) combination is a
+    // separate key, so bounding prevents unbounded growth across long sessions.
+    // Uses external synchronization on GRAPH_CACHE across client and server threads.
     private static final int GRAPH_CACHE_MAX_SIZE = 50;
     private static final Map<GraphCacheKey, RecipeGraph> GRAPH_CACHE = new LinkedHashMap<>(16, 0.75f, true) {
         @Override
@@ -231,13 +219,9 @@ public final class RecipeGraphTraverser {
     };
 
     /**
-     * Immutable snapshot of the indexed item/fluid recipe lookup, keyed on both the
-     * {@link RecipeManager} instance and the dimension it was built for -- a single
-     * {@link RecipeManager} is shared server-wide across dimensions, but the index can
-     * still be dimension-specific (see {@link #indexMachineRecipes}'s proxied-recipe
-     * branch). Held behind one {@code volatile} reference so readers on the client
-     * render thread and the integrated-server thread always see a fully-consistent
-     * snapshot together, never a torn mix of an old map with a new manager/dimension.
+     * Immutable snapshot of indexed item and fluid recipes, keyed on the {@link RecipeManager}
+     * instance and its dimension. Held behind a {@code volatile} reference so readers across
+     * threads observe consistent state.
      */
     private record RecipeIndex(
             RecipeManager recipeManager,
@@ -336,9 +320,8 @@ public final class RecipeGraphTraverser {
      *  modeled as graph nodes. So this reads the real recipe data directly: for each MACHINE
      *  node, its {@code itemOutputs}/{@code fluidOutputs}, with each rate computed the same way
      *  {@code ServerMonitoringManager.getActualRates} does (machines &times; amount &times;
-     *  probability per craft, scaled by the recipe's duration). A resourceId already tracked
-     *  elsewhere in the graph is excluded -- the plan already relies on it, so it isn't excess
-     *  production even if this machine also produces some as a side effect. */
+     *  probability per craft, scaled by duration). Resources already tracked elsewhere in the graph
+     *  are excluded because the plan already relies on them. */
     public static Map<ResourceLocation, Double> collectByproductRates(RecipeGraph graph) {
         Map<ResourceLocation, Double> byproductRates = new LinkedHashMap<>();
         for (RecipeGraphNode machineNode : graph.nodes().values()) {
@@ -347,7 +330,7 @@ public final class RecipeGraphTraverser {
             double machineCount = machineNode.getMachineCount();
             if (recipe == null || machineCount <= 0 || recipe.duration <= 0) continue;
 
-            // 1200 ticks/minute -- same conversion constant ServerMonitoringManager.getActualRates uses.
+            // 1200 ticks/minute, matching ServerMonitoringManager.getActualRates.
             double runsPerMinute = machineCount * 1200.0 / recipe.duration;
 
             for (var out : recipe.itemOutputs) {
@@ -364,10 +347,8 @@ public final class RecipeGraphTraverser {
         return byproductRates;
     }
 
-    /** Every item/fluid resource id a recipe touches, inputs and outputs combined, ignoring rates
-     *  and probabilities -- used where only "does this recipe touch resource X at all" matters
-     *  (e.g. {@code ServerMonitoringManager.recipeTouchesCycle}), as opposed to the rate-aware
-     *  walks elsewhere in this class. */
+    /** Every item/fluid resource id a recipe touches, inputs and outputs combined. Ignores rates
+     *  and probabilities to check only whether a recipe touches a resource. */
     public static Set<ResourceLocation> recipeResourceIds(MachineRecipe recipe) {
         Set<ResourceLocation> ids = new HashSet<>();
         for (var in : recipe.itemInputs) {
@@ -395,9 +376,7 @@ public final class RecipeGraphTraverser {
         synchronized (GRAPH_CACHE) {
             RecipeGraph cached = GRAPH_CACHE.get(key);
             if (cached != null) {
-                // Never hand out the cached instance itself -- its nodes have public setters
-                // (setExpanded, setSelectedAmbiguity, ...) that UI code calls directly, which
-                // would otherwise mutate the shared cache entry in place.
+                // Return a copy so callers mutating node fields cannot alter the shared cache entry.
                 return cached.copy();
             }
         }
@@ -408,19 +387,8 @@ public final class RecipeGraphTraverser {
         Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> itemRecipes = index.itemRecipes();
         Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> fluidRecipes = index.fluidRecipes();
 
-        // Two phases -- mirrors computePlan()/getSubPlan()'s existing memoization
-        // pattern, which
-        // buildGraph() previously didn't share (its old `visited` set was only a
-        // recursion-stack
-        // cycle guard, removed again at every return, so a resourceId reached via more
-        // than one
-        // demand path had its entire input subtree re-walked from scratch on every
-        // occurrence, and
-        // its own supply edge got rebuilt with only that occurrence's *partial* rate
-        // each time
-        // instead of the full accumulated total).
-        //
-        // Phase 1 resolves the DAG structure (which recipe is chosen, and its input
+        // Phase 1: resolve DAG structure (recipes and normalized per-unit inputs).
+        // Phase 2: propagate rates and accumulate demands.
         Map<ResourceLocation, StructuralNode> structNodes = new HashMap<>();
         resolveStructure(itemRecipes, fluidRecipes, goal.type(), goal.targetId(),
                 goal.recipeSelections(), new HashSet<>(), structNodes, goal.targetId());
@@ -465,8 +433,7 @@ public final class RecipeGraphTraverser {
      */
     private record StructuralNode(
             ResourceLocation resourceId,
-            @Nullable ResourceLocation recipeId, // null => RAW (no candidate recipe, or an
-                                                 // unproducible chosen recipe -- see below)
+            @Nullable ResourceLocation recipeId, // null => RAW (no candidate recipe, or an unproducible chosen recipe)
             @Nullable ResourceLocation machineTypeId,
             @Nullable MachineRecipe recipe,
             List<ResourceLocation> ambiguityOptions,
