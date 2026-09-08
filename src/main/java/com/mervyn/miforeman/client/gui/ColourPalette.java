@@ -17,13 +17,10 @@ public final class ColourPalette {
         SELECTED(0xFF33E6F2, "Located machine"),
         LOCATE_BUTTON(0xFFD8C3A5, "Locate button"),
         LOCATED_BUTTON(0xFF9FE8EE, "Located button"),
-        // Translucent so icon/text rows drawn on top stay legible; derived from MachineStatus's
-        // RED/GREEN so the hues can't drift out of sync if those are ever retuned. Inlined rather
-        // than calling ColourPalette.withAlpha(...) here -- a static method call on the OUTER
-        // class from inside this nested enum's own constant initializers forces ColourPalette's
-        // <clinit> to run mid-way through ColourKey's. Its static block then does
-        // CONFIG.put(ColourKey.INPUT_PANEL, ...) before INPUT_PANEL has been assigned, putting a
-        // null key into the EnumMap and throwing. Keep this self-contained to MachineStatus only.
+        // Translucent so icons and text drawn on top stay legible. Derived from MachineStatus's
+        // RED/GREEN to keep hues synchronized. Inlined rather than calling ColourPalette.withAlpha(...)
+        // because calling the outer class during nested enum initialization triggers premature
+        // class loading, where static initializers access unassigned enum constants.
         INPUT_PANEL((0x33 << 24) | (MachineStatus.RED.colour() & 0xFFFFFF), "Detail card inputs panel"),
         OUTPUT_PANEL((0x33 << 24) | (MachineStatus.GREEN.colour() & 0xFFFFFF), "Detail card outputs panel");
 

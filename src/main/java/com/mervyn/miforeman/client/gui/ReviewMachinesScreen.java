@@ -17,7 +17,6 @@ import net.minecraft.core.GlobalPos;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -114,10 +113,9 @@ public class ReviewMachinesScreen extends Screen {
                 SEARCH_FIELD_WIDTH, 14, Component.literal("Search"));
         searchField.setMaxLength(128);
         searchField.setHint(Component.translatable("miforeman.screen.search_hint").withColor(0xFF8A7A68));
-        // setValue() unconditionally fires whatever responder is attached -- set the restored
-        // value first, while the responder is still EditBox's own no-op default, so restoring
-        // the query on rebuild() doesn't redundantly re-trigger refreshData() before listPanel
-        // even exists yet.
+        // setValue() fires whatever responder is attached. Set the restored value first,
+        // while the responder is still the default no-op. This avoids redundant calls
+        // to refreshData() before listPanel exists.
         searchField.setValue(searchQuery);
         searchField.setResponder(val -> {
             searchQuery = val;
@@ -159,12 +157,11 @@ public class ReviewMachinesScreen extends Screen {
         refreshData();
     }
 
-    /** Pushes fresh poll data into the existing list panel in place, instead of the full
-     *  {@link #rebuild()} -- avoids resetting scroll/hover state and recreating widgets on
-     *  every ~1s poll response. Safe to skip recomputing button active-states here. liveData
-     *  only affects each row's productLabel (see MonitoringState.buildReviewRows), never the
-     *  linked/rejected sets those buttons key off of. Layout only changes via rebuild(),
-     *  triggered from init()/resize/user actions. */
+    /** Pushes fresh poll data into the existing list panel in place, avoiding a full
+     *  {@link #rebuild()}. This preserves scroll and hover state without recreating widgets
+     *  on every ~1s poll response. Live data only updates row product labels, never the
+     *  linked or rejected machine sets. Layout only changes via rebuild() during init, resize,
+     *  or explicit user actions. */
     private void refreshData() {
         if (listPanel == null) {
             rebuild();
@@ -283,8 +280,7 @@ public class ReviewMachinesScreen extends Screen {
 
     @Override
     public void renderBackground(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        // Deliberately no dimming/vignette -- matches ClipboardScreen's own override, so this
-        // reads as a level deeper into the same tool rather than a different, darker one.
+        // No dimming or vignette, matching ClipboardScreen's override.
     }
 
     @Override

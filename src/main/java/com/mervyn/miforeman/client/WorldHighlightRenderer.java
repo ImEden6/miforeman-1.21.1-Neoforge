@@ -83,9 +83,9 @@ public class WorldHighlightRenderer {
         if (clientLevel == null) return;
         var currentDim = clientLevel.dimension();
 
-        // "Locate" is independent of the general Highlights on/off toggle -- a located machine
-        // stays visible even with highlights off, and the linked/candidate sets stay hidden while
-        // off even if something happens to be located.
+        // "Locate" is independent of the general highlights toggle. A located machine
+        // stays visible even with highlights off, and linked or candidate sets stay hidden while
+        // off even if a machine is currently located.
         boolean showGeneral = enabled && (!linkedPositions.isEmpty() || !candidatePositions.isEmpty());
         boolean showSelected = selectedPosition != null && selectedPosition.dimension().equals(currentDim);
         if (!showGeneral && !showSelected) return;
@@ -101,11 +101,10 @@ public class WorldHighlightRenderer {
         float[] candidateRgb = ColourPalette.getRgbFloats(ColourKey.CANDIDATE);
         float[] selectedRgb = ColourPalette.getRgbFloats(ColourKey.SELECTED);
 
-        // Fill first (soft glow base layer), then outline on top (crisp edges) -- drawing every
-        // fill box across both lists before any outline keeps the wireframes from getting buried
-        // under a later box's glow. The selected position is skipped in its normal colour and
-        // drawn separately afterward -- stacking two translucent fills on the same block would
-        // blend into a muddy colour instead of the selected box cleanly overriding its normal one.
+        // Fill first, then outline on top. Drawing every fill box across both lists before
+        // any outline keeps wireframes from getting buried under later glow layers. The selected
+        // position is skipped in its normal colour and drawn separately afterward. Stacking two
+        // translucent fills on the same block blends into muddy colours instead of a clean override.
         VertexConsumer fillInside = bufferSource.getBuffer(MIForemanRenderTypes.FILL_INSIDE_BLOCKS);
         VertexConsumer fillOutside = bufferSource.getBuffer(MIForemanRenderTypes.FILL_OUTSIDE_BLOCKS);
         if (showGeneral) {

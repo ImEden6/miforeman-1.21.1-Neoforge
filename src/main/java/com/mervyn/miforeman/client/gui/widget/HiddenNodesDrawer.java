@@ -37,7 +37,7 @@ public class HiddenNodesDrawer {
     private static final int COLOUR_PILL_BG = ColourKey.LOCATE_BUTTON.defaultArgb;
     private static final int COLOUR_PILL_HOVER = 0xFFEAE7D9;
 
-    public static final int TAB_WIDTH = 28; // matches GraphSearchBar's ICON_BTN_SIZE -- a square tab
+    public static final int TAB_WIDTH = 28; // matches GraphSearchBar's ICON_BTN_SIZE for a square tab
     public static final int TAB_HEIGHT = 28;
     public static final int DRAWER_WIDTH = 156;
     private static final String EYE_ICON = "👁"; // U+1F441 EYE
@@ -122,9 +122,8 @@ public class HiddenNodesDrawer {
                 guiGraphics.fill(x, y, x + TAB_WIDTH, y + TAB_HEIGHT, COLOUR_HOVER_BTN);
             }
 
-            // Eye Icon -- true-centred in the square tab when there's no badge to avoid;
-            // when the badge is showing (below), anchored just clear of its bottom edge
-            // instead, since true-centering would put the icon's top behind the badge.
+            // Eye icon, centred in the square tab when there is no badge. When the badge shows,
+            // anchored below its bottom edge so the icon does not overlap.
             int eyeColour = hiddenCount > 0 ? COLOUR_GREEN : COLOUR_TEXT;
             double eyeH = font.lineHeight * EYE_ICON_SCALE;
             double eyeTop = hiddenCount > 0 ? y + 9 : y + (TAB_HEIGHT - eyeH) / 2.0;

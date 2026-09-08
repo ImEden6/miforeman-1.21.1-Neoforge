@@ -15,8 +15,7 @@ public final class ClipboardChrome {
     public static final int MAIN_TEX_SIZE = 64;
     public static final int MAIN_BORDER = 6;
 
-    // Rotated to sit on the left edge, like a landscape clipboard's spring clip -- see
-    // tools/gen_clipboard_textures.py.
+    // Rotated to sit on the left edge, matching a landscape clipboard's spring clip.
     public static final int CLIP_WIDTH = 16;
     public static final int CLIP_HEIGHT = 32;
     public static final int CLIP_OVERHANG = 6;

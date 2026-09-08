@@ -17,9 +17,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * The Define Goal step's form/plan state -- split out of {@link ClipboardScreen} (see
- * .claude/plans/gleaming-mapping-waffle.md), which used to own this alongside the unrelated
- * step-3 monitoring state.
+ * Form and plan state for defining a goal, separated from {@link ClipboardScreen}.
  */
 class GoalDraft {
     String goalName;

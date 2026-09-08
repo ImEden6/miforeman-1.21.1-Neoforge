@@ -71,17 +71,12 @@ public class DetailCard extends AbstractWidget {
 
     private @Nullable RecipeGraphNode node;
     private final FactoryPlan plan;
-    /** Summary Mode's Inputs/Byproducts rows, computed once here rather than every render frame --
-     *  {@code plan} is final and this widget is always freshly reconstructed when the plan changes
-     *  (see {@code ClipboardScreen.buildStepReviewPlan}), so there's nothing to invalidate. */
+    /** Summary input and output rows, computed once at construction. */
     private final List<ResourceRow> summaryInputRows;
     private final List<ResourceRow> summaryOutputRows;
     private final boolean perHour;
     private final boolean showNumbers;
-    /** Whether this card is filling the whole content width (GraphCanvas hidden) rather than
-     *  sitting as a narrow sidebar next to it -- see ClipboardScreen's 3-state detail toggle.
-     *  Drives whether the Summary Mode Inputs/Outputs panels lay out side-by-side (reliably wide
-     *  here) or stacked (reliably narrow in sidebar mode). */
+    /** True when this card fills the content width rather than rendering as a sidebar. */
     private final boolean expanded;
     private final Callbacks callbacks;
     private final IntConsumer onScrollChange;
@@ -186,9 +181,7 @@ public class DetailCard extends AbstractWidget {
         return panelHeight;
     }
 
-    /** One icon + rate row. The resource's name isn't drawn as text (there's rarely room for it
-     *  next to an icon in the sidebar-width case) -- it shows as a hover tooltip instead, the
-     *  same way a vanilla inventory slot works. */
+    /** Renders an icon and rate string, displaying the resource name as a hover tooltip. */
     private void renderResourceRow(GuiGraphics guiGraphics, ResourceLocation resourceId, double rate,
                                     int x, int y, int mouseX, int mouseY) {
         Minecraft mc = Minecraft.getInstance();
@@ -264,10 +257,7 @@ public class DetailCard extends AbstractWidget {
                 currentY += 12;
             }
 
-            // Inputs / Byproducts panels. Sidebar mode is reliably narrow (~42% of a screen that's
-            // itself capped at a small minimum width) so panels stack; expanded mode is reliably
-            // wide (the full content width, GraphCanvas hidden) so they sit side-by-side -- no
-            // runtime width-threshold guessing either way.
+            // Side-by-side panels when expanded, vertically stacked when sidebar.
             List<ResourceRow> inputRows = summaryInputRows;
             List<ResourceRow> outputRows = summaryOutputRows;
 

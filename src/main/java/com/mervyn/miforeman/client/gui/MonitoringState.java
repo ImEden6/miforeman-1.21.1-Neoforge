@@ -34,9 +34,8 @@ class MonitoringState {
     final List<ScanResultPayload.Candidate> lastScanResults = new ArrayList<>();
     boolean showRejected = false;
     boolean showInWorldHighlights;
-    /** Which hand's clipboard this state belongs to -- set by ClipboardScreen right after
-     *  construction, so RequestMonitoringUpdatePayload/GoalUpdatePayload always target the
-     *  clipboard the player actually opened, not whichever hand happens to be "main". */
+    /** Which hand's clipboard this state belongs to. Set by ClipboardScreen right after
+     *  construction so payload updates target the active clipboard. */
     InteractionHand hand = InteractionHand.MAIN_HAND;
     private int tickCount = 0;
     /** The goal's recipe graph, computed once in {@link #fromGoal}. Backs {@link #endProductNames}.
@@ -44,13 +43,8 @@ class MonitoringState {
     private @Nullable com.mervyn.miforeman.goal.RecipeGraph graph;
 
     private MonitoringState() {
-        // WorldHighlightRenderer's on/off state is static and outlives any screen's
-        // lifecycle
-        // (highlights are meant to keep rendering after the clipboard closes) -- read
-        // the live
-        // value here instead of hardcoding false, or the button lies about the real
-        // state every
-        // time the clipboard is reopened.
+        // WorldHighlightRenderer on/off state is static and outlives individual screen lifecycles.
+        // Read the live value here so reopened screens reflect current state accurately.
         this.showInWorldHighlights = WorldHighlightRenderer.isEnabled();
     }
 
@@ -71,12 +65,10 @@ class MonitoringState {
         return new MonitoringState();
     }
 
-    /** Refreshes the cached graph {@link #endProductNames} searches. {@code ClipboardScreen}
-     *  constructs one {@code MonitoringState} up front and reuses it for the screen's whole
-     *  lifetime, so without this the graph snapshot from {@link #fromGoal} goes stale the moment
-     *  the goal is edited (or stays permanently null for a blank-clipboard {@link #defaults()}
-     *  session) -- called from {@code ClipboardScreen.buildStepMonitor()} with the plan's
-     *  already-computed graph, right before either list screen can be opened. */
+    /** Refreshes the cached graph for {@link #endProductNames}. ClipboardScreen constructs
+     *  one MonitoringState up front and reuses it across edits, so refreshing avoids stale
+     *  graphs when a goal changes. Called from ClipboardScreen.buildStepMonitor() with the
+     *  computed graph before list screens open. */
     void refreshGraph(@Nullable com.mervyn.miforeman.goal.RecipeGraph graph) {
         this.graph = graph;
     }
@@ -230,11 +222,8 @@ class MonitoringState {
     }
 
     /** Search text for one row: machine name, immediate product, and every resource between this
-     *  machine and the goal's final target (see {@link #endProductNames}). Shared by
-     *  {@code MonitoringScreen}/{@code ReviewMachinesScreen} so the two screens' search behavior
-     *  can't silently drift apart -- each screen's own row type differs (nested vs. flat fields),
-     *  so they extract these three arguments themselves and call this instead of duplicating the
-     *  text-list construction. */
+     *  machine and the goal's target (see {@link #endProductNames}). Shared across screens to
+     *  keep matching behavior consistent. */
     List<String> rowSearchableTexts(ResourceLocation machineId, @Nullable String productLabel, @Nullable ResourceLocation recipeId) {
         List<String> texts = new ArrayList<>();
         texts.add(DisplayFormat.formatId(machineId));

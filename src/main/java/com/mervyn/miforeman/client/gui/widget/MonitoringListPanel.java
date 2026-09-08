@@ -50,7 +50,7 @@ public class MonitoringListPanel extends AbstractWidget {
         this.scroll = new ListScroll(ROW_HEIGHT, initialScrollOffset, onScrollChange);
     }
 
-    /** Swaps in fresh row data without recreating this widget -- preserves scroll offset,
+    /** Swaps in fresh row data without recreating this widget. Preserves scroll offset,
      *  hover state, and identity across a poll response. */
     public void updateRows(List<MonitoringRow> rows) {
         this.rows = rows;

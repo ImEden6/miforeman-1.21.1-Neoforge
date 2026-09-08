@@ -80,9 +80,9 @@ public class MonitoringScreen extends Screen {
         EditBox searchField = new EditBox(this.font, contentX, contentY, contentW, 14, Component.literal("Search"));
         searchField.setMaxLength(128);
         searchField.setHint(Component.translatable("miforeman.screen.search_hint").withColor(0xFF8A7A68));
-        // setValue() unconditionally fires whatever responder is attached -- set the restored
-        // value first, while the responder is still EditBox's own no-op default, so restoring
-        // the query on rebuild() doesn't redundantly re-trigger refreshData().
+        // setValue() fires whatever responder is attached. Set the restored value first,
+        // while the responder is still the default no-op. This avoids redundant calls
+        // to refreshData().
         searchField.setValue(searchQuery);
         searchField.setResponder(val -> {
             searchQuery = val;
@@ -103,10 +103,10 @@ public class MonitoringScreen extends Screen {
         this.addRenderableWidget(backButton);
     }
 
-    /** Pushes fresh poll data into the existing list panel in place, instead of the full
-     *  {@link #rebuild()} -- avoids resetting scroll/hover state and recreating widgets on
-     *  every ~1s poll response. Layout (positions, the back button, selection) only changes
-     *  via {@link #rebuild()}, triggered from init()/resize/handleLocate. */
+    /** Pushes fresh poll data into the existing list panel in place, avoiding a full
+     *  {@link #rebuild()}. This preserves scroll and hover state without recreating widgets
+     *  on every ~1s poll response. Layout only changes via {@link #rebuild()}, triggered
+     *  from init, resize, or handleLocate. */
     private void refreshData() {
         if (listPanel != null) {
             listPanel.updateRows(buildDisplayRows());
@@ -180,7 +180,7 @@ public class MonitoringScreen extends Screen {
 
     @Override
     public void renderBackground(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        // Deliberately no dimming/vignette -- matches ClipboardScreen's own override.
+        // No dimming or vignette, matching ClipboardScreen's override.
     }
 
     @Override

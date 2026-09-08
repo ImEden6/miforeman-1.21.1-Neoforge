@@ -82,6 +82,8 @@ public class ClipboardScreen extends Screen {
     private final MonitoringState monitoringState;
 
     private ResourceLocation selectedNodeId = null;
+    /** The full selection from GraphCanvas. {@code selectedNodeId} mirrors this when exactly one node is selected. */
+    private Set<ResourceLocation> selectedNodeIds = new LinkedHashSet<>();
     private GraphCanvas graphCanvas;
     private DetailCard detailCard;
     private double cameraX, cameraY;
@@ -92,10 +94,14 @@ public class ClipboardScreen extends Screen {
     private com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode graphViewMode;
     private boolean graphDragEnabled;
     private boolean showMachineNumbers;
+    /** Transient client-side preference (not persisted in GraphLayoutState) for whether
+     *  Auto-arrange also re-lays-out each locked group's own interior. */
+    private boolean rearrangeInsideGroups;
     private Button toggleDetailButton;
     private Button toggleMachineViewButton;
     private Button toggleDragModeButton;
     private Button undoLayoutButton, redoLayoutButton, resetLayoutButton;
+    private Button autoArrangeButton, rearrangeToggleButton, groupActionButton;
 
     private Button nextButton;
     private Button backButton;
@@ -115,8 +121,7 @@ public class ClipboardScreen extends Screen {
     /** The most recent goal state synchronized to the server. */
     private ProductionGoal lastSyncedGoal;
 
-    /** Which hand this clipboard was opened from -- so updates are written back to the same
-     *  stack even when a clipboard is held in both hands at once. */
+    /** Hand holding this clipboard, ensuring updates write back to the matching stack. */
     private final InteractionHand hand;
 
     public ClipboardScreen(ItemStack stack, InteractionHand hand) {
@@ -149,12 +154,7 @@ public class ClipboardScreen extends Screen {
         ClipboardUiState snapshot = new ClipboardUiState(
                 currentStep, cameraX, cameraY, cameraZoom,
                 graphViewMode, graphDragEnabled, detailCardCollapsed, isMinimized, showMachineNumbers, detailCardExpanded);
-        // goalDraft.graphLayout tracks node drags live (see the onLayoutChange callback
-        // in
-        // buildStepReviewPlan) but is otherwise only sent to the server via an explicit
-        // save
-        // action -- layer it on here too so a drag survives a plain close, same as the
-        // ui state.
+        // Persist live layout changes on close even without an explicit save.
         ClipboardCloseSync.computeCloseSyncGoal(lastSyncedGoal, snapshot, goalDraft.graphLayout)
                 .ifPresent(toPersist -> new GoalUpdatePayload(toPersist, hand).sendToServer());
     }
@@ -393,7 +393,8 @@ public class ClipboardScreen extends Screen {
         int rowGap = 4;
 
         int topButtonRowY = contentY + titleRowHeight;
-        int canvasY = topButtonRowY + topButtonRowHeight + rowGap;
+        int arrangeRowY = topButtonRowY + topButtonRowHeight + rowGap;
+        int canvasY = arrangeRowY + topButtonRowHeight + rowGap;
         int btnY = top + guiHeight() - PADDING - ClipboardChrome.MAIN_BORDER - 22;
         int contentH = btnY - rowGap - canvasY;
 
@@ -403,12 +404,15 @@ public class ClipboardScreen extends Screen {
 
             graphCanvas = new GraphCanvas(contentX, canvasY, canvasWidth, contentH,
                     this.goalDraft.currentPlan.graph(), this.goalDraft.graphLayout, cameraX, cameraY, cameraZoom,
-                    selectedNodeId,
-                    nodeId -> {
-                        selectedNodeId = nodeId;
+                    selectedNodeIds,
+                    newSelection -> {
+                        selectedNodeIds = newSelection;
+                        selectedNodeId = newSelection.size() == 1 ? newSelection.iterator().next() : null;
                         if (detailCard != null) {
-                            detailCard.setNode(this.goalDraft.currentPlan.graph().node(nodeId));
+                            detailCard.setNode(selectedNodeId != null
+                                    ? this.goalDraft.currentPlan.graph().node(selectedNodeId) : null);
                         }
+                        updateGroupActionButton();
                     },
                     layout -> {
                         this.goalDraft.graphLayout = layout;
@@ -423,12 +427,9 @@ public class ClipboardScreen extends Screen {
                         this.cameraZoom = zoomLevel;
                     },
                     graphViewMode,
-                    graphDragEnabled);
-            // Still constructed even when expanded (so Undo/Redo/Reset/View/Edit-mode's lambdas,
-            // which close over graphCanvas directly, stay valid) but deliberately not added as a
-            // renderable widget in that case -- at canvasWidth=0 its own overlay UI (search bar
-            // toggle, hidden-nodes drawer tab) would otherwise still render, anchored at the
-            // canvas's own origin, which is the same contentX DetailCard now occupies.
+                    graphDragEnabled,
+                    this.goalDraft.perHour);
+            // Constructed when expanded so toolbar lambdas remain valid, but not added as a widget.
             if (!detailCardExpanded) {
                 this.addRenderableWidget(graphCanvas);
             }
@@ -439,13 +440,8 @@ public class ClipboardScreen extends Screen {
                         : null;
                 DetailCard.Callbacks detailCardCallbacks = new DetailCard.Callbacks((resId, choiceRecipeId) -> {
                             this.goalDraft.recipeSelections.put(resId, choiceRecipeId);
-                            // A MACHINE node's own id IS its recipe id, so cycling the recipe of the
-                            // currently-selected machine node makes that id vanish from the rebuilt graph.
-                            // Look the node up live by selectedNodeId (not a captured local --
-                            // GraphCanvas's
-                            // onSelect only calls detailCard.setNode(), it doesn't rebuild this step, so a
-                            // closed-over node reference here can be stale) and follow the selection onto
-                            // the newly-chosen recipe's node instead of losing it.
+                            // A machine node's ID is its recipe ID. Re-lookup selectedNodeId on the
+                            // rebuilt graph to transfer selection to the new recipe node.
                             RecipeGraphNode cyclingNode = selectedNodeId != null && this.goalDraft.currentPlan != null
                                     && this.goalDraft.currentPlan.graph() != null
                                             ? this.goalDraft.currentPlan.graph().node(selectedNodeId)
@@ -459,6 +455,7 @@ public class ClipboardScreen extends Screen {
                                         && this.goalDraft.currentPlan.graph().node(choiceRecipeId) != null
                                                 ? choiceRecipeId
                                                 : null;
+                                selectedNodeIds = selectedNodeId != null ? Set.of(selectedNodeId) : Set.of();
                             }
                             rebuildStep(STEP_REVIEW_PLAN);
                         }, () -> {
@@ -489,10 +486,7 @@ public class ClipboardScreen extends Screen {
                 detailCard = null;
             }
 
-            // 3-state cycle: Sidebar -> Expanded -> Hidden -> Sidebar. Label shows the CURRENT
-            // state, matching the "View Mode"/"Edit Mode" and "View: X" buttons in this same row
-            // -- all three cycle/toggle buttons in the toolbar use that convention, so this one
-            // shouldn't be the odd one out showing the target state instead.
+            // 3-state cycle: Sidebar -> Expanded -> Hidden -> Sidebar. The label shows the current state.
             Component detailButtonLabel = detailCardCollapsed ? Component.translatable("miforeman.button.details_hidden")
                     : detailCardExpanded ? Component.translatable("miforeman.button.details_expanded")
                     : Component.translatable("miforeman.button.details_sidebar");
@@ -535,8 +529,7 @@ public class ClipboardScreen extends Screen {
                     viewLabel,
                     b -> {
                         graphViewMode = graphViewMode.next();
-                        // The canvas can no longer highlight a now-hidden node -- clear
-                        // the selection so DetailCard doesn't keep showing stale details for it.
+                        // Clear selection if the selected node becomes hidden in the new view mode.
                         if (selectedNodeId != null && this.goalDraft.currentPlan != null
                                 && this.goalDraft.currentPlan.graph() != null) {
                             RecipeGraphNode selected = this.goalDraft.currentPlan.graph().node(selectedNodeId);
@@ -544,9 +537,11 @@ public class ClipboardScreen extends Screen {
                                 if (graphViewMode == com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.ITEMS_ONLY
                                         && selected.getType() == NodeType.MACHINE) {
                                     selectedNodeId = null;
+                                    selectedNodeIds = Set.of();
                                 } else if (graphViewMode == com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.MACHINES_ONLY
                                         && selected.getType() != NodeType.MACHINE) {
                                     selectedNodeId = null;
+                                    selectedNodeIds = Set.of();
                                 }
                             }
                         }
@@ -561,6 +556,41 @@ public class ClipboardScreen extends Screen {
                         rebuildStep(STEP_REVIEW_PLAN);
                     });
             this.addRenderableWidget(toggleDragModeButton);
+
+            autoArrangeButton = new ClipboardButton(contentX, arrangeRowY, 70, 12,
+                    Component.translatable("miforeman.button.auto_arrange"), b -> {
+                        graphCanvas.autoArrange(rearrangeInsideGroups);
+                        this.goalDraft.graphLayout = graphCanvas.getLayoutState();
+                        if (undoLayoutButton != null) undoLayoutButton.active = graphCanvas.canUndo();
+                        rebuildStep(STEP_REVIEW_PLAN);
+                    });
+            this.addRenderableWidget(autoArrangeButton);
+
+            rearrangeToggleButton = new ClipboardButton(contentX + 74, arrangeRowY, 128, 12,
+                    rearrangeInsideGroups ? Component.translatable("miforeman.button.rearrange_inside_on")
+                            : Component.translatable("miforeman.button.rearrange_inside_off"),
+                    b -> {
+                        rearrangeInsideGroups = !rearrangeInsideGroups;
+                        rebuildStep(STEP_REVIEW_PLAN);
+                    });
+            this.addRenderableWidget(rearrangeToggleButton);
+
+            groupActionButton = new ClipboardButton(contentX + 206, arrangeRowY, 90, 12,
+                    Component.translatable("miforeman.button.group_selection"), b -> {
+                        UUID covering = graphCanvas.groupCoveringSelection();
+                        UUID singleGroup = graphCanvas.groupOfSingleSelection();
+                        if (covering != null) {
+                            graphCanvas.dissolveGroup(covering);
+                        } else if (singleGroup != null) {
+                            graphCanvas.removeSingleSelectionFromGroup();
+                        } else if (graphCanvas.canGroupSelection()) {
+                            graphCanvas.groupSelection();
+                        }
+                        this.goalDraft.graphLayout = graphCanvas.getLayoutState();
+                        rebuildStep(STEP_REVIEW_PLAN);
+                    });
+            this.addRenderableWidget(groupActionButton);
+            updateGroupActionButton();
         }
 
         backButton = new ClipboardButton(contentX, btnY, 80, 16,
@@ -573,6 +603,29 @@ public class ClipboardScreen extends Screen {
                     goToStep(STEP_MONITOR);
                 });
         this.addRenderableWidget(nextButton);
+    }
+
+    /**
+     * Updates {@link #groupActionButton} label and visibility based on current selection.
+     * Shows "Dissolve group" for a full group, "Remove from group" for a single grouped node,
+     * or "Group selection" when multiple nodes are selected.
+     */
+    private void updateGroupActionButton() {
+        if (groupActionButton == null || graphCanvas == null) return;
+        UUID covering = graphCanvas.groupCoveringSelection();
+        UUID singleGroup = graphCanvas.groupOfSingleSelection();
+        if (covering != null) {
+            groupActionButton.visible = true;
+            groupActionButton.setMessage(Component.translatable("miforeman.button.dissolve_group"));
+        } else if (singleGroup != null) {
+            groupActionButton.visible = true;
+            groupActionButton.setMessage(Component.translatable("miforeman.button.remove_from_group"));
+        } else if (graphCanvas.canGroupSelection()) {
+            groupActionButton.visible = true;
+            groupActionButton.setMessage(Component.translatable("miforeman.button.group_selection"));
+        } else {
+            groupActionButton.visible = false;
+        }
     }
 
     private void buildStepMonitor() {
@@ -715,14 +768,7 @@ public class ClipboardScreen extends Screen {
 
     @Override
     public void renderBackground(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        // Deliberately no dimming/vignette here. renderTransparentBackground draws a
-        // full-window
-        // dark gradient (see vanilla Screen.renderTransparentBackground) -- the same
-        // darkening
-        // technique the pause/options menus use -- which read as "everything looks like
-        // the esc
-        // menu" rather than a lightweight tool held up over the still-visible game
-        // world.
+        // No dimming background gradient, keeping the world visible behind the clipboard.
     }
 
     @Override
