@@ -29,51 +29,6 @@ grant). Everything below is a pattern from that codebase that could apply to
   a fallback straight/L path rather than vanishing or blocking the rest of
   the solve.
 
-## Layout (GraphCanvas auto-arrange, if we ever build one)
-
-Two ideas from GTNH that only really work as one feature, not two -- confirmed
-by reading the actual `board-arrange.ts`/`AGENTS.md` source (2026-09-07), not
-just this file's earlier summary of it:
-
-1. **A grouping data model first.** GTNH's "board" is a named, player-drawn
-   group of cards -- pure membership data, nothing about layout. Foreman has
-   no equivalent today (`GraphLayoutState` is just a flat
-   `Map<nodeId, position>`, no notion of "these nodes are one group"), so this
-   is the real prerequisite, not the layout math.
-2. **Sugiyama-style layered layout, run at two scales once groups exist.**
-   Column assignment via topological/longest-path, then each node's position
-   within a column solved by weighted isotonic regression (PAVA) toward a
-   barycenter "wish" position from its neighbors -- exact 1-D constrained
-   least-squares, not an iterative physics relaxation, so it's deterministic
-   with no settling time or jitter. GTNH runs this same algorithm twice: once
-   on the whole graph with each locked group counting as a single meta-card
-   (placing groups relative to each other), and once independently inside
-   each group's own interior. The **locked-region-as-meta-card** piece is what
-   makes the outer pass respect manual work: a group is never re-laid-out,
-   just placed as one fixed-size card, and each wire crossing its boundary
-   reports the *actual current position* of the member it touches as that
-   meta-card's port height, so cross-group wires still land straight.
-   **Phantom nodes** are what makes the inner per-group pass boundary-aware:
-   one placeholder node per external neighbor a group's members wire to,
-   weighted heavier than normal wires (GTNH uses x3), pulling members with
-   outside connections toward the edge those connections actually leave
-   through, discarded after solving.
-
-Building the layered layout alone, without the grouping model, produces
-something that can only pin individual dragged nodes one at a time rather than
-respecting a whole hand-arranged cluster -- which is exactly what a 2026-09-07
-attempt built (single-node pinning, no groups, no phantom nodes) and got
-reverted at the user's request as feeling unnecessary in practice. If
-auto-arrange gets revisited, build the grouping model and the layered layout
-together, not the layout alone again.
-
-Foreman's own graph reads the opposite direction from GTNH's board, by design
-and unrelated to any of this: the target/final product sits at column 0
-(leftmost, `RecipeGraphNode.depth` starts the target at 0 and increases toward
-raw materials), where GTNH runs raw inputs on the left and the final product
-on the right. Whichever layout work happens here should keep matching
-Foreman's own existing convention, not GTNH's.
-
 ## Solver / MachineTracker
 
 - **Staged LP instead of iterative descent for "what's actually running"**
