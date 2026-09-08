@@ -98,7 +98,7 @@ public class ForemanGameTests {
         ProductionGoal decoded = ProductionGoal.STREAM_CODEC.decode(buf);
 
         if (!decoded.equals(goal)) {
-            helper.fail("STREAM_CODEC round-trip does not match original ProductionGoal -- a field was likely "
+            helper.fail("STREAM_CODEC round-trip does not match original ProductionGoal. A field was likely "
                     + "added to CODEC without updating STREAM_CODEC (or vice versa). Original: " + goal + ", decoded: "
                     + decoded);
             return;
@@ -146,9 +146,7 @@ public class ForemanGameTests {
         helper.succeed();
     }
 
-    /** Verifies {@code ClipboardUiState.STREAM_CODEC} round-trips every field directly -- until
-     *  now this only got incidental coverage via testProductionGoalStreamCodecParity's sample
-     *  goal, not a dedicated test of its own, unlike every other STREAM_CODEC in this codebase. */
+    /** Verifies that {@code ClipboardUiState.STREAM_CODEC} round-trips every field directly. */
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testClipboardUiStateStreamCodecParity(GameTestHelper helper) {
         var level = helper.getLevel();
@@ -164,7 +162,7 @@ public class ForemanGameTests {
         var decoded = com.mervyn.miforeman.goal.ClipboardUiState.STREAM_CODEC.decode(buf);
 
         if (!decoded.equals(state)) {
-            helper.fail("STREAM_CODEC round-trip does not match original ClipboardUiState -- a field was "
+            helper.fail("STREAM_CODEC round-trip does not match original ClipboardUiState. A field was "
                     + "likely added to the record without updating STREAM_CODEC (or vice versa). Original: "
                     + state + ", decoded: " + decoded);
             return;
@@ -352,11 +350,10 @@ public class ForemanGameTests {
             return;
         }
 
-        // Test 4: Drain the input to zero -- genuinely starving (RED, no candidates; MI resets a
-        // drained ConfigurableItemStack's configured type back to blank, so there's no live input
-        // resource to inspect). Simulate "this machine was last seen running the ORANGE recipe
-        // from Test 2" (as MachineTracker.lastKnownRecipeId would after a real craft) and confirm
-        // that -- combined with that recipe's input resource being reported cyclic -- reads DEAD_LOOP.
+        // Test 4: Drain input to zero. Starving machines have RED status and no candidates.
+        // Modern Industrialization resets a drained ConfigurableItemStack's configured type
+        // back to blank, so there is no live input resource to inspect. Simulate a machine last seen
+        // running the ORANGE recipe from Test 2, and verify that a cyclic input resource produces DEAD_LOOP.
         inputSlot.setAmount(0);
         ResourceLocation lastKnownRecipeId = statusSaturating.matchedRecipeId();
         if (lastKnownRecipeId == null) {
@@ -388,9 +385,8 @@ public class ForemanGameTests {
             return;
         }
 
-        // And with no lastKnownRecipeId at all (never seen running), it's plain STARVED even
-        // though the cyclic set would otherwise match -- a machine that's never run isn't
-        // "dead-looping" yet.
+        // With no lastKnownRecipeId at all (never seen running), status is STARVED even
+        // if the cyclic set matches. Machines that have never run are not dead-looping yet.
         var statusNeverRan = ServerMonitoringManager.getMachinePassiveStatusDetailed(crafter, level,
                 Set.of(ironIngotId), null);
         if (statusNeverRan.reason() != com.mervyn.miforeman.goal.FailureReason.STARVED) {
@@ -637,7 +633,7 @@ public class ForemanGameTests {
             return;
         }
 
-        // MACHINE-type node ids (recipe ids) are never part of the result -- only resource ids.
+        // MACHINE node ids (recipe ids) are never returned, only resource ids.
         for (ResourceLocation id : upstream) {
             var node = graph.nodes().get(id);
             if (node != null && node.getType() == com.mervyn.miforeman.goal.NodeType.MACHINE) {
@@ -665,10 +661,9 @@ public class ForemanGameTests {
     }
 
     /** Verifies {@code RecipeGraphTraverser.collectByproductRates}, which powers the DetailCard
-     *  "Byproducts" panel: every returned rate must be positive, no returned resourceId may already
-     *  be tracked as a demanded resource elsewhere in the graph (including the target itself --
-     *  the plan already accounts for those, so they aren't "excess" production), and a
-     *  sufficiently complex real recipe chain must produce at least one genuine byproduct. */
+     *  byproducts panel. Every returned rate must be positive, no returned resource ID may already
+     *  be tracked as a demanded resource elsewhere in the graph, and complex recipe chains must
+     *  produce at least one genuine byproduct. */
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testCollectByproductRates(GameTestHelper helper) {
         var level = helper.getLevel();
@@ -688,8 +683,7 @@ public class ForemanGameTests {
             }
             if (graph.nodes().containsKey(id)) {
                 helper.fail("Expected collectByproductRates to exclude " + id
-                        + " -- it's already tracked as a demanded resource elsewhere in the graph, "
-                        + "so this machine's incidental production of it isn't excess.");
+                        + ": it is already tracked as a demanded resource elsewhere in the graph.");
                 return;
             }
         }
@@ -851,12 +845,9 @@ public class ForemanGameTests {
     }
 
     /**
-     * Verifies {@code FactoryPlan.totalPowerDemandEu()} stays consistent with the
-     * sum of its own
-     * machine requirements, and that a machine shared by two demand paths
-     * accumulates EU from both
-     * (not just the larger/last one written) -- see the additive accumulation in
-     * {@code RecipeGraphTraverser}'s {@code MachineStats.totalEu}.
+     * Verifies {@code FactoryPlan.totalPowerDemandEu()} stays consistent with the sum
+     * of its machine requirements, and that a machine shared across demand paths accumulates
+     * EU from both paths. See additive accumulation in {@code MachineStats.totalEu}.
      */
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testPowerDemandMatchesRequirements(GameTestHelper helper) {
@@ -882,10 +873,8 @@ public class ForemanGameTests {
         }
 
         // Every machine requirement's totalEuPerTick must be a positive multiple of its
-        // own
-        // presence in the plan -- NOT necessarily ceil(count * baseEuPerTick), since a
-        // single
-        // machineId can be fed by multiple recipes with different EU costs
+        // presence in the plan, rather than strictly ceil(count * baseEuPerTick), because a single
+        // machine ID can be used by multiple recipes with different EU costs.
         // (baseEuPerTick here
         // reflects only the last-recorded recipe for that machine type, while
         // count/totalEuPerTick
@@ -971,14 +960,9 @@ public class ForemanGameTests {
 
         ProductionGoal goal = new ProductionGoal("cache_test", ProductionGoal.TargetType.ITEM, targetId, 1.0);
 
-        // computeRecipeGraph() always returns cached.copy()/result.copy() -- see its own doc
-        // comment -- specifically so callers can never accidentally mutate a shared cache entry
-        // through a node's public setters. That means two calls NEVER return the same reference,
-        // cache hit or not, so identity ("==") can't observe cache mechanics from outside. What's
-        // left to verify from here is content: a cache hit must still return the *same*
-        // structural result as the original compute, an invalidated/re-keyed entry must still be
-        // internally consistent, and genuinely different queries must produce genuinely different
-        // content.
+        // computeRecipeGraph() returns a copy so callers cannot mutate the shared cache entry
+        // through public node setters. Two calls never return the same reference, so tests verify
+        // structural equivalence rather than identity.
         var first = RecipeGraphTraverser.computeRecipeGraph(level, goal);
         var second = RecipeGraphTraverser.computeRecipeGraph(level, goal);
         if (!sameGraphContent(first, second)) {
@@ -1107,7 +1091,7 @@ public class ForemanGameTests {
 
         if (!RecipeGraphTraverser.peekCyclicResourceIds(goal).isEmpty()) {
             helper.fail("Expected peekCyclicResourceIds() to return empty before the graph has ever been "
-                    + "computed for this goal -- did it force a compute instead of only reading the cache?");
+                    + "computed for this goal. It should only read the cache.");
             return;
         }
 
@@ -1224,9 +1208,8 @@ public class ForemanGameTests {
     }
 
     /** Verifies {@code ServerMonitoringManager.unionCyclicResourceIds}: a resource shared by two
-     *  goals linking the same machine is treated as cyclic if EITHER goal's graph says so,
-     *  regardless of list order -- fixes the old "last goal wins" nondeterminism in
-     *  {@code onServerTick}'s {@code goalByPos}. */
+     *  goals linking the same machine is treated as cyclic if either goal's graph says so,
+     *  regardless of list order. */
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testUnionCyclicResourceIdsAcrossGoals(GameTestHelper helper) {
         var level = helper.getLevel();
@@ -1249,8 +1232,7 @@ public class ForemanGameTests {
             return;
         }
 
-        // Union in either order must include the cyclic resource -- the whole point of unioning
-        // instead of picking one goal's set is that order can't hide it.
+        // Union in either order must include the cyclic resource. Unioning avoids list order dependencies.
         var unionForward = ServerMonitoringManager.unionCyclicResourceIds(List.of(nonCyclicGoal, cyclicGoal));
         var unionBackward = ServerMonitoringManager.unionCyclicResourceIds(List.of(cyclicGoal, nonCyclicGoal));
         if (!unionForward.contains(cyclicResource) || !unionBackward.contains(cyclicResource)) {
@@ -1270,10 +1252,8 @@ public class ForemanGameTests {
     }
 
     /** Verifies {@code ServerMonitoringManager.resolveDisplayRecipeId} falls back through
-     *  lastRecipeId -> saturatedRecipeId -> lastKnownRecipeId, so a RED (STARVED/DEAD_LOOP)
-     *  machine -- which never sets the first two -- still reports a recipe id when it has run
-     *  before, fixing the bug where RED machines couldn't be colored on the recipe graph or
-     *  matched by "search by end product" (both keyed on this field). */
+     *  lastRecipeId -> saturatedRecipeId -> lastKnownRecipeId. A RED machine that has run before
+     *  still reports a recipe ID, enabling graph coloration and search matching. */
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testResolveDisplayRecipeIdFallsBackToLastKnown(GameTestHelper helper) {
         var tracker = new ServerMonitoringManager.MachineTracker(new BlockPos(0, 0, 0));
@@ -1315,11 +1295,7 @@ public class ForemanGameTests {
     }
 
     /** Verifies {@code ServerMonitoringManager.recordActiveRecipe} never leaves
-     *  {@code lastKnownRecipeId} stale: it always reflects the LATEST recipe a machine actually
-     *  ran, not an earlier, different one. This is the fact that made the reviewed "stale
-     *  lastKnownRecipeId drives incorrect DEAD_LOOP classification" finding a non-issue once
-     *  traced -- the real gap was cross-goal context (fixed by {@code unionCyclicResourceIds}),
-     *  not this field going stale on its own. */
+     *  {@code lastKnownRecipeId} stale. It always reflects the latest recipe a machine ran. */
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testRecordActiveRecipeNeverGoesStale(GameTestHelper helper) {
         var tracker = new ServerMonitoringManager.MachineTracker(new BlockPos(0, 0, 0));
@@ -1334,8 +1310,8 @@ public class ForemanGameTests {
         }
 
         // ...then genuinely switches to and successfully runs a different, unrelated recipe.
-        // lastKnownRecipeId must track THIS recipe now, not the earlier cyclic one -- otherwise
-        // a later starve on a totally unrelated resource would be misread as a dead-loop.
+        // lastKnownRecipeId must track this recipe now, not the earlier cyclic one. Otherwise
+        // a later starve on an unrelated resource could be misclassified as a dead-loop.
         ServerMonitoringManager.recordActiveRecipe(tracker, laterNonCyclicRecipe);
         if (!laterNonCyclicRecipe.equals(tracker.lastKnownRecipeId)) {
             helper.fail("Expected lastKnownRecipeId to update to the latest active recipe " + laterNonCyclicRecipe
@@ -1392,7 +1368,7 @@ public class ForemanGameTests {
         var decoded = com.mervyn.miforeman.network.LiveMonitoringPayload.STREAM_CODEC.decode(buf);
 
         if (!decoded.equals(payload)) {
-            helper.fail("STREAM_CODEC round-trip does not match original LiveMonitoringPayload -- a field was "
+            helper.fail("STREAM_CODEC round-trip does not match original LiveMonitoringPayload. A field was "
                     + "likely added to MachineStatusData without updating STREAM_CODEC (or vice versa). Original: "
                     + payload + ", decoded: " + decoded);
             return;
@@ -1401,12 +1377,10 @@ public class ForemanGameTests {
         helper.succeed();
     }
 
-    /** Verifies {@code ServerMonitoringManager.computeDisposalRatio} uses {@code getCapacity()}
-     *  (which clamps to the resource's own max stack size), not {@code getAdjustedCapacity()}
-     *  (which ignores it). A non-stackable output (max stack size 1) holding a single item is
-     *  genuinely full -- if this used the raw adjusted capacity (64 by default) instead, it
-     *  would wrongly compute the slot as ~1/64 full and never flag a real clog as disposal-
-     *  throttled. See maybe.md's "disposal ratio" note and CLAUDE.md's MI-internals gotchas. */
+    /** Verifies {@code ServerMonitoringManager.computeDisposalRatio} uses {@code getCapacity()},
+     *  clamping to the resource's max stack size, rather than {@code getAdjustedCapacity()}.
+     *  A non-stackable output holding a single item is full. Using raw adjusted capacity
+     *  would compute ~1/64 and fail to flag disposal throttling. */
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testComputeDisposalRatioUsesRealCapacityNotAdjustedCapacity(GameTestHelper helper) {
         var outputStack = aztech.modern_industrialization.inventory.ConfigurableItemStack.standardOutputSlot();
@@ -1747,12 +1721,9 @@ public class ForemanGameTests {
      * synthesizes a {@code MachineRecipe} for every vanilla
      * {@code RecipeType.SMELTING} recipe via
      * {@code RecipeConversions.ofSmelting} on top of whatever's already in the
-     * RecipeManager. So
-     * enabling this config changes candidate recipe sets, and therefore default
-     * ambiguous recipe
-     * selection, even with zero addons installed -- measured directly:
-     * quantum_upgrade's graph goes
-     * from 97/158 nodes/edges to 89/149 with the flag on. Expected, not a bug.
+     * RecipeManager. Enabling this config changes candidate recipe sets, and therefore default
+     * ambiguous recipe selection, even with zero addons installed. For example,
+     * quantum_upgrade's graph changes from 97/158 nodes/edges to 89/149 with the flag on.
      */
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testProxiedRecipeTypesConfigDefaultsOffAndTogglesCleanly(GameTestHelper helper) {
@@ -1785,10 +1756,8 @@ public class ForemanGameTests {
             RecipeGraphTraverser.clearGraphCache();
         }
 
-        // Confirm the flag going back off restores exactly today's pinned snapshot --
-        // proves the
-        // toggle has no lingering side effect on the shared static GRAPH_CACHE or
-        // recipe indexing.
+        // Confirm the flag going back off restores the pinned snapshot, ensuring the
+        // toggle has no lingering side effects on GRAPH_CACHE or recipe indexing.
         var graphRestored = RecipeGraphTraverser.computeRecipeGraph(level, goal);
         if (graphRestored.nodes().size() != 588 || graphRestored.edges().size() != 864) {
             helper.fail("Expected graph to return to the pinned 588 nodes/864 edges after disabling "
@@ -2178,7 +2147,7 @@ public class ForemanGameTests {
             helper.fail("Expected nextMatch() to advance to index 1");
             return;
         }
-        String wrappedBack = state.prevMatch();
+        state.prevMatch();
         String wrappedFurtherBack = state.prevMatch();
         if (state.getCurrentIndex() != count - 1
                 || !java.util.Objects.equals(wrappedFurtherBack, state.getMatches().get(count - 1))) {
@@ -2365,6 +2334,313 @@ public class ForemanGameTests {
 
         if (expandedPlan.machines().isEmpty()) {
             helper.fail("Expected plan to contain required machines for styrene_butadiene_rubber synthesis");
+            return;
+        }
+
+        helper.succeed();
+    }
+
+    /**
+     * Verifies backwards compatibility when reading a {@code GraphLayoutState} saved
+     * before {@link com.mervyn.miforeman.goal.HistoryEntry}. Bare {@code NodeMoveAction}
+     * items decode into single-move batches and round-trip in the new list format.
+     */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testGraphLayoutStateHistoryMigration(GameTestHelper helper) {
+        var nodeA = ResourceLocation.parse("minecraft:iron_ingot");
+        var nodeB = ResourceLocation.parse("minecraft:copper_ingot");
+
+        com.google.gson.JsonObject fromA = new com.google.gson.JsonObject();
+        fromA.addProperty("x", 0);
+        fromA.addProperty("y", 0);
+        com.google.gson.JsonObject toA = new com.google.gson.JsonObject();
+        toA.addProperty("x", 10);
+        toA.addProperty("y", 20);
+        com.google.gson.JsonObject moveA = new com.google.gson.JsonObject();
+        moveA.addProperty("node", nodeA.toString());
+        moveA.add("from", fromA);
+        moveA.add("to", toA);
+
+        com.google.gson.JsonObject fromB = new com.google.gson.JsonObject();
+        fromB.addProperty("x", 5);
+        fromB.addProperty("y", 5);
+        com.google.gson.JsonObject toB = new com.google.gson.JsonObject();
+        toB.addProperty("x", 15);
+        toB.addProperty("y", 25);
+        com.google.gson.JsonObject moveB = new com.google.gson.JsonObject();
+        moveB.addProperty("node", nodeB.toString());
+        moveB.add("from", fromB);
+        moveB.add("to", toB);
+
+        // Legacy format: undo_stack containing bare NodeMoveAction objects.
+        com.google.gson.JsonArray oldUndoStack = new com.google.gson.JsonArray();
+        oldUndoStack.add(moveA);
+        oldUndoStack.add(moveB);
+
+        com.google.gson.JsonObject nodePositions = new com.google.gson.JsonObject();
+        nodePositions.add(nodeA.toString(), toA);
+        nodePositions.add(nodeB.toString(), toB);
+
+        com.google.gson.JsonObject legacyState = new com.google.gson.JsonObject();
+        legacyState.add("node_positions", nodePositions);
+        legacyState.add("undo_stack", oldUndoStack);
+        legacyState.add("redo_stack", new com.google.gson.JsonArray());
+
+        var result = com.mervyn.miforeman.goal.GraphLayoutState.CODEC.parse(com.mojang.serialization.JsonOps.INSTANCE, legacyState);
+        if (result.isError()) {
+            helper.fail("GraphLayoutState.CODEC failed to parse a pre-batch-undo save: " + result.error().get().message());
+            return;
+        }
+        var decoded = result.result().get();
+
+        if (decoded.undoStack().size() != 2) {
+            helper.fail("Expected 2 undo history entries (one per legacy move), got: " + decoded.undoStack().size());
+            return;
+        }
+        if (decoded.undoStack().get(0).moves().size() != 1 || decoded.undoStack().get(1).moves().size() != 1) {
+            helper.fail("Expected each migrated legacy move to become its own singleton batch, got: " + decoded.undoStack());
+            return;
+        }
+        if (!decoded.undoStack().get(0).moves().get(0).nodeId().equals(nodeA)
+                || !decoded.undoStack().get(1).moves().get(0).nodeId().equals(nodeB)) {
+            helper.fail("Migrated undo history lost node identity or ordering: " + decoded.undoStack());
+            return;
+        }
+
+        // The migration codec must also round-trip the NEW shape unchanged (encode always emits
+        // the list-wrapped form; decoding its own output back must reproduce the same state).
+        var reencoded = com.mervyn.miforeman.goal.GraphLayoutState.CODEC.encodeStart(com.mojang.serialization.JsonOps.INSTANCE, decoded);
+        if (reencoded.isError()) {
+            helper.fail("GraphLayoutState.CODEC failed to re-encode the migrated state: " + reencoded.error().get().message());
+            return;
+        }
+        var roundTrip = com.mervyn.miforeman.goal.GraphLayoutState.CODEC.parse(com.mojang.serialization.JsonOps.INSTANCE, reencoded.result().get());
+        if (roundTrip.isError() || !roundTrip.result().get().equals(decoded)) {
+            helper.fail("GraphLayoutState did not round-trip after migration re-encode.");
+            return;
+        }
+
+        helper.succeed();
+    }
+
+    /** Verifies {@code GraphLayoutState.STREAM_CODEC} round-trips groups and batched history. */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testGraphLayoutStateStreamCodecParity(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var nodeA = ResourceLocation.parse("minecraft:iron_ingot");
+        var nodeB = ResourceLocation.parse("minecraft:copper_ingot");
+        var nodeC = ResourceLocation.parse("minecraft:gold_ingot");
+
+        var group = new com.mervyn.miforeman.goal.NodeGroup(java.util.UUID.randomUUID(), Set.of(nodeA, nodeB));
+        var batch = List.of(
+                new com.mervyn.miforeman.goal.NodeMoveAction(nodeA,
+                        new com.mervyn.miforeman.goal.NodePosition(0, 0), new com.mervyn.miforeman.goal.NodePosition(10, 10)),
+                new com.mervyn.miforeman.goal.NodeMoveAction(nodeB,
+                        new com.mervyn.miforeman.goal.NodePosition(5, 5), new com.mervyn.miforeman.goal.NodePosition(15, 15)));
+
+        var state = new com.mervyn.miforeman.goal.GraphLayoutState(
+                Map.of(nodeA, new com.mervyn.miforeman.goal.NodePosition(10, 10),
+                        nodeB, new com.mervyn.miforeman.goal.NodePosition(15, 15)),
+                List.of(new com.mervyn.miforeman.goal.HistoryEntry(batch)),
+                List.of(),
+                Set.of(nodeC),
+                List.of(group));
+
+        @SuppressWarnings("deprecation")
+        var buf = new net.minecraft.network.RegistryFriendlyByteBuf(io.netty.buffer.Unpooled.buffer(),
+                level.registryAccess());
+        com.mervyn.miforeman.goal.GraphLayoutState.STREAM_CODEC.encode(buf, state);
+        var decoded = com.mervyn.miforeman.goal.GraphLayoutState.STREAM_CODEC.decode(buf);
+
+        if (!decoded.equals(state)) {
+            helper.fail("STREAM_CODEC round-trip does not match original GraphLayoutState. Original: "
+                    + state + ", decoded: " + decoded);
+            return;
+        }
+
+        helper.succeed();
+    }
+
+    /**
+     * Verifies that {@code GraphLayoutEngine.arrange} is deterministic and preserves
+     * internal member offsets when moving locked groups as a block.
+     */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testGraphLayoutEngineDeterministicAndRigidGroupTranslation(GameTestHelper helper) {
+        ResourceLocation targetId = ResourceLocation.parse("miforeman_test:target");
+        ResourceLocation machineId = ResourceLocation.parse("miforeman_test:machine");
+        ResourceLocation rawAId = ResourceLocation.parse("miforeman_test:raw_a");
+        ResourceLocation rawBId = ResourceLocation.parse("miforeman_test:raw_b");
+
+        var target = new com.mervyn.miforeman.goal.RecipeGraphNode(targetId, com.mervyn.miforeman.goal.NodeType.TARGET,
+                null, null, 1.0, 0.0, List.of(), null, null, 0);
+        var machine = new com.mervyn.miforeman.goal.RecipeGraphNode(machineId, com.mervyn.miforeman.goal.NodeType.MACHINE,
+                null, null, 1.0, 1.0, List.of(), null, null, 1);
+        var rawA = new com.mervyn.miforeman.goal.RecipeGraphNode(rawAId, com.mervyn.miforeman.goal.NodeType.RAW,
+                null, null, 1.0, 0.0, List.of(), null, null, 2);
+        var rawB = new com.mervyn.miforeman.goal.RecipeGraphNode(rawBId, com.mervyn.miforeman.goal.NodeType.RAW,
+                null, null, 1.0, 0.0, List.of(), null, null, 2);
+
+        var edgeMachineToTarget = new com.mervyn.miforeman.goal.GraphEdge(machineId, targetId, 1.0);
+        var edgeRawAToMachine = new com.mervyn.miforeman.goal.GraphEdge(rawAId, machineId, 1.0);
+        var edgeRawBToMachine = new com.mervyn.miforeman.goal.GraphEdge(rawBId, machineId, 1.0);
+        target.putInput(edgeMachineToTarget);
+        machine.putOutput(edgeMachineToTarget);
+        machine.putInput(edgeRawAToMachine);
+        machine.putInput(edgeRawBToMachine);
+        rawA.putOutput(edgeRawAToMachine);
+        rawB.putOutput(edgeRawBToMachine);
+
+        Map<ResourceLocation, com.mervyn.miforeman.goal.RecipeGraphNode> nodes = Map.of(
+                targetId, target, machineId, machine, rawAId, rawA, rawBId, rawB);
+        var graph = new com.mervyn.miforeman.goal.RecipeGraph(targetId, 1.0, nodes,
+                List.of(edgeMachineToTarget, edgeRawAToMachine, edgeRawBToMachine), Set.of());
+
+        var group = new com.mervyn.miforeman.goal.NodeGroup(java.util.UUID.randomUUID(), Set.of(rawAId, rawBId));
+        Map<ResourceLocation, com.mervyn.miforeman.goal.NodePosition> currentPositions = Map.of(
+                targetId, new com.mervyn.miforeman.goal.NodePosition(0, 0),
+                machineId, new com.mervyn.miforeman.goal.NodePosition(140, 0),
+                rawAId, new com.mervyn.miforeman.goal.NodePosition(280, 0),
+                rawBId, new com.mervyn.miforeman.goal.NodePosition(280, 60));
+
+        var result1 = com.mervyn.miforeman.goal.GraphLayoutEngine.arrange(graph, List.of(group), currentPositions, false, 96, 26, 44);
+        var result2 = com.mervyn.miforeman.goal.GraphLayoutEngine.arrange(graph, List.of(group), currentPositions, false, 96, 26, 44);
+
+        if (!result1.equals(result2)) {
+            helper.fail("GraphLayoutEngine.arrange is not deterministic across identical calls. First: "
+                    + result1 + ", second: " + result2);
+            return;
+        }
+
+        var rawAAfter = result1.get(rawAId);
+        var rawBAfter = result1.get(rawBId);
+        if (rawAAfter == null || rawBAfter == null) {
+            helper.fail("Locked group members are missing from the arrange result: " + result1);
+            return;
+        }
+        int originalDx = currentPositions.get(rawBId).x() - currentPositions.get(rawAId).x();
+        int originalDy = currentPositions.get(rawBId).y() - currentPositions.get(rawAId).y();
+        int newDx = rawBAfter.x() - rawAAfter.x();
+        int newDy = rawBAfter.y() - rawAAfter.y();
+        if (originalDx != newDx || originalDy != newDy) {
+            helper.fail("A frozen locked group's members should keep their relative offset after auto-arrange. "
+                    + "Original offset: (" + originalDx + "," + originalDy + "), after: (" + newDx + "," + newDy + ")");
+            return;
+        }
+
+        helper.succeed();
+    }
+
+    /**
+     * Verifies that {@code GraphLayoutEngine.arrange} with {@code rearrangeInsideGroups = true}
+     * places internal members into columns by depth without coordinate drift on repeated calls.
+     */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testGraphLayoutEngineRearrangeInsideGroups(GameTestHelper helper) {
+        ResourceLocation targetId = ResourceLocation.parse("miforeman_test:target");
+        ResourceLocation machineAId = ResourceLocation.parse("miforeman_test:machine_a");
+        ResourceLocation machineBId = ResourceLocation.parse("miforeman_test:machine_b");
+        ResourceLocation rawCId = ResourceLocation.parse("miforeman_test:raw_c");
+
+        var target = new com.mervyn.miforeman.goal.RecipeGraphNode(targetId, com.mervyn.miforeman.goal.NodeType.TARGET,
+                null, null, 1.0, 0.0, List.of(), null, null, 0);
+        var machineA = new com.mervyn.miforeman.goal.RecipeGraphNode(machineAId, com.mervyn.miforeman.goal.NodeType.MACHINE,
+                null, null, 1.0, 1.0, List.of(), null, null, 1);
+        var machineB = new com.mervyn.miforeman.goal.RecipeGraphNode(machineBId, com.mervyn.miforeman.goal.NodeType.MACHINE,
+                null, null, 1.0, 1.0, List.of(), null, null, 2);
+        var rawC = new com.mervyn.miforeman.goal.RecipeGraphNode(rawCId, com.mervyn.miforeman.goal.NodeType.RAW,
+                null, null, 1.0, 0.0, List.of(), null, null, 3);
+
+        var edgeAToTarget = new com.mervyn.miforeman.goal.GraphEdge(machineAId, targetId, 1.0);
+        var edgeBToA = new com.mervyn.miforeman.goal.GraphEdge(machineBId, machineAId, 1.0);
+        var edgeCToB = new com.mervyn.miforeman.goal.GraphEdge(rawCId, machineBId, 1.0);
+        target.putInput(edgeAToTarget);
+        machineA.putOutput(edgeAToTarget);
+        machineA.putInput(edgeBToA);
+        machineB.putOutput(edgeBToA);
+        machineB.putInput(edgeCToB);
+        rawC.putOutput(edgeCToB);
+
+        Map<ResourceLocation, com.mervyn.miforeman.goal.RecipeGraphNode> nodes = Map.of(
+                targetId, target, machineAId, machineA, machineBId, machineB, rawCId, rawC);
+        var graph = new com.mervyn.miforeman.goal.RecipeGraph(targetId, 1.0, nodes,
+                List.of(edgeAToTarget, edgeBToA, edgeCToB), Set.of());
+
+        // Group machineB (depth 2) and rawC (depth 3) together
+        var group = new com.mervyn.miforeman.goal.NodeGroup(java.util.UUID.randomUUID(), Set.of(machineBId, rawCId));
+        Map<ResourceLocation, com.mervyn.miforeman.goal.NodePosition> currentPositions = Map.of(
+                targetId, new com.mervyn.miforeman.goal.NodePosition(0, 0),
+                machineAId, new com.mervyn.miforeman.goal.NodePosition(140, 0),
+                machineBId, new com.mervyn.miforeman.goal.NodePosition(280, 0),
+                rawCId, new com.mervyn.miforeman.goal.NodePosition(280, 50));
+
+        int nodeW = 96, nodeH = 26, colGap = 44;
+        var result1 = com.mervyn.miforeman.goal.GraphLayoutEngine.arrange(graph, List.of(group), currentPositions, true, nodeW, nodeH, colGap);
+
+        var bAfter = result1.get(machineBId);
+        var cAfter = result1.get(rawCId);
+        if (bAfter == null || cAfter == null) {
+            helper.fail("Group members missing from arrange result: " + result1);
+            return;
+        }
+
+        // Inside the group, machineB (rel depth 0) and rawC (rel depth 1) should be in different columns
+        int internalDx = cAfter.x() - bAfter.x();
+        int expectedColSpacing = nodeW + colGap; // 140
+        if (internalDx != expectedColSpacing) {
+            helper.fail("Group interior member column layout failed: expected dx=" + expectedColSpacing
+                    + " but got dx=" + internalDx + " (b=" + bAfter + ", c=" + cAfter + ")");
+            return;
+        }
+
+        // Running arrange again with the new positions must produce the EXACT same positions (no drift)
+        var result2 = com.mervyn.miforeman.goal.GraphLayoutEngine.arrange(graph, List.of(group), result1, true, nodeW, nodeH, colGap);
+        if (!result1.equals(result2)) {
+            helper.fail("GraphLayoutEngine.arrange with rearrangeInsideGroups is not idempotent across successive calls. First: "
+                    + result1 + ", second: " + result2);
+            return;
+        }
+
+        helper.succeed();
+    }
+
+    /**
+     * Verifies that removing a node from a group preserves remaining members, and dissolves
+     * the group when fewer than two members remain.
+     */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testGraphLayoutStateRemoveFromGroup(GameTestHelper helper) {
+        var nodeA = ResourceLocation.parse("minecraft:iron_ingot");
+        var nodeB = ResourceLocation.parse("minecraft:copper_ingot");
+        var nodeC = ResourceLocation.parse("minecraft:gold_ingot");
+
+        var group = new com.mervyn.miforeman.goal.NodeGroup(java.util.UUID.randomUUID(), Set.of(nodeA, nodeB, nodeC));
+        var state = new com.mervyn.miforeman.goal.GraphLayoutState(
+                Map.of(), List.of(), List.of(), Set.of(), List.of(group));
+
+        // Removing nodeA leaves {nodeB, nodeC}
+        var state2 = state.withNodeRemovedFromGroup(nodeA);
+        if (state2.groups().size() != 1) {
+            helper.fail("Expected 1 group remaining after removing 1 member from a 3-member group, got: " + state2.groups());
+            return;
+        }
+        var remainingGroup = state2.groups().get(0);
+        if (!remainingGroup.memberIds().equals(Set.of(nodeB, nodeC))) {
+            helper.fail("Expected remaining group members to be {nodeB, nodeC}, got: " + remainingGroup.memberIds());
+            return;
+        }
+
+        // Removing nodeB leaves only {nodeC}, which drops below 2 members -> group dissolves
+        var state3 = state2.withNodeRemovedFromGroup(nodeB);
+        if (!state3.groups().isEmpty()) {
+            helper.fail("Expected group to dissolve when dropping below 2 members, but got: " + state3.groups());
+            return;
+        }
+
+        // Removing an un-grouped node is a no-op
+        var state4 = state3.withNodeRemovedFromGroup(nodeC);
+        if (state4 != state3) {
+            helper.fail("Removing un-grouped node should return identical state instance");
             return;
         }
 
