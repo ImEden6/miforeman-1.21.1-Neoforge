@@ -56,16 +56,16 @@ public class MIForeman {
 
         // Register our mod's ModConfigSpec so that FML can create and load the config file for us.
         // Client config is registered from MIForemanClient instead (dist=CLIENT-gated), per
-        // CONTRIBUTING.md's documented config-location convention -- registering it here would
-        // make a dedicated server needlessly create a meaningless client config file.
+        // CONTRIBUTING.md's documented config-location convention. Registering it here would
+        // make a dedicated server needlessly create an empty client config file.
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
 
         // RecipeGraphTraverser's GRAPH_CACHE and cachedIndex are keyed on (target, rate,
-        // selections) and (RecipeManager, dimension) respectively -- neither key touches this
-        // config's value. So toggling includeProxiedRecipeTypes mid-session did nothing, until a
+        // selections) and (RecipeManager, dimension) respectively. Neither key touches this
+        // config value. Toggling includeProxiedRecipeTypes mid-session did nothing until a
         // RecipeManager reload (leaving and rejoining the world) happened to invalidate
         // cachedIndex by coincidence. Clear both explicitly on every reload of this spec (in-game
-        // config screen Done, or a toml edit) -- the tests already do this by hand around every
+        // config screen Done, or a toml edit). The tests already do this around every
         // Config.INCLUDE_PROXIED_RECIPE_TYPES.set() call.
         modEventBus.addListener((ModConfigEvent.Reloading event) -> {
             if (event.getConfig().getSpec() == Config.SPEC) {

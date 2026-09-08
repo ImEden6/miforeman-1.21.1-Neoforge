@@ -19,7 +19,7 @@ import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 public class MIForemanClient {
     public MIForemanClient(ModContainer container) {
         // Register our client-only ModConfigSpec here (not in MIForeman.java) so a dedicated
-        // server never creates this file -- see CONTRIBUTING.md's config-location convention.
+        // server never creates this file. See CONTRIBUTING.md for the config location convention.
         container.registerConfig(ModConfig.Type.CLIENT, ClientConfig.SPEC);
 
         // Allows NeoForge to create a config screen for this mod's configs.

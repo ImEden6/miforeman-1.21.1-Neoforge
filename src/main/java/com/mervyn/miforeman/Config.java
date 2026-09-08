@@ -23,17 +23,12 @@ public class Config {
 
     public static final ModConfigSpec.BooleanValue INCLUDE_PROXIED_RECIPE_TYPES = BUILDER
             .comment("Also index recipes from ProxyableMachineRecipeType, which builds its recipe list at "
-                    + "runtime instead of registering through the vanilla RecipeManager -- invisible to "
-                    + "plans/graphs otherwise. This isn't just an addon thing: MI's OWN FurnaceMachineRecipeType, "
-                    + "CuttingMachineRecipeType, and CentrifugeMachineRecipeType already work this way, and "
-                    + "FurnaceMachineRecipeType additionally synthesizes a MachineRecipe for every vanilla "
-                    + "smelting recipe on top of whatever's already registered. So enabling this changes "
-                    + "candidate recipe sets -- and therefore default ambiguous-recipe selection -- across plans, "
-                    + "even with zero addons installed. Off by default so existing plans/graphs are unaffected. "
-                    + "Applies equally to server-side plan computation (commands, packet handlers) and "
-                    + "ClipboardScreen's client-side live preview -- RecipeGraphTraverser picks "
-                    + "getRecipesWithCache(ServerLevel) or its plain-Level sibling getRecipesWithoutCache(Level) "
-                    + "depending on which side is computing.")
+                    + "runtime instead of registering through vanilla RecipeManager. "
+                    + "FurnaceMachineRecipeType, CuttingMachineRecipeType, and CentrifugeMachineRecipeType "
+                    + "work this way in Modern Industrialization, synthesizing recipes on top of registered ones. "
+                    + "Enabling this changes candidate recipe sets and default ambiguous-recipe selections across plans. "
+                    + "Off by default so existing plans and graphs remain unaffected. "
+                    + "Applies to both server-side plan computation and client-side clipboard preview.")
             .define("includeProxiedRecipeTypes", false);
 
     public static final ModConfigSpec SPEC = BUILDER.build();
