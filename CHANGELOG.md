@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-09-08
+
+### Added
+- An Auto-Arrange button that tidies up the recipe graph layout for you.
+- Select multiple nodes (ctrl/shift-click, or drag a selection box) and lock them together as
+  a group, so Auto-Arrange treats the group as one block and leaves your hand-arranged cluster
+  alone instead of scattering it.
+- A toggle to let Auto-Arrange also tidy up the inside of a locked group, instead of always
+  leaving it untouched.
+- Buttons to pull a single node back out of a group, or dissolve a group entirely.
+- Auto-Arrange moving dozens of nodes at once still undoes in a single step.
+
 ## [1.1.1] - 2026-09-05
 
 ### Fixed

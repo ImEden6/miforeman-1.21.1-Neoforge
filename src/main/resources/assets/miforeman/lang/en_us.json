@@ -24,7 +24,7 @@
   "miforeman.button.rearrange_inside_off": "Rearrange Inside: Off",
   "miforeman.button.group_selection": "Group Selection",
   "miforeman.button.dissolve_group": "Dissolve Group",
-  "miforeman.button.remove_from_group": "Remove from Group",
+  "miforeman.button.remove_from_group": "Leave Group",
   "miforeman.gui.group_label": "Group (%d)",
   "miforeman.button.next": "Next ->",
   "miforeman.button.edit": "Edit",
