@@ -14,8 +14,8 @@ import java.util.List;
 import java.util.Set;
 
 public class ScanPacketHandlers {
-    // 20 ticks (1s) -- a chunk-radius scan is heavier than a goal-update recompute and isn't
-    // something a real user needs faster than once/sec; bounds a modified client spamming rescans.
+    // 20 ticks (1s). Chunk-radius scans are heavier than goal recomputes, so once per second
+    // bounds client scan requests.
     private static final PacketRateLimiter LIMITER = new PacketRateLimiter(20);
 
     public static void handleRequest(final ScanRequestPayload payload, final IPayloadContext context) {
@@ -29,10 +29,10 @@ public class ScanPacketHandlers {
             }
             ProductionGoal goal = payload.goal();
 
-            // FactoryPlan.graph is deliberately excluded from ProductionGoal.STREAM_CODEC (see
-            // ProductionGoal.java) since it holds live MachineRecipe references that aren't
-            // network-safe -- goal.plan().graph() is always null once the goal has crossed the
-            // wire. Recompute it server-side instead, exactly like ClipboardScreen does client-side.
+            // FactoryPlan.graph is omitted from ProductionGoal.STREAM_CODEC (see
+            // ProductionGoal.java) because it holds live MachineRecipe references that are not
+            // network-safe. As a result, goal.plan().graph() is always null across the
+            // wire. Recompute it server-side instead, matching ClipboardScreen's client behavior.
             RecipeGraph graph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
 
             Set<ResourceLocation> recipeIndex = MachineScanner.buildRecipeIndex(graph);

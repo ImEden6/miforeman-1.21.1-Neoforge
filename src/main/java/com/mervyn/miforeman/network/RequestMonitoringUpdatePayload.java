@@ -9,8 +9,8 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.InteractionHand;
 import net.neoforged.neoforge.network.PacketDistributor;
 
-/** {@code hand} identifies which hand's clipboard to report on -- without it, the server
- *  can't tell which clipboard's linked machines to report when a player holds one in each hand. */
+/** {@code hand} identifies which hand's clipboard to report on. Without it, the server
+ *  cannot tell which clipboard's linked machines to report when a player holds one in each hand. */
 public record RequestMonitoringUpdatePayload(InteractionHand hand) implements CustomPacketPayload {
     public static final Type<RequestMonitoringUpdatePayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "request_monitoring_update"));
 

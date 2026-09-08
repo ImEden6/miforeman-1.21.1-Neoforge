@@ -10,8 +10,8 @@ import net.minecraft.world.InteractionHand;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.minecraft.resources.ResourceLocation;
 
-/** {@code hand} identifies which hand's clipboard this update is for -- without it, the
- *  server can't tell which clipboard to write to when a player holds one in each hand. */
+/** {@code hand} identifies which hand's clipboard this update is for. Without it, the
+ *  server cannot tell which clipboard to write to when a player holds one in each hand. */
 public record GoalUpdatePayload(ProductionGoal goal, InteractionHand hand) implements CustomPacketPayload {
     public static final Type<GoalUpdatePayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "goal_update"));
 

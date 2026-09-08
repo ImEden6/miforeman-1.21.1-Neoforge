@@ -23,12 +23,9 @@ import java.util.Optional;
 import java.util.Set;
 
 public class GoalUpdateHandler {
-    // 2 ticks (0.1s) -- these are single-click-driven from the GUI (see MonitoringState's
-    // applyLink/applyUnlink/applyReject callbacks), so a real user's fast back-to-back clicks (e.g.
-    // link then immediately unlink) must not get silently dropped. Kept short since computePlan's
-    // cost is now bounded by the graph's node count rather than its demand-path count (see
-    // RecipeGraphTraverser's memoized buildGraph), so this only needs to blunt a packet flood, not
-    // rate-limit ordinary use.
+    // 2 ticks (0.1s). Handlers run from GUI clicks (see MonitoringState's applyLink/applyUnlink/applyReject),
+    // so fast clicks must not drop silently. The short window prevents packet floods while allowing
+    // quick successive clicks.
     private static final PacketRateLimiter LIMITER = new PacketRateLimiter(2);
 
     public static void handle(final GoalUpdatePayload payload, final IPayloadContext context) {

@@ -16,8 +16,8 @@ import java.util.Optional;
 public record LiveMonitoringPayload(List<LiveMonitoringPayload.MachineStatusData> machines) implements CustomPacketPayload {
     public static final Type<LiveMonitoringPayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "live_monitoring"));
 
-    // 7 fields exceeds StreamCodec.composite's max arity (6), so this is coded by hand --
-    // same pattern as ClipboardUiState.STREAM_CODEC.
+    // 7 fields exceeds StreamCodec.composite's max arity (6), so this is hand-coded,
+    // matching the pattern in ClipboardUiState.STREAM_CODEC.
     public record MachineStatusData(GlobalPos pos, MachineStatus status, FailureReason reason, double actualRate,
                                      double disposalRatio, ResourceLocation machineId, Optional<ResourceLocation> recipeId) {
         public static final StreamCodec<RegistryFriendlyByteBuf, MachineStatusData> STREAM_CODEC =
