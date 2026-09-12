@@ -56,3 +56,6 @@ repo/
 
 ### Reference clones (third-party source pulled in for research, not part of this mod) ###
 references/
+
+### Dev-only helper scripts, not part of the mod ###
+tools/
