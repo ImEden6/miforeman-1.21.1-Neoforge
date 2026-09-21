@@ -32,6 +32,13 @@ import java.util.Optional;
 public class ForemanCommands {
     public static void init() {
         NeoForge.EVENT_BUS.addListener(RegisterCommandsEvent.class, event -> {
+            // Development-environment only. These are setup and debugging aids -- `goal
+            // create` conjures a configured clipboard out of nothing, `recipes print` dumps
+            // the whole MI recipe registry to chat -- not things a normal install should
+            // offer. Everything they do is reachable from the clipboard's own UI.
+            if (net.neoforged.fml.loading.FMLEnvironment.production)
+                return;
+
             event.getDispatcher().register(literal("miforeman")
                     .then(literal("goal")
                             .then(literal("create")

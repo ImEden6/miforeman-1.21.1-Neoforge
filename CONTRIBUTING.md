@@ -45,7 +45,7 @@
 | Machine scanner | `goal/MachineScanner.java` | Server-side sphere/area scanning for unlinked MI & custom multiblock machines matching active graph |
 | State tracking & sync | `goal/MachineLinkHistory.java`, `ClipboardUiState.java`, `GraphLayoutState.java`, `ClipboardCloseSync.java` | Persistence & undo/redo tracking for machine links, canvas positions, hidden nodes, and UI state |
 | Server monitoring | `goal/ServerMonitoringManager.java` | Server-side tracker & `@SubscribeEvent` tick handler — tracks `UnifiedCrafter` energy, status (GREEN/YELLOW/ORANGE/RED) |
-| Commands | `command/ForemanCommands.java` | `/miforeman goal create\|print\|plan\|select` and `/miforeman recipes print` |
+| Commands | `command/ForemanCommands.java` | `/miforeman goal create\|print\|plan\|select` and `/miforeman recipes print`. Registration is skipped when `FMLEnvironment.production` is set, so these exist in dev only |
 | Packets | `network/*.java` | 6 network packets for client-server communication (see below) |
 | Rate limiting | `network/PacketRateLimiter.java` | Server-side rate limiter guarding network payloads |
 | Mixins | `mixin/CrafterComponentAccessor.java` | Accessor mixin for `CrafterComponent.activeRecipe` |

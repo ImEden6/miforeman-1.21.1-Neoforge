@@ -14,7 +14,7 @@ Features
 - **Auto-detect scan.** Instead of clicking every machine by hand, scan a chunk radius around the player for machines whose active recipe matches the plan, then review and accept or reject candidates from a dedicated list screen.
 - **In-world highlighting.** Linked, candidate, and selected machines get an on-screen block highlight, with configurable colors (RGB, HSV, or HSL sliders, or a raw hex code).
 - **Live monitoring.** Linked machines report input/output rates averaged over a rolling window (default one hour, configurable). A monitoring screen lists every linked machine with a status of green, yellow, orange, or red based on how far its actual rate has fallen from the plan's expected rate, so a struggling machine stands out without you needing to watch it directly.
-- **Commands.** `/miforeman goal create|print|plan|select` and `/miforeman recipes print` cover the same goal and planning operations from the console, for scripting or debugging without opening a GUI.
+- **Commands (development builds only).** `/miforeman goal create|print|plan|select` and `/miforeman recipes print` cover the same goal and planning operations from the console. They are registered only outside a production environment, so they do not appear in a normal install.
 
 Dependencies
 ------------
