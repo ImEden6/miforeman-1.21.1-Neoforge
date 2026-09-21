@@ -2646,4 +2646,464 @@ public class ForemanGameTests {
 
         helper.succeed();
     }
+
+    // ---- EdgeRouter -----------------------------------------------------------
+    //
+    // Canvas geometry the router has to cope with, mirrored from GraphCanvas: 96x26 cards
+    // on a 140x40 pitch, so 44px horizontal corridors between columns and only 14px
+    // between vertically stacked cards.
+
+    private static final int ROUTER_NODE_W = 96;
+    private static final int ROUTER_NODE_H = 26;
+    private static final int ROUTER_COL_SPACING = 140;
+    private static final int ROUTER_ROW_SPACING = 40;
+
+    private static com.mervyn.miforeman.goal.EdgeRouter.Obstacle routerCard(int column, int row) {
+        int x = column * ROUTER_COL_SPACING;
+        int y = row * ROUTER_ROW_SPACING;
+        return new com.mervyn.miforeman.goal.EdgeRouter.Obstacle(x, y, x + ROUTER_NODE_W, y + ROUTER_NODE_H);
+    }
+
+    /** A wire from one card's right-hand port to another card's left-hand port. */
+    private static com.mervyn.miforeman.goal.EdgeRouter.Request routerWire(int fromCol, int fromRow, int toCol,
+            int toRow) {
+        return new com.mervyn.miforeman.goal.EdgeRouter.Request(
+                fromCol * ROUTER_COL_SPACING + ROUTER_NODE_W, fromRow * ROUTER_ROW_SPACING + ROUTER_NODE_H / 2,
+                toCol * ROUTER_COL_SPACING, toRow * ROUTER_ROW_SPACING + ROUTER_NODE_H / 2);
+    }
+
+    /** Whether any point along a route's polyline falls strictly inside an obstacle. */
+    private static boolean routeClipsAnyCard(com.mervyn.miforeman.goal.EdgeRouter.Route route,
+            List<com.mervyn.miforeman.goal.EdgeRouter.Obstacle> cards) {
+        List<com.mervyn.miforeman.goal.EdgeRouter.Point> points = route.points();
+        for (int i = 0; i < points.size() - 1; i++) {
+            com.mervyn.miforeman.goal.EdgeRouter.Point a = points.get(i);
+            com.mervyn.miforeman.goal.EdgeRouter.Point b = points.get(i + 1);
+            int steps = Math.max(Math.abs(b.x() - a.x()), Math.abs(b.y() - a.y()));
+            for (int s = 0; s <= steps; s++) {
+                int x = steps == 0 ? a.x() : a.x() + (b.x() - a.x()) * s / steps;
+                int y = steps == 0 ? a.y() : a.y() + (b.y() - a.y()) * s / steps;
+                for (com.mervyn.miforeman.goal.EdgeRouter.Obstacle card : cards) {
+                    if (x > card.minX() && x < card.maxX() && y > card.minY() && y < card.maxY())
+                        return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Verifies the router's whole reason for existing: a wire whose endpoints sit either
+     * side of a third card routes around it, where the fixed elbow it replaces cuts
+     * straight through. Also pins the elbow's own behavior, so this can't silently pass by
+     * the baseline quietly becoming correct.
+     */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testEdgeRouterRoutesAroundBlockingCard(GameTestHelper helper) {
+        List<com.mervyn.miforeman.goal.EdgeRouter.Obstacle> cards = List.of(
+                routerCard(0, 0), routerCard(1, 0), routerCard(2, 0));
+        com.mervyn.miforeman.goal.EdgeRouter.Request wire = routerWire(0, 0, 2, 0);
+
+        if (!routeClipsAnyCard(com.mervyn.miforeman.goal.EdgeRouter.elbow(wire), cards)) {
+            helper.fail("Baseline elbow was expected to cut through the middle card; "
+                    + "this test proves nothing if it doesn't");
+            return;
+        }
+
+        List<com.mervyn.miforeman.goal.EdgeRouter.Route> routes = com.mervyn.miforeman.goal.EdgeRouter
+                .route(List.of(wire), cards, 6);
+        com.mervyn.miforeman.goal.EdgeRouter.Route route = routes.get(0);
+        if (route.fallback()) {
+            helper.fail("Router fell back to an elbow on a routable wire: " + route.points());
+            return;
+        }
+        if (routeClipsAnyCard(route, cards)) {
+            helper.fail("Routed wire still clips a card: " + route.points());
+            return;
+        }
+        helper.succeed();
+    }
+
+    /**
+     * Verifies that a grid of cards with wires crossing between every column produces no
+     * clipping at all, with lane packing switched on. Packing runs after the search and
+     * knows nothing of what the search routed around, so an unchecked offset slides a wire
+     * off its legal path and through a card -- which is what happened before
+     * {@code segmentsClear} gated the shifts, at a rate of 320 clipped wires out of 440.
+     */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testEdgeRouterKeepsClearanceUnderLanePacking(GameTestHelper helper) {
+        List<com.mervyn.miforeman.goal.EdgeRouter.Obstacle> cards = new java.util.ArrayList<>();
+        for (int column = 0; column < 4; column++)
+            for (int row = 0; row < 6; row++)
+                cards.add(routerCard(column, row));
+
+        // Deterministic fan-out: every card wires to a different row in the next column.
+        List<com.mervyn.miforeman.goal.EdgeRouter.Request> wires = new java.util.ArrayList<>();
+        for (int column = 0; column < 3; column++)
+            for (int row = 0; row < 6; row++)
+                wires.add(routerWire(column, row, column + 1, (row * 5 + column) % 6));
+
+        List<com.mervyn.miforeman.goal.EdgeRouter.Route> routes = com.mervyn.miforeman.goal.EdgeRouter
+                .route(wires, cards, 6, 3);
+        for (int i = 0; i < routes.size(); i++) {
+            com.mervyn.miforeman.goal.EdgeRouter.Route route = routes.get(i);
+            if (route.fallback())
+                continue; // A fallback elbow is allowed to clip; that is the tradeoff it makes.
+            if (routeClipsAnyCard(route, cards)) {
+                helper.fail("Wire " + i + " clips a card after lane packing: " + route.points());
+                return;
+            }
+        }
+        helper.succeed();
+    }
+
+    /**
+     * Verifies routing is deterministic. The frontier breaks ties on a fixed ordering
+     * precisely so a redraw can't reshuffle equal-cost paths and make wires jitter between
+     * frames, and so these tests can assert on exact geometry at all.
+     */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testEdgeRouterIsDeterministic(GameTestHelper helper) {
+        List<com.mervyn.miforeman.goal.EdgeRouter.Obstacle> cards = new java.util.ArrayList<>();
+        for (int column = 0; column < 3; column++)
+            for (int row = 0; row < 4; row++)
+                cards.add(routerCard(column, row));
+        List<com.mervyn.miforeman.goal.EdgeRouter.Request> wires = List.of(
+                routerWire(0, 0, 2, 3), routerWire(0, 3, 2, 0), routerWire(1, 1, 2, 2));
+
+        List<com.mervyn.miforeman.goal.EdgeRouter.Route> first = com.mervyn.miforeman.goal.EdgeRouter
+                .route(wires, cards, 6, 3);
+        List<com.mervyn.miforeman.goal.EdgeRouter.Route> second = com.mervyn.miforeman.goal.EdgeRouter
+                .route(wires, cards, 6, 3);
+        if (!first.equals(second)) {
+            helper.fail("Routing the same input twice gave different results:\n" + first + "\n" + second);
+            return;
+        }
+        helper.succeed();
+    }
+
+    /**
+     * Verifies every routed polyline is well-formed: it starts exactly at the source port
+     * and ends exactly at the target port (so wires visually meet their cards), every
+     * segment is axis-aligned, and no two consecutive points are identical.
+     */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testEdgeRouterProducesCleanOrthogonalPolylines(GameTestHelper helper) {
+        List<com.mervyn.miforeman.goal.EdgeRouter.Obstacle> cards = List.of(
+                routerCard(0, 0), routerCard(1, 1), routerCard(2, 0), routerCard(1, 0));
+        List<com.mervyn.miforeman.goal.EdgeRouter.Request> wires = List.of(
+                routerWire(0, 0, 2, 0), routerWire(0, 0, 1, 1));
+
+        List<com.mervyn.miforeman.goal.EdgeRouter.Route> routes = com.mervyn.miforeman.goal.EdgeRouter
+                .route(wires, cards, 6, 3);
+        for (int i = 0; i < routes.size(); i++) {
+            com.mervyn.miforeman.goal.EdgeRouter.Route route = routes.get(i);
+            List<com.mervyn.miforeman.goal.EdgeRouter.Point> points = route.points();
+            com.mervyn.miforeman.goal.EdgeRouter.Request wire = wires.get(i);
+
+            if (points.size() < 2) {
+                helper.fail("Wire " + i + " produced a degenerate polyline: " + points);
+                return;
+            }
+            com.mervyn.miforeman.goal.EdgeRouter.Point start = points.get(0);
+            com.mervyn.miforeman.goal.EdgeRouter.Point end = points.get(points.size() - 1);
+            if (start.x() != wire.fromX() || start.y() != wire.fromY()
+                    || end.x() != wire.toX() || end.y() != wire.toY()) {
+                helper.fail("Wire " + i + " does not meet its ports: " + points);
+                return;
+            }
+            for (int p = 0; p < points.size() - 1; p++) {
+                com.mervyn.miforeman.goal.EdgeRouter.Point a = points.get(p);
+                com.mervyn.miforeman.goal.EdgeRouter.Point b = points.get(p + 1);
+                if (a.equals(b)) {
+                    helper.fail("Wire " + i + " has a zero-length segment at " + p + ": " + points);
+                    return;
+                }
+                if (a.x() != b.x() && a.y() != b.y()) {
+                    helper.fail("Wire " + i + " has a diagonal segment at " + p + ": " + points);
+                    return;
+                }
+            }
+        }
+        helper.succeed();
+    }
+
+    /**
+     * Verifies a wire that genuinely cannot be routed still draws. A card fully walled in
+     * by its neighbours has no free apron, so the search can't even start; the router must
+     * hand back a flagged elbow rather than dropping the wire or refusing the whole batch.
+     * The surviving wires in the same batch must still route normally.
+     */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testEdgeRouterFallsBackWhenBoxedIn(GameTestHelper helper) {
+        // A grid far too coarse for a 44px corridor leaves no legal cell beside a port.
+        List<com.mervyn.miforeman.goal.EdgeRouter.Obstacle> cards = List.of(
+                routerCard(0, 0), routerCard(1, 0), routerCard(2, 0));
+        com.mervyn.miforeman.goal.EdgeRouter.Request wire = routerWire(0, 0, 2, 0);
+
+        List<com.mervyn.miforeman.goal.EdgeRouter.Route> routes = com.mervyn.miforeman.goal.EdgeRouter
+                .route(List.of(wire), cards, 40);
+        com.mervyn.miforeman.goal.EdgeRouter.Route route = routes.get(0);
+        if (!route.fallback()) {
+            helper.fail("Expected a fallback on an unroutable wire, got a real route: " + route.points());
+            return;
+        }
+        if (!route.points().equals(com.mervyn.miforeman.goal.EdgeRouter.elbow(wire).points())) {
+            helper.fail("Fallback should be the plain elbow, got: " + route.points());
+            return;
+        }
+        helper.succeed();
+    }
+
+    /**
+     * Verifies wires sharing a corridor get fanned into separate lanes instead of stacking
+     * into one indistinguishable line. Two wires running the same route with identical
+     * interior geometry is the visual defect lane packing exists to fix.
+     */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testEdgeRouterPacksSharedLanesApart(GameTestHelper helper) {
+        List<com.mervyn.miforeman.goal.EdgeRouter.Obstacle> cards = List.of(
+                routerCard(0, 0), routerCard(0, 1), routerCard(2, 0), routerCard(2, 1), routerCard(1, 0));
+        // Both wires must get past the same blocking card in column 1, so they contend for
+        // the same corridor.
+        List<com.mervyn.miforeman.goal.EdgeRouter.Request> wires = List.of(
+                routerWire(0, 0, 2, 0), routerWire(0, 1, 2, 1));
+
+        List<com.mervyn.miforeman.goal.EdgeRouter.Route> packed = com.mervyn.miforeman.goal.EdgeRouter
+                .route(wires, cards, 6, 4);
+        if (packed.get(0).fallback() || packed.get(1).fallback()) {
+            helper.fail("Neither wire should need a fallback here: " + packed);
+            return;
+        }
+        if (packed.get(0).points().equals(packed.get(1).points())) {
+            helper.fail("Two wires in the same corridor drew the identical polyline: " + packed.get(0).points());
+            return;
+        }
+        // Packing must not break the contract the other tests rely on.
+        for (com.mervyn.miforeman.goal.EdgeRouter.Route route : packed) {
+            if (routeClipsAnyCard(route, cards)) {
+                helper.fail("Lane packing pushed a wire into a card: " + route.points());
+                return;
+            }
+        }
+        helper.succeed();
+    }
+
+    /**
+     * Verifies a zero or negative grid size is rejected outright rather than silently
+     * dividing by zero somewhere inside the search.
+     */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testEdgeRouterRejectsNonPositiveGridSize(GameTestHelper helper) {
+        try {
+            com.mervyn.miforeman.goal.EdgeRouter.route(List.of(routerWire(0, 0, 1, 0)), List.of(), 0);
+            helper.fail("Expected an IllegalArgumentException for gridSize 0");
+            return;
+        } catch (IllegalArgumentException expected) {
+            // expected
+        }
+        helper.succeed();
+    }
+
+    /** Lays a real recipe graph out with the real layout engine at the real canvas geometry. */
+    private static List<com.mervyn.miforeman.goal.EdgeRouter.Obstacle> routerCardsFor(
+            Map<ResourceLocation, com.mervyn.miforeman.goal.NodePosition> positions) {
+        List<com.mervyn.miforeman.goal.EdgeRouter.Obstacle> cards = new java.util.ArrayList<>();
+        for (com.mervyn.miforeman.goal.NodePosition pos : positions.values())
+            cards.add(new com.mervyn.miforeman.goal.EdgeRouter.Obstacle(
+                    pos.x(), pos.y(), pos.x() + ROUTER_NODE_W, pos.y() + ROUTER_NODE_H));
+        return cards;
+    }
+
+    private static List<com.mervyn.miforeman.goal.EdgeRouter.Request> routerWiresFor(
+            com.mervyn.miforeman.goal.RecipeGraph graph,
+            Map<ResourceLocation, com.mervyn.miforeman.goal.NodePosition> positions) {
+        List<com.mervyn.miforeman.goal.EdgeRouter.Request> wires = new java.util.ArrayList<>();
+        for (com.mervyn.miforeman.goal.GraphEdge edge : graph.edges()) {
+            com.mervyn.miforeman.goal.NodePosition from = positions.get(edge.from());
+            com.mervyn.miforeman.goal.NodePosition to = positions.get(edge.to());
+            if (from == null || to == null)
+                continue;
+            // Leave each card by the face pointing at the other: the graph lays out
+            // target-first with inputs to the right, so most edges run right-to-left.
+            boolean leftward = to.x() < from.x();
+            int fromX = leftward ? from.x() : from.x() + ROUTER_NODE_W;
+            int toX = leftward ? to.x() + ROUTER_NODE_W : to.x();
+            wires.add(new com.mervyn.miforeman.goal.EdgeRouter.Request(
+                    fromX, from.y() + ROUTER_NODE_H / 2, toX, to.y() + ROUTER_NODE_H / 2));
+        }
+        return wires;
+    }
+
+    private static Map<ResourceLocation, com.mervyn.miforeman.goal.NodePosition> routerArrange(
+            com.mervyn.miforeman.goal.RecipeGraph graph) {
+        return com.mervyn.miforeman.goal.GraphLayoutEngine.arrange(graph, List.of(), Map.of(), false,
+                ROUTER_NODE_W, ROUTER_NODE_H, ROUTER_COL_SPACING - ROUTER_NODE_W);
+    }
+
+    /**
+     * Routes a real recipe graph, laid out by the real layout engine, and asserts every
+     * wire is both routed and clear of every card.
+     *
+     * <p>The hand-built card grids in the other tests only prove the algorithm copes with
+     * shapes the test author thought of. A genuine MI graph brings column depths and
+     * fan-out nobody picked -- the same reason
+     * {@code testRecipeGraphCyclicResourceIdsCaptured} prefers real recipe data to a
+     * hand-built {@code Set.of(...)}.
+     *
+     * <p>analog_circuit (about 120 cards, 154 wires) is the target because it is a
+     * realistic shape that still fits inside {@code MAX_TOTAL_EXPANSIONS}. iron_plate,
+     * the obvious small target, is a 9-node degenerate case: it is mostly the
+     * iron_ingot/iron_nugget packer-unpacker 2-cycle noted in CLAUDE.md, so routing it
+     * proves nothing about a real layout. Cycles themselves are not the problem -- real MI
+     * graphs are cyclic far more often than intuition suggests, and the layout engine
+     * ignores cycle edges when ranking -- the problem is that nine nodes is not a graph.
+     *
+     * <p>Some fallbacks are expected and fine; what is asserted is that most wires really
+     * route (so a silently inert router fails here) and that every wire claiming to be
+     * routed is genuinely clear of every card.
+     */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID, timeoutTicks = 600)
+    public static void testEdgeRouterOnRealArrangedGraph(GameTestHelper helper) {
+        var level = helper.getLevel();
+        ProductionGoal goal = new ProductionGoal("router_graph", ProductionGoal.TargetType.ITEM,
+                ResourceLocation.parse("modern_industrialization:analog_circuit"), 60.0);
+
+        com.mervyn.miforeman.goal.RecipeGraph graph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
+        if (graph == null || graph.nodes().isEmpty()) {
+            helper.fail("Expected a non-empty recipe graph for analog_circuit");
+            return;
+        }
+        Map<ResourceLocation, com.mervyn.miforeman.goal.NodePosition> positions = routerArrange(graph);
+        List<com.mervyn.miforeman.goal.EdgeRouter.Obstacle> cards = routerCardsFor(positions);
+        List<com.mervyn.miforeman.goal.EdgeRouter.Request> wires = routerWiresFor(graph, positions);
+        if (wires.isEmpty()) {
+            helper.fail("Expected the arranged analog_circuit graph to produce routable edges");
+            return;
+        }
+
+        List<com.mervyn.miforeman.goal.EdgeRouter.Route> routes = com.mervyn.miforeman.goal.EdgeRouter
+                .route(wires, cards, 6, 3);
+        int routed = 0;
+        for (int i = 0; i < routes.size(); i++) {
+            com.mervyn.miforeman.goal.EdgeRouter.Route route = routes.get(i);
+            if (route.fallback())
+                continue;
+            routed++;
+            if (routeClipsAnyCard(route, cards)) {
+                helper.fail("Wire " + i + " of the real arranged graph clips a card: " + route.points());
+                return;
+            }
+        }
+        // Measured at 130 of 154 routed. Half is a floor with room for recipe data to shift,
+        // not a target: the point is to catch the router quietly falling back on everything,
+        // which is exactly what an ill-sized expansion budget did before it was calibrated.
+        if (routed * 2 < routes.size()) {
+            helper.fail("Only " + routed + " of " + routes.size() + " wires routed on a real graph; "
+                    + "the router is effectively inert at this size");
+            return;
+        }
+        helper.succeed();
+    }
+
+    /**
+     * Verifies that a pass which runs out of budget gives up on every wire rather than some.
+     *
+     * <p>Routing the wires that happened to come first and elbowing the rest would look
+     * like a rendering bug, and which wires won would depend on nothing but their position
+     * in the list, so the router drops the whole graph instead. The budget is passed
+     * explicitly here: pinning this to a recipe big enough to trip the default would make
+     * the test hostage to both MI's recipe data and to how fast routing happens to be.
+     */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testEdgeRouterGivesUpWholeGraphWhenBudgetExhausted(GameTestHelper helper) {
+        List<com.mervyn.miforeman.goal.EdgeRouter.Obstacle> cards = new java.util.ArrayList<>();
+        for (int column = 0; column < 4; column++)
+            for (int row = 0; row < 6; row++)
+                cards.add(routerCard(column, row));
+        List<com.mervyn.miforeman.goal.EdgeRouter.Request> wires = new java.util.ArrayList<>();
+        for (int column = 0; column < 3; column++)
+            for (int row = 0; row < 6; row++)
+                wires.add(routerWire(column, row, column + 1, (row * 5 + column) % 6));
+
+        // Enough budget for a wire or two, nowhere near enough for the batch.
+        List<com.mervyn.miforeman.goal.EdgeRouter.Route> routes = com.mervyn.miforeman.goal.EdgeRouter
+                .route(wires, cards, 6, 3, 200);
+        for (int i = 0; i < routes.size(); i++) {
+            if (!routes.get(i).fallback()) {
+                helper.fail("Wire " + i + " routed while others fell back; a partially routed "
+                        + "graph is what the whole-pass budget exists to prevent");
+                return;
+            }
+        }
+
+        // The same graph with the normal budget must route, or the test above proves nothing.
+        List<com.mervyn.miforeman.goal.EdgeRouter.Route> generous = com.mervyn.miforeman.goal.EdgeRouter
+                .route(wires, cards, 6, 3);
+        if (generous.stream().allMatch(com.mervyn.miforeman.goal.EdgeRouter.Route::fallback)) {
+            helper.fail("This graph should route comfortably within the default budget");
+            return;
+        }
+        helper.succeed();
+    }
+
+    /**
+     * Verifies the largest graph MI can realistically ask for still routes on the render
+     * thread, with no wire crossing a card.
+     *
+     * <p>quantum_upgrade arranges to roughly 590 cards and 860 wires over a 4000x2000px
+     * canvas. It is the worst case the router will ever see, and it is the case that caught
+     * the port-side bug: because the graph lays out target-first with inputs to the right,
+     * most edges run right-to-left, and leaving every card by its right face sent them the
+     * long way around. Fixing that took this graph from 12.2s and 187 fallbacks to 402ms
+     * and 157.
+     *
+     * <p>Timing is deliberately not asserted -- that would be flaky on a loaded CI box --
+     * but {@code MAX_TOTAL_EXPANSIONS} bounds the work, and a regression that made routing
+     * much dearer would exhaust the budget and show up as the wholesale fallback this
+     * checks against.
+     */
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID, timeoutTicks = 600)
+    public static void testEdgeRouterHandlesLargestRealGraph(GameTestHelper helper) {
+        var level = helper.getLevel();
+        ProductionGoal goal = new ProductionGoal("router_largest", ProductionGoal.TargetType.ITEM,
+                ResourceLocation.parse("modern_industrialization:quantum_upgrade"), 1.0);
+
+        com.mervyn.miforeman.goal.RecipeGraph graph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
+        if (graph == null || graph.nodes().size() < 100) {
+            helper.fail("Expected a large recipe graph for quantum_upgrade, got "
+                    + (graph == null ? "null" : graph.nodes().size() + " nodes"));
+            return;
+        }
+        Map<ResourceLocation, com.mervyn.miforeman.goal.NodePosition> positions = routerArrange(graph);
+        List<com.mervyn.miforeman.goal.EdgeRouter.Obstacle> cards = routerCardsFor(positions);
+        List<com.mervyn.miforeman.goal.EdgeRouter.Request> wires = routerWiresFor(graph, positions);
+
+        long start = System.nanoTime();
+        List<com.mervyn.miforeman.goal.EdgeRouter.Route> routes = com.mervyn.miforeman.goal.EdgeRouter
+                .route(wires, cards, 6, 3);
+        long elapsedMs = (System.nanoTime() - start) / 1000000L;
+
+        int routed = 0;
+        for (int i = 0; i < routes.size(); i++) {
+            com.mervyn.miforeman.goal.EdgeRouter.Route route = routes.get(i);
+            if (route.fallback())
+                continue;
+            routed++;
+            if (routeClipsAnyCard(route, cards)) {
+                helper.fail("Wire " + i + " of the largest real graph clips a card: " + route.points());
+                return;
+            }
+        }
+        MIForeman.LOGGER.info("EdgeRouter largest real graph: {} cards, {} wires, {} routed, {}ms",
+                cards.size(), routes.size(), routed, elapsedMs);
+        // Measured at 707 of 864. Half is a floor, not a target.
+        if (routed * 2 < routes.size()) {
+            helper.fail("Only " + routed + " of " + routes.size() + " wires routed on the largest "
+                    + "real graph; the router is effectively inert at this size");
+            return;
+        }
+        helper.succeed();
+    }
 }

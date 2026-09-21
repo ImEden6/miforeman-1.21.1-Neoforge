@@ -65,6 +65,14 @@ public class GraphCanvas extends AbstractWidget {
     private static final int MACHINE_CHAMFER = 6;
     private static final int COLUMN_SPACING = 140;
     private static final int ROW_SPACING = 40;
+    // Edge routing grid. Columns leave a 44px corridor and stacked cards only 14px, so a
+    // coarser grid than this seals the gaps entirely and every wire falls back to an elbow.
+    // Finer buys little and costs a lot: the search space grows with the square of it.
+    private static final int EDGE_GRID_SIZE = 6;
+    private static final int EDGE_LANE_GAP = 3;
+    // Above this many wires, routing costs more than the redraw is worth and every wire
+    // stays an elbow. Routing is cached, but it still has to finish on the render thread.
+    private static final int MAX_ROUTED_EDGES = 1200;
     private static final float MIN_ZOOM = 0.25f;
     private static final float MAX_ZOOM = 3.0f;
 
@@ -86,6 +94,10 @@ public class GraphCanvas extends AbstractWidget {
     private final GraphCamera camera;
     private final Map<ResourceLocation, RecipeGraphNode> visibleNodes = new LinkedHashMap<>();
     private final List<GraphEdge> visibleEdges = new ArrayList<>();
+    /** Routed wire polylines, positionally matching {@link #visibleEdges}. Rebuilt only when
+     *  {@link #routesDirty} is set, never per frame: routing a large graph costs a beat. */
+    private List<com.mervyn.miforeman.goal.EdgeRouter.Route> routedEdges = List.of();
+    private boolean routesDirty = true;
     private final Map<ResourceLocation, NodePosition> autoLayout = new HashMap<>();
     private Set<ResourceLocation> selectedNodeIds;
     private final Consumer<Set<ResourceLocation>> onSelect;
@@ -603,6 +615,63 @@ public class GraphCanvas extends AbstractWidget {
         autoLayout.clear();
         computeAutoLayout();
         searchState.setQuery(searchBar.getValue(), searchableNodeTexts());
+        routesDirty = true;
+    }
+
+    /**
+     * Rebuilds the routed wire polylines for the current nodes and positions.
+     *
+     * <p>Called from the render path, but guarded by {@link #routesDirty} so it only runs
+     * when something actually moved. A wire the router can't solve comes back flagged as a
+     * fallback elbow, so this always returns one entry per visible edge.
+     */
+    private void computeRoutes() {
+        routedEdges = List.of();
+        routesDirty = false;
+        if (visibleEdges.isEmpty() || visibleEdges.size() > MAX_ROUTED_EDGES)
+            return;
+
+        List<com.mervyn.miforeman.goal.EdgeRouter.Obstacle> obstacles = new ArrayList<>(visibleNodes.size());
+        for (RecipeGraphNode node : visibleNodes.values()) {
+            NodePosition pos = positionOf(node);
+            if (pos != null)
+                obstacles.add(new com.mervyn.miforeman.goal.EdgeRouter.Obstacle(
+                        pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT));
+        }
+
+        List<com.mervyn.miforeman.goal.EdgeRouter.Request> requests = new ArrayList<>(visibleEdges.size());
+        for (GraphEdge edge : visibleEdges) {
+            NodePosition fromPos = edgeEndpoint(edge.from());
+            NodePosition toPos = edgeEndpoint(edge.to());
+            if (fromPos == null || toPos == null) {
+                // Keep the lists aligned with visibleEdges; this wire just isn't drawable.
+                requests.add(new com.mervyn.miforeman.goal.EdgeRouter.Request(0, 0, 0, 0));
+                continue;
+            }
+            requests.add(edgeRequest(fromPos, toPos));
+        }
+        routedEdges = com.mervyn.miforeman.goal.EdgeRouter.route(requests, obstacles, EDGE_GRID_SIZE, EDGE_LANE_GAP);
+    }
+
+    /**
+     * The wire between two cards, leaving each one by the face that points at the other.
+     *
+     * <p>The recipe graph lays out target-first at x=0 with inputs extending rightward, so
+     * an edge usually runs from an input on the right to its consumer on the left. Always
+     * leaving by the right face and arriving at the left one would send those wires out the
+     * back of both cards and around.
+     */
+    private static com.mervyn.miforeman.goal.EdgeRouter.Request edgeRequest(NodePosition fromPos, NodePosition toPos) {
+        boolean leftward = toPos.x() < fromPos.x();
+        int fromX = leftward ? fromPos.x() : fromPos.x() + NODE_WIDTH;
+        int toX = leftward ? toPos.x() + NODE_WIDTH : toPos.x();
+        return new com.mervyn.miforeman.goal.EdgeRouter.Request(
+                fromX, fromPos.y() + NODE_HEIGHT / 2, toX, toPos.y() + NODE_HEIGHT / 2);
+    }
+
+    private @Nullable NodePosition edgeEndpoint(ResourceLocation nodeId) {
+        RecipeGraphNode node = visibleNodes.get(nodeId);
+        return node != null ? positionOf(node) : null;
     }
 
     @Override
@@ -638,8 +707,19 @@ public class GraphCanvas extends AbstractWidget {
             }
         }
 
-        // Edges: simple elbow (horizontal-vertical-horizontal) connectors.
-        for (GraphEdge edge : visibleEdges) {
+        // Edges: routed around the cards where possible, elbows otherwise.
+        //
+        // A node being dragged moves every frame, and re-routing at that rate would stall
+        // the canvas. Instead the cached routes keep drawing -- they're still correct for
+        // every wire that didn't move -- and only the wires attached to the dragged node
+        // fall back to a live elbow until the drag commits and routing runs once.
+        ResourceLocation draggingId = camera.draggingNodeId();
+        boolean dragging = draggingId != null && camera.liveDragPos() != null;
+        if (routesDirty && !dragging)
+            computeRoutes();
+
+        for (int edgeIndex = 0; edgeIndex < visibleEdges.size(); edgeIndex++) {
+            GraphEdge edge = visibleEdges.get(edgeIndex);
             RecipeGraphNode from = visibleNodes.get(edge.from());
             RecipeGraphNode to = visibleNodes.get(edge.to());
             if (from == null || to == null)
@@ -657,9 +737,18 @@ public class GraphCanvas extends AbstractWidget {
                 boolean touchesSelected = selectedNodeIds.contains(edge.from()) || selectedNodeIds.contains(edge.to());
                 colour = touchesSelected ? COLOUR_EDGE_HIGHLIGHT : COLOUR_EDGE_DIM;
             }
-            drawElbowConnector(guiGraphics,
-                    fromPos.x() + NODE_WIDTH, fromPos.y() + NODE_HEIGHT / 2,
-                    toPos.x(), toPos.y() + NODE_HEIGHT / 2, colour);
+            boolean touchesDragged = dragging
+                    && (draggingId.equals(edge.from()) || draggingId.equals(edge.to()));
+            com.mervyn.miforeman.goal.EdgeRouter.Route route = !touchesDragged && edgeIndex < routedEdges.size()
+                    ? routedEdges.get(edgeIndex)
+                    : null;
+            if (route != null) {
+                drawPolyline(guiGraphics, route.points(), colour);
+            } else {
+                com.mervyn.miforeman.goal.EdgeRouter.Request request = edgeRequest(fromPos, toPos);
+                drawElbowConnector(guiGraphics,
+                        request.fromX(), request.fromY(), request.toX(), request.toY(), colour);
+            }
         }
 
         Minecraft mc = Minecraft.getInstance();
@@ -815,6 +904,16 @@ public class GraphCanvas extends AbstractWidget {
         return (a << 24) | (r << 16) | (g << 8) | b;
     }
 
+    /** Draws a routed wire as a chain of axis-aligned segments. */
+    private void drawPolyline(GuiGraphics guiGraphics, List<com.mervyn.miforeman.goal.EdgeRouter.Point> points,
+            int colour) {
+        for (int i = 0; i < points.size() - 1; i++) {
+            com.mervyn.miforeman.goal.EdgeRouter.Point a = points.get(i);
+            com.mervyn.miforeman.goal.EdgeRouter.Point b = points.get(i + 1);
+            drawLine(guiGraphics, a.x(), a.y(), b.x(), b.y(), colour);
+        }
+    }
+
     private void drawElbowConnector(GuiGraphics guiGraphics, int fromX, int fromY, int toX, int toY, int colour) {
         int midX = (fromX + toX) / 2;
         drawLine(guiGraphics, fromX, fromY, midX, fromY, colour);
@@ -908,6 +1007,9 @@ public class GraphCanvas extends AbstractWidget {
         GraphCamera.DragEnd end = camera.onRelease(dragEnabled);
         if (end.committedNodeId() != null) {
             layoutState = layoutState.withMove(end.committedNodeId(), end.committedFrom(), end.committedTo());
+            // A committed move changes positions without touching visibility, so the routes
+            // have to be invalidated here too, not just in recalculateVisibility().
+            routesDirty = true;
             onLayoutChange.accept(layoutState);
         } else if (end.marqueeRect() != null) {
             Set<ResourceLocation> hits = nodesIntersecting(end.marqueeRect());

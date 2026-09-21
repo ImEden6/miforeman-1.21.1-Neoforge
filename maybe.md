@@ -10,24 +10,49 @@ grant). Everything below is a pattern from that codebase that could apply to
 
 ## Edge routing (GraphCanvas)
 
-- **Grid-based A\* wire router** — instead of straight elbow connectors,
-  route every edge on a shared 20px grid with one-cell obstacle clearance.
-  Cost function makes a shared "lane" cheaper than detouring around it but
-  pricier than an empty line (`COST_SHARED=1.3` vs `COST_EMPTY=1`), so
-  parallel wires travel together on long runs and split apart near
-  destinations — no manual per-edge-index offset needed. A separate packing
-  pass (`packIntoLane`) then slots multiple wires sharing one line side by
-  side with a fixed gap. Clearance is enforced by inflating obstacle rects by
-  one grid cell in the search graph (hard block, not a cost penalty); the
-  final port-to-card hop is the one exception, carved out geometrically via
-  an "apron point" sitting exactly on the legal boundary rather than by
-  relaxing the margin.
-- **Async solve with stale-while-revalidate rendering** — past a wire-count
-  threshold, route solving moves to a Web Worker; the renderer keeps drawing
-  the last installed routes until a newer sequence-numbered result lands, so
-  dragging never freezes. A boxed-in wire that truly can't route still draws
-  a fallback straight/L path rather than vanishing or blocking the rest of
-  the solve.
+**The synchronous router is built** (2026-09-21) as `goal/EdgeRouter.java`, wired into
+`GraphCanvas` and covered by nine gametests. Grid A* with hard one-cell obstacle
+clearance, `COST_SHARED=1.3` vs `COST_EMPTY=1` lane sharing, a turn penalty, apron points
+for the port hop, and an obstacle-aware packing pass are all in. Every real graph,
+quantum_upgrade included, routes on the render thread.
+
+- **The 20px grid in the original note is wrong for this canvas.** Columns are 140 apart
+  and rows 40, so corridors are 44px wide and vertical gaps between stacked cards are
+  14px (8px inside an auto-arranged group). At 20px with one-cell clearance every gap
+  seals and every wire falls back. `EDGE_GRID_SIZE` is 6.
+- **Lane packing must be obstacle-aware.** It runs after the search and knows nothing of
+  what the search routed around, so an unchecked offset slides a wire off a legal path
+  straight through a card: 320 clipped wires out of 440 on a synthetic grid before
+  `segmentsClear` gated the shifts. With the gate, clipping is zero at every size tested.
+- **Ports must be chosen from the wire's own geometry, not a flow assumption.** The graph
+  lays out target-first at x=0 with inputs extending right, so most edges run
+  *right-to-left*: 128 of analog_circuit's 154 edges do. Leaving every card by its right
+  face and arriving at every left face therefore sent the majority of wires out the back
+  of both cards and the long way around. The old elbows absorbed this as a harmless Z; A*
+  paid for it in full. Fixing it took quantum_upgrade from 12.2s and 187 fallbacks to
+  402ms and 157, and was worth more than every other optimisation combined.
+- **Beware calibrating a budget against the worst case only.** `MAX_TOTAL_EXPANSIONS` was
+  first set to 120k from quantum_upgrade measurements taken while the port bug was still
+  present. That sat below the cost of even the smallest real graph, so every graph but a
+  trivial one fell back wholesale and the router did nothing in game while all its tests
+  passed. Worth remembering that a green suite said nothing about this: the tests asserted
+  fallbacks were *allowed*, not that routing ever actually happened. The real-graph tests
+  now assert a majority of wires genuinely route.
+- **Sizing.** At ~2,500 expansions/ms: steel_plate (86 cards, 111 wires) 61ms,
+  analog_circuit (120/154) 33ms, electronic_circuit (197/263) 62ms, digital_circuit
+  (272/379) 100ms, advanced_motor (312/444) 182ms, quantum_upgrade (588/864) 402ms with
+  711 of 864 wires routed. Paid once per layout change, never per frame.
+
+- **Async solve with stale-while-revalidate rendering** — still open, but no longer
+  urgent: it was only ever "load-bearing" while the port bug made routing 30x dearer than
+  it needed to be. What it would buy now is removing the ~400ms hitch on the very largest
+  graphs when a drag commits, which is the one place the cost is still felt. The
+  synchronous version already approximates the pattern during a drag by keeping cached
+  routes for every wire that didn't move and elbowing only the dragged node's own wires.
+  Java has no Web Worker, so the open questions are what happens when layout changes
+  mid-solve, whether a sequence number suffices or routes must be invalidated on mutation,
+  and how a stale route referencing a since-removed node is kept from being drawn. A
+  cheaper alternative worth weighing first: re-route only the wires whose endpoints moved.
 
 ## Solver / MachineTracker
 

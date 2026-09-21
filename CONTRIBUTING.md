@@ -40,6 +40,7 @@
 | Goal model | `goal/ProductionGoal.java` | Immutable record with `CODEC`/`STREAM_CODEC` — target, rate, plan, layout, history, uiState |
 | Recipe traversal | `goal/RecipeGraphTraverser.java` | Recursive BFS through MI recipe graph; cycle handling, ambiguity resolution, DAG construction |
 | Graph model | `goal/RecipeGraph.java`, `RecipeGraphNode.java`, `NodeType.java`, `GraphEdge.java` | DAG data model for factory planning & node canvas |
+| Edge routing | `goal/EdgeRouter.java` | Grid-based A* wire router for graph edges: routes around node boxes, bundles wires into shared lanes, falls back to the old elbow when a wire can't be solved or the pass runs out of budget |
 | Crafter adapter | `goal/UnifiedCrafter.java` | Unified crafter abstraction supporting base MI `CrafterComponent` and duck-typed modular multiblock crafters |
 | Machine scanner | `goal/MachineScanner.java` | Server-side sphere/area scanning for unlinked MI & custom multiblock machines matching active graph |
 | State tracking & sync | `goal/MachineLinkHistory.java`, `ClipboardUiState.java`, `GraphLayoutState.java`, `ClipboardCloseSync.java` | Persistence & undo/redo tracking for machine links, canvas positions, hidden nodes, and UI state |
@@ -48,7 +49,7 @@
 | Packets | `network/*.java` | 6 network packets for client-server communication (see below) |
 | Rate limiting | `network/PacketRateLimiter.java` | Server-side rate limiter guarding network payloads |
 | Mixins | `mixin/CrafterComponentAccessor.java` | Accessor mixin for `CrafterComponent.activeRecipe` |
-| Game tests | `test/ForemanGameTests.java` | 46 `@GameTest`s verifying core logic (see below) |
+| Game tests | `test/ForemanGameTests.java` | 56 `@GameTest`s verifying core logic (see below) |
 
 ### Network packets (registered in `MIForeman.java:93-118`)
 
@@ -120,6 +121,16 @@
 | `testResolveDisplayRecipeIdFallsBackToLastKnown` | Fallback chain lastRecipeId -> saturatedRecipeId -> lastKnownRecipeId, so a RED machine still reports a recipe |
 | `testSearchStateGenericOverArbitraryId` | `SearchState` works over a non-`ResourceLocation` ID type with a hand-built text map |
 | `testDisplayFormatFormatRate` | `DisplayFormat.formatRate` output, extracted from `DetailCard` |
+| `testEdgeRouterRoutesAroundBlockingCard` | A wire routes around a card sitting between its endpoints, where the baseline elbow cuts through |
+| `testEdgeRouterKeepsClearanceUnderLanePacking` | No wire clips a card on a grid of cards with lane packing on (packing used to shift wires into cards) |
+| `testEdgeRouterIsDeterministic` | Routing the same input twice gives identical wires, so redraws can't make them jitter |
+| `testEdgeRouterProducesCleanOrthogonalPolylines` | Wires meet their ports exactly, every segment is axis-aligned, no zero-length segments |
+| `testEdgeRouterFallsBackWhenBoxedIn` | An unroutable wire returns a flagged elbow rather than vanishing |
+| `testEdgeRouterPacksSharedLanesApart` | Two wires contending for one corridor get separate lanes instead of one overlapping line |
+| `testEdgeRouterRejectsNonPositiveGridSize` | A zero or negative grid size throws instead of failing somewhere inside the search |
+| `testEdgeRouterOnRealArrangedGraph` | A real arranged analog_circuit graph routes most wires with no clipping |
+| `testEdgeRouterGivesUpWholeGraphWhenBudgetExhausted` | A pass that runs out of budget falls back wholesale, never partially |
+| `testEdgeRouterHandlesLargestRealGraph` | quantum_upgrade (588 cards, 864 wires) still routes, with no wire clipping a card |
 
 Tests use `@PrefixGameTestTemplate(false)` + `template="empty"` — no structure files needed.
 
