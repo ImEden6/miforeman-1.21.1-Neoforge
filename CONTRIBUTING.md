@@ -6,7 +6,7 @@
 ./gradlew runClient                  # Minecraft client with mod
 ./gradlew runServer                  # Dedicated server (nogui)
 ./gradlew runGameTestServer          # All game tests, then exit
-./gradlew build -x test             # Mod JAR at build/libs/miforeman-1.0.0.jar
+./gradlew build -x test             # Mod JAR at build/libs/miforeman-<mod_version>.jar
 ./gradlew --refresh-dependencies     # Force refresh all Gradle deps
 ```
 
@@ -48,9 +48,9 @@
 | Packets | `network/*.java` | 6 network packets for client-server communication (see below) |
 | Rate limiting | `network/PacketRateLimiter.java` | Server-side rate limiter guarding network payloads |
 | Mixins | `mixin/CrafterComponentAccessor.java` | Accessor mixin for `CrafterComponent.activeRecipe` |
-| Game tests | `test/ForemanGameTests.java` | 27 `@GameTest`s verifying core logic (see below) |
+| Game tests | `test/ForemanGameTests.java` | 46 `@GameTest`s verifying core logic (see below) |
 
-### Network packets (registered in `MIForeman.java:75-107`)
+### Network packets (registered in `MIForeman.java:93-118`)
 
 - `goal_update` (`GoalUpdatePayload`, playToServer) — save goal + recompute factory plan
 - `request_monitoring_update` (`RequestMonitoringUpdatePayload`, playToServer) — request live monitoring data
@@ -101,6 +101,25 @@
 | `testGraphLayoutStateHiddenNodes` | Hidden node set immutability, single/batch toggling, and unhide-all reset |
 | `testMaterialCandidateRecipesAndExpansion` | Candidate recipe resolution for single items and plan generation |
 | `testStyreneButadieneRubberGraphTraversal` | Multi-tier fluid synthesis DAG traversal, intermediate fluid node generation, and dynamic selection expansion |
+| `testClipboardUiStateStreamCodecParity` | `ClipboardUiState.STREAM_CODEC` round-trips every field directly |
+| `testGraphLayoutStateStreamCodecParity` | `GraphLayoutState.STREAM_CODEC` round-trips groups and batched history |
+| `testLiveMonitoringPayloadStreamCodecParity` | `LiveMonitoringPayload.STREAM_CODEC` round-trips every field, including `reason` and `disposalRatio` |
+| `testGraphLayoutStateHistoryMigration` | Pre-`HistoryEntry` saves decode: bare `NodeMoveAction` items become single-move batches |
+| `testGraphLayoutStateRemoveFromGroup` | Removing a node keeps remaining members; group dissolves below two members |
+| `testGraphLayoutEngineDeterministicAndRigidGroupTranslation` | `GraphLayoutEngine.arrange` is deterministic and preserves member offsets when moving locked groups |
+| `testGraphLayoutEngineRearrangeInsideGroups` | `arrange(rearrangeInsideGroups=true)` columns members by depth without coordinate drift |
+| `testRecipeGraphCyclicResourceIdsCaptured` | Recycling-loop membership on real recipe data; iron_plate's iron_ingot/nugget 2-cycle as a snapshot |
+| `testPeekCyclicResourceIdsCacheOnly` | `peekCyclicResourceIds` never forces a compute, and matches the real graph once one exists |
+| `testUnionCyclicResourceIdsAcrossGoals` | A machine shared by two goals is cyclic if either goal's graph says so, order-independently |
+| `testRecipeResourceIdsCollectsInputsAndOutputs` | The shared recipe walk behind `recipeTouchesCycle`, cross-checked against real graph edges |
+| `testCollectUpstreamResourceIds` | "Search by end product" collects resources between machine and target, excluding MACHINE ids |
+| `testCollectByproductRates` | Byproduct rates are positive, never already-demanded resources, and non-empty for complex chains |
+| `testClassifyLiveStatusDeadLoopReason` | `classifyLiveStatus` separates DEAD_LOOP from NONE and DISPOSAL_THROTTLED shortfalls |
+| `testComputeDisposalRatioUsesRealCapacityNotAdjustedCapacity` | Disposal ratio uses real stack-size-clamped capacity, so a full non-stackable output flags correctly |
+| `testRecordActiveRecipeNeverGoesStale` | `lastKnownRecipeId` always reflects the latest recipe a machine ran |
+| `testResolveDisplayRecipeIdFallsBackToLastKnown` | Fallback chain lastRecipeId -> saturatedRecipeId -> lastKnownRecipeId, so a RED machine still reports a recipe |
+| `testSearchStateGenericOverArbitraryId` | `SearchState` works over a non-`ResourceLocation` ID type with a hand-built text map |
+| `testDisplayFormatFormatRate` | `DisplayFormat.formatRate` output, extracted from `DetailCard` |
 
 Tests use `@PrefixGameTestTemplate(false)` + `template="empty"` — no structure files needed.
 

@@ -9,6 +9,7 @@ Features
 - **Recipe planning.** The clipboard walks MI's recipe graph to work out the machines, quantities, and raw inputs needed. Where more than one recipe can produce an intermediate, you pick which one and the plan recalculates around it.
 - **EMI drag-drop targeting.** If EMI is installed, you can drag an item or fluid straight from EMI's sidebar onto the clipboard to set it as your goal target, instead of typing a resource ID.
 - **Node graph editor.** The plan renders as a graph of machine and resource nodes with the flows between them. Nodes can be grouped or split, rates switch between per-minute and per-hour, and layout edits (node positions, grouping) persist on the clipboard.
+- **Auto-Arrange and node groups.** One button tidies the whole graph layout. Select several nodes (ctrl/shift-click, or drag a selection box) and lock them into a group, and Auto-Arrange moves the group as one block instead of scattering your hand-arranged cluster, unless you turn on the toggle that lets it rearrange group interiors too. Single nodes can be pulled back out of a group, or the group dissolved outright, and an Auto-Arrange that moves dozens of nodes still undoes in one step.
 - **Machine linking.** Right-click a placed MI machine with the clipboard to link or unlink it from the goal. Links are tracked server-side, so they work the same in multiplayer, and synced back to every client holding that clipboard.
 - **Auto-detect scan.** Instead of clicking every machine by hand, scan a chunk radius around the player for machines whose active recipe matches the plan, then review and accept or reject candidates from a dedicated list screen.
 - **In-world highlighting.** Linked, candidate, and selected machines get an on-screen block highlight, with configurable colors (RGB, HSV, or HSL sliders, or a raw hex code).
@@ -25,7 +26,7 @@ Dependencies
 Configuration
 -------------
 Server-side config options (see [Config.java](src/main/java/com/mervyn/miforeman/Config.java)):
-- `autolinkScanRadiusChunks`: default radius for the auto-detect scan, overridable per-scan in the review panel.
+- `autolinkScanRadiusChunks`: chunk radius for the auto-detect scan, centered on the player.
 - `monitoringWindowTicks`: length of the rolling rate-history window per linked machine.
 - `trackerPruneIntervalTicks`: how often stale machine trackers get cleaned up.
 - `defaultEfficiencyThreshold`: ratio of actual to expected rate below which a machine is flagged as underperforming.

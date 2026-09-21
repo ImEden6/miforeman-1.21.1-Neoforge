@@ -28,3 +28,8 @@ jobs:
 
       - name: Build with Gradle
         run: ./gradlew build
+
+      # Gametests are a separate NeoForge task; `build` does not run them.
+      # There is no --tests filter, so this runs the whole ForemanGameTests suite.
+      - name: Run game tests
+        run: ./gradlew runGameTestServer
