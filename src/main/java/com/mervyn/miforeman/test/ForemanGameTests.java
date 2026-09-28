@@ -1518,20 +1518,25 @@ public class ForemanGameTests {
         graph.nodes().forEach((id, node) -> {
             if (node.getType() == com.mervyn.miforeman.goal.NodeType.MACHINE) machineNodeIds.add(id);
         });
-        record Case(java.util.Optional<ResourceLocation> recipe, boolean assigned, com.mervyn.miforeman.goal.MachinePlacement.Kind expected) {}
+        var red = com.mervyn.miforeman.goal.MachineStatus.RED;
+        var green = com.mervyn.miforeman.goal.MachineStatus.GREEN;
+        record Case(java.util.Optional<ResourceLocation> recipe, boolean assigned, com.mervyn.miforeman.goal.MachineStatus status,
+                    com.mervyn.miforeman.goal.MachinePlacement.Kind expected) {}
         for (Case c : List.of(
-                new Case(java.util.Optional.empty(), false, com.mervyn.miforeman.goal.MachinePlacement.Kind.UNPLACED),
-                new Case(java.util.Optional.of(onGraph), true, com.mervyn.miforeman.goal.MachinePlacement.Kind.ASSIGNED),
-                new Case(java.util.Optional.of(onGraph), false, com.mervyn.miforeman.goal.MachinePlacement.Kind.ON_GRAPH),
-                new Case(java.util.Optional.of(offPlan), false, com.mervyn.miforeman.goal.MachinePlacement.Kind.OFF_PLAN))) {
+                new Case(java.util.Optional.empty(), false, red, com.mervyn.miforeman.goal.MachinePlacement.Kind.UNPLACED),
+                new Case(java.util.Optional.of(onGraph), true, red, com.mervyn.miforeman.goal.MachinePlacement.Kind.ASSIGNED),
+                new Case(java.util.Optional.of(onGraph), false, red, com.mervyn.miforeman.goal.MachinePlacement.Kind.ON_GRAPH),
+                new Case(java.util.Optional.of(offPlan), false, green, com.mervyn.miforeman.goal.MachinePlacement.Kind.OFF_PLAN),
+                new Case(java.util.Optional.of(offPlan), false, red, com.mervyn.miforeman.goal.MachinePlacement.Kind.UNPLACED))) {
             var machine = new com.mervyn.miforeman.network.LiveMonitoringPayload.MachineStatusData(
-                    GlobalPos.of(Level.OVERWORLD, BlockPos.ZERO), com.mervyn.miforeman.goal.MachineStatus.RED,
+                    GlobalPos.of(Level.OVERWORLD, BlockPos.ZERO), c.status(),
                     com.mervyn.miforeman.goal.FailureReason.STARVED, 0.0, 0.0,
                     ResourceLocation.parse("modern_industrialization:electric_compressor"), c.recipe(), c.assigned(),
                     java.util.Optional.of(compressorType));
             var kind = com.mervyn.miforeman.goal.MachinePlacement.classify(machine, machineNodeIds);
             if (kind != c.expected()) {
-                helper.fail("classify(recipe=" + c.recipe() + ", assigned=" + c.assigned() + ") = " + kind + ", expected " + c.expected());
+                helper.fail("classify(recipe=" + c.recipe() + ", assigned=" + c.assigned() + ", status=" + c.status()
+                        + ") = " + kind + ", expected " + c.expected());
                 return;
             }
         }
@@ -1571,22 +1576,37 @@ public class ForemanGameTests {
         ResourceLocation real = ResourceLocation.parse("modern_industrialization:materials/copper/compressor/main");
 
         var never = new ServerMonitoringManager.MachineTracker(BlockPos.ZERO);
-        var placed = ServerMonitoringManager.resolveDisplayRecipe(never, assignment);
+        var placed = ServerMonitoringManager.resolveDisplayRecipe(never, assignment, null);
         if (!assignment.equals(placed.recipeId()) || !placed.assigned()) {
             helper.fail("A never-run machine should show on its assigned node, flagged as assigned: " + placed);
             return;
         }
-        var nothing = ServerMonitoringManager.resolveDisplayRecipe(never, null);
+        var nothing = ServerMonitoringManager.resolveDisplayRecipe(never, null, null);
         if (nothing.recipeId() != null || nothing.assigned()) {
             helper.fail("A never-run, unplaced machine should show nowhere: " + nothing);
             return;
         }
-        // Its first real craft takes over from the placement, even a wrong one.
         var ran = new ServerMonitoringManager.MachineTracker(BlockPos.ZERO);
         ServerMonitoringManager.recordActiveRecipe(ran, real);
-        var afterCraft = ServerMonitoringManager.resolveDisplayRecipe(ran, assignment);
+        var afterCraft = ServerMonitoringManager.resolveDisplayRecipe(ran, assignment, Set.of(real, assignment));
         if (!real.equals(afterCraft.recipeId()) || afterCraft.assigned()) {
             helper.fail("A machine's own recipe must win over its assignment: " + afterCraft);
+            return;
+        }
+        ran.lastRecipeId = null;
+        var idleOnPlan = ServerMonitoringManager.resolveDisplayRecipe(ran, assignment, Set.of(real, assignment));
+        if (!real.equals(idleOnPlan.recipeId()) || idleOnPlan.assigned()) {
+            helper.fail("Idle history of an on-plan recipe must still beat a placement: " + idleOnPlan);
+            return;
+        }
+        var idleOffPlan = ServerMonitoringManager.resolveDisplayRecipe(ran, assignment, Set.of(assignment));
+        if (!assignment.equals(idleOffPlan.recipeId()) || !idleOffPlan.assigned()) {
+            helper.fail("A placement should win over off-plan history on an idle machine: " + idleOffPlan);
+            return;
+        }
+        var noGraph = ServerMonitoringManager.resolveDisplayRecipe(ran, assignment, null);
+        if (!real.equals(noGraph.recipeId())) {
+            helper.fail("With no cached graph, history should win: " + noGraph);
             return;
         }
         helper.succeed();

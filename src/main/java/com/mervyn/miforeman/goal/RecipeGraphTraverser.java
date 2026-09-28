@@ -271,6 +271,20 @@ public final class RecipeGraphTraverser {
         }
     }
 
+    public static @Nullable Set<ResourceLocation> peekMachineNodeIds(ProductionGoal goal) {
+        GraphCacheKey key = new GraphCacheKey(goal.type(), goal.targetId(), goal.rate(),
+                new HashMap<>(goal.recipeSelections()));
+        synchronized (GRAPH_CACHE) {
+            RecipeGraph cached = GRAPH_CACHE.get(key);
+            if (cached == null) return null;
+            Set<ResourceLocation> ids = new java.util.HashSet<>();
+            cached.nodes().forEach((id, node) -> {
+                if (node.getType() == NodeType.MACHINE) ids.add(id);
+            });
+            return ids;
+        }
+    }
+
     /** Every resource id between {@code recipeId}'s machine node and {@code graph}'s target,
      *  inclusive of both ends. Found by walking forward through {@link RecipeGraphNode#getOutputs()}
      *  edges, which alternate resource -> machine -> resource all the way to the {@code TARGET}

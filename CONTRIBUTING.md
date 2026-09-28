@@ -123,9 +123,9 @@
 | `testUpdateMachineRestoresAndForgetsRecipeHistory` | On a real placed compressor, the per-tick update restores a pruned tracker's saved recipe, rejects a saved recipe of another machine type, and forgets the entry once the machine is broken |
 | `testScanPayloadsCarryRadius` | Scan request and result payloads round-trip their radius with no leftover bytes |
 | `testScanStepperAndNewCandidates` | The radius stepper starts from the right base and stays in 1-16, a capped pick shows the capped value, and only machines no link or earlier scan knew about get pinged |
-| `testMachinePlacementClassifyAndCompatibleNodes` | Linked machines sort into unplaced / placed by hand / off-plan / on graph, and only nodes of the machine's own recipe type are offered for placement (none when the type is unknown) |
+| `testMachinePlacementClassifyAndCompatibleNodes` | Linked machines sort into unplaced / placed by hand / off-plan / on graph (an idle machine with only old off-plan history counts as unplaced), and only nodes of the machine's own recipe type are offered for placement (none when the type is unknown) |
 | `testRecipeTypeIdOfRealMachineMatchesGraphNodes` | The recipe type read off a real placed compressor matches the machine type on iron_plate's compressor nodes, which the placement filter depends on |
-| `testResolveDisplayRecipeAssignmentPrecedence` | A never-run machine shows on its assigned node flagged as assigned; its own first craft always takes over |
+| `testResolveDisplayRecipeAssignmentPrecedence` | A never-run machine shows on its assigned node flagged as assigned; a live recipe or on-plan history always beats the placement, while off-plan history from another build doesn't |
 | `testMachineAssignmentsPersistAndFollowLinks` | Assignments survive the NBT and stream codecs, old clipboards load with none, unlinking drops the machine's assignment, unplacing removes it |
 | `testScanRadiusOverrideClampAndLinkValidation` | A per-scan radius pick resolves the default and is clamped to the admin cap; link validation accepts anything the widest allowed scan can find, never tighter than the default |
 | `testRecipeLiveSummaryWorstStatusAndRunningCount` | Several machines on one recipe fold into the worst status plus a running/total count; machines with no recipe id are left out |

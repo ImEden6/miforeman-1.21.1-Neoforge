@@ -37,6 +37,13 @@ public class MonitoringPacketHandlers {
             }
 
             long windowTicks = goal.perHour() ? 72000 : 1200;
+            var machineNodeIds = com.mervyn.miforeman.goal.RecipeGraphTraverser.peekMachineNodeIds(goal);
+            // Polls never warm the cache, so a cold one (dedicated server restart, /reload) would
+            // let stale off-plan history override placements. One compute caches it for later polls.
+            if (machineNodeIds == null && !goal.machineAssignments().isEmpty()) {
+                com.mervyn.miforeman.goal.RecipeGraphTraverser.computeRecipeGraph(player.serverLevel(), goal);
+                machineNodeIds = com.mervyn.miforeman.goal.RecipeGraphTraverser.peekMachineNodeIds(goal);
+            }
 
             List<LiveMonitoringPayload.MachineStatusData> list = new ArrayList<>();
 
@@ -93,7 +100,8 @@ public class MonitoringPacketHandlers {
                         primaryRate = rates.values().iterator().next(); // Fallback to first output
                     }
 
-                    var display = ServerMonitoringManager.resolveDisplayRecipe(tracker, goal.machineAssignments().get(pos));
+                    var display = ServerMonitoringManager.resolveDisplayRecipe(tracker, goal.machineAssignments().get(pos),
+                            machineNodeIds);
                     Optional<ResourceLocation> recipeTypeId = ServerMonitoringManager.recipeTypeIdOf(machine);
                     list.add(new LiveMonitoringPayload.MachineStatusData(pos, status, reason, primaryRate, tracker.disposalRatio, blockId,
                             Optional.ofNullable(display.recipeId()), display.assigned(), recipeTypeId));

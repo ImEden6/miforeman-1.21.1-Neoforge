@@ -20,13 +20,9 @@ public final class MachinePlacement {
 
     /** How a linked machine relates to the graph, which decides what the placement list offers. */
     public enum Kind {
-        /** Never run, not placed: can be placed on a node. */
         UNPLACED,
-        /** Placed by hand and still waiting for its first craft: can be unplaced. */
         ASSIGNED,
-        /** Running a recipe the plan doesn't use. Placing it would misreport what it's doing. */
         OFF_PLAN,
-        /** Shows on its own node already; not listed. */
         ON_GRAPH
     }
 
@@ -34,7 +30,8 @@ public final class MachinePlacement {
         if (machine.assigned()) return Kind.ASSIGNED;
         Optional<ResourceLocation> recipe = machine.recipeId();
         if (recipe.isEmpty()) return Kind.UNPLACED;
-        return machineNodeIds.contains(recipe.get()) ? Kind.ON_GRAPH : Kind.OFF_PLAN;
+        if (machineNodeIds.contains(recipe.get())) return Kind.ON_GRAPH;
+        return machine.status() == MachineStatus.RED ? Kind.UNPLACED : Kind.OFF_PLAN;
     }
 
     /** MACHINE nodes whose recipe type is the machine's own, so a compressor is only ever offered

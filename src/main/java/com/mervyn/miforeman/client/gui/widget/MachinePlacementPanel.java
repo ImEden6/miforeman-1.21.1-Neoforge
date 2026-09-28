@@ -40,6 +40,7 @@ public class MachinePlacementPanel {
     private static final int HEADER_HEIGHT = 13;
     private static final int ROW_HEIGHT = 22;
     private static final int MAX_ROWS = 6;
+    private static final int SCROLLBAR_WIDTH = 3;
     private static final int MARGIN = 6;
 
     private static final int COLOUR_FILL = 0xEEEFE0BE;
@@ -48,6 +49,7 @@ public class MachinePlacementPanel {
     private static final int COLOUR_MUTED = 0xFF8A7A68;
     private static final int COLOUR_ACTION = 0xFF6B5030;
     private static final int COLOUR_ROW_HOVER = 0x336B5030;
+    private static final int COLOUR_SCROLL_TRACK = 0x226B5030;
 
     private record Row(LiveMonitoringPayload.MachineStatusData machine, MachinePlacement.Kind kind,
                        List<RecipeGraphNode> compatible) {}
@@ -57,7 +59,10 @@ public class MachinePlacementPanel {
     private final Actions actions;
     private List<Row> rows = List.of();
     private boolean open = false;
-    /** Bottom-right corner of the canvas, in screen space; set every frame by the canvas. */
+    /** Index of the first row shown. */
+    private int scroll = 0;
+    private int left;
+    private int top;
     private int right;
     private int bottom;
 
@@ -67,7 +72,9 @@ public class MachinePlacementPanel {
         this.actions = actions;
     }
 
-    public void setCorner(int right, int bottom) {
+    public void setBounds(int left, int top, int right, int bottom) {
+        this.left = left;
+        this.top = top;
         this.right = right;
         this.bottom = bottom;
     }
@@ -84,6 +91,7 @@ public class MachinePlacementPanel {
         }
         this.rows = built;
         if (rows.isEmpty()) open = false;
+        clampScroll();
     }
 
     /** Closes the list; returns true if it was open, so Esc can be consumed. */
@@ -113,12 +121,20 @@ public class MachinePlacementPanel {
     }
 
     private int visibleRowCount() {
-        return Math.min(rows.size(), MAX_ROWS);
+        int available = chipY() - 2 - (top + MARGIN) - HEADER_HEIGHT - 3;
+        return Math.max(0, Math.min(Math.min(rows.size(), MAX_ROWS), available / ROW_HEIGHT));
+    }
+
+    private int maxScroll() {
+        return Math.max(0, rows.size() - visibleRowCount());
+    }
+
+    private void clampScroll() {
+        scroll = Math.max(0, Math.min(scroll, maxScroll()));
     }
 
     private int panelHeight() {
-        int footer = rows.size() > MAX_ROWS ? 11 : 0;
-        return HEADER_HEIGHT + visibleRowCount() * ROW_HEIGHT + footer + 3;
+        return HEADER_HEIGHT + visibleRowCount() * ROW_HEIGHT + 3;
     }
 
     private int panelX() {
@@ -156,9 +172,10 @@ public class MachinePlacementPanel {
         guiGraphics.drawString(font, Component.translatable("miforeman.graph.placement_title"), px + 4, py + 3,
                 COLOUR_TEXT, false);
 
-        int textWidth = PANEL_WIDTH - 8;
+        clampScroll();
+        int textWidth = PANEL_WIDTH - 8 - (maxScroll() > 0 ? SCROLLBAR_WIDTH + 2 : 0);
         for (int i = 0; i < visibleRowCount(); i++) {
-            Row row = rows.get(i);
+            Row row = rows.get(scroll + i);
             int ry = rowY(i);
             boolean actionable = isActionable(row);
             if (actionable && inside(mouseX, mouseY, px + 1, ry, PANEL_WIDTH - 2, ROW_HEIGHT)) {
@@ -168,15 +185,21 @@ public class MachinePlacementPanel {
             guiGraphics.drawString(font, trim(actionLabel(row).getString(), textWidth), px + 4, ry + 12,
                     actionable ? COLOUR_ACTION : COLOUR_MUTED, false);
         }
-        if (rows.size() > MAX_ROWS) {
-            guiGraphics.drawString(font, Component.translatable("miforeman.graph.more", rows.size() - MAX_ROWS),
-                    px + 4, rowY(MAX_ROWS) + 1, COLOUR_MUTED, false);
+        if (maxScroll() > 0) {
+            int trackX = px + PANEL_WIDTH - SCROLLBAR_WIDTH - 2;
+            int trackY = rowY(0);
+            int trackH = visibleRowCount() * ROW_HEIGHT;
+            int thumbH = Math.max(6, trackH * visibleRowCount() / rows.size());
+            int thumbY = trackY + (trackH - thumbH) * scroll / maxScroll();
+            guiGraphics.fill(trackX, trackY, trackX + SCROLLBAR_WIDTH, trackY + trackH, COLOUR_SCROLL_TRACK);
+            guiGraphics.fill(trackX, thumbY, trackX + SCROLLBAR_WIDTH, thumbY + thumbH, COLOUR_ACTION);
         }
     }
 
     /** Returns true when the click landed on the chip or the open list (consumed either way). */
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (rows.isEmpty() || button != 0) return false;
+        if (!inside(mouseX, mouseY, left, top, right - left, bottom - top)) return false;
         if (inside(mouseX, mouseY, chipX(), chipY(), chipWidth(), CHIP_HEIGHT)) {
             open = !open;
             return true;
@@ -189,7 +212,7 @@ public class MachinePlacementPanel {
         }
         for (int i = 0; i < visibleRowCount(); i++) {
             if (!inside(mouseX, mouseY, panelX(), rowY(i), PANEL_WIDTH, ROW_HEIGHT)) continue;
-            Row row = rows.get(i);
+            Row row = rows.get(scroll + i);
             if (!isActionable(row)) return true;
             GlobalPos pos = row.machine().pos();
             if (row.kind() == MachinePlacement.Kind.ASSIGNED) {
@@ -203,6 +226,16 @@ public class MachinePlacementPanel {
             open = false;
             return true;
         }
+        return true;
+    }
+
+    /** Scrolls the open list; consumes the wheel anywhere over it so the canvas doesn't zoom underneath. */
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollY) {
+        if (!open || rows.isEmpty() || !inside(mouseX, mouseY, panelX(), panelY(), PANEL_WIDTH, panelHeight())) {
+            return false;
+        }
+        scroll -= (int) Math.signum(scrollY);
+        clampScroll();
         return true;
     }
 

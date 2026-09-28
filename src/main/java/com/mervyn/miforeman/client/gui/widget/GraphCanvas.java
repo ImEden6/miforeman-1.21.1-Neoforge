@@ -941,9 +941,7 @@ public class GraphCanvas extends AbstractWidget {
 
         guiGraphics.pose().popPose();
 
-        // Screen-space, bottom-right (the search bar owns the top-right, the hidden-nodes drawer
-        // the left): linked machines the graph has no node to show on.
-        placementPanel.setCorner(getX() + getWidth(), getY() + getHeight());
+        placementPanel.setBounds(getX(), getY(), getX() + getWidth(), getY() + getHeight());
         placementPanel.render(guiGraphics, mouseX, mouseY);
         if (placingPos != null) {
             Component hint = Component.translatable("miforeman.graph.picking_hint", placingName);
@@ -1093,7 +1091,7 @@ public class GraphCanvas extends AbstractWidget {
             return true;
         }
 
-        placementPanel.setCorner(getX() + getWidth(), getY() + getHeight());
+        placementPanel.setBounds(getX(), getY(), getX() + getWidth(), getY() + getHeight());
         if (placementPanel.mouseClicked(mouseX, mouseY, button)) {
             return true;
         }
@@ -1194,6 +1192,10 @@ public class GraphCanvas extends AbstractWidget {
             if (hiddenNodesDrawer.mouseScrolled(mouseX, mouseY, scrollX, scrollY)) {
                 return true;
             }
+        }
+
+        if (placementPanel.mouseScrolled(mouseX, mouseY, scrollY)) {
+            return true;
         }
 
         camera.zoomAt(getX(), getY(), mouseX, mouseY, scrollY, MIN_ZOOM, MAX_ZOOM);

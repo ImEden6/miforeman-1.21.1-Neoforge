@@ -1,6 +1,5 @@
 package com.mervyn.miforeman.client.gui;
 
-import aztech.modern_industrialization.machines.recipe.MachineRecipe;
 import com.mervyn.miforeman.MIForeman;
 import com.mervyn.miforeman.client.DisplayFormat;
 import com.mervyn.miforeman.client.WorldHighlightRenderer;

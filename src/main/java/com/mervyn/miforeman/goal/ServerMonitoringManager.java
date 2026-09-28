@@ -198,13 +198,14 @@ public class ServerMonitoringManager {
     /** What a machine shows under on the graph, and whether that's a manual placement. */
     public record DisplayRecipe(@Nullable ResourceLocation recipeId, boolean assigned) {}
 
-    /** The machine's own recipe history always wins: the player's assignment only fills in
-     *  while there is none, so the first real craft takes over from a wrong or stale guess.
-     *  Extracted from {@code MonitoringPacketHandlers.handleRequest} for unit tests. */
-    public static DisplayRecipe resolveDisplayRecipe(MachineTracker tracker, @Nullable ResourceLocation assignment) {
-        ResourceLocation own = resolveDisplayRecipeId(tracker);
-        if (own != null) return new DisplayRecipe(own, false);
-        return new DisplayRecipe(assignment, assignment != null);
+    public static DisplayRecipe resolveDisplayRecipe(MachineTracker tracker, @Nullable ResourceLocation assignment,
+                                                     @Nullable Set<ResourceLocation> machineNodeIds) {
+        ResourceLocation live = tracker.lastRecipeId != null ? tracker.lastRecipeId : tracker.saturatedRecipeId;
+        if (live != null) return new DisplayRecipe(live, false);
+        ResourceLocation history = tracker.lastKnownRecipeId;
+        boolean historyOffPlan = history != null && machineNodeIds != null && !machineNodeIds.contains(history);
+        if (assignment != null && (history == null || historyOffPlan)) return new DisplayRecipe(assignment, true);
+        return new DisplayRecipe(history, false);
     }
 
     /** Unions every linking goal's cyclic-resource set: a resource counts as "on a recycling

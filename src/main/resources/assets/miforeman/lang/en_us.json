@@ -48,7 +48,6 @@
   "miforeman.graph.no_node": "No node in this plan fits this machine",
   "miforeman.graph.unplace": "Placed by hand - click to unplace",
   "miforeman.graph.off_plan": "Running %s, which this plan doesn't use",
-  "miforeman.graph.more": "+%s more",
   "miforeman.graph.picking_hint": "Click a highlighted node to place the %s. Esc to cancel.",
   "miforeman.scan.radius": "Radius: %s chunks",
   "miforeman.scan.radius_default": "Radius: default",
