@@ -30,6 +30,8 @@ import java.util.Set;
 class MonitoringState {
     final List<GlobalPos> linkedMachines = new ArrayList<>();
     final List<GlobalPos> rejectedMachines = new ArrayList<>();
+    /** Machines the player placed on a graph node by hand; see {@link ProductionGoal#withMachineAssignment}. */
+    final Map<GlobalPos, ResourceLocation> machineAssignments = new HashMap<>();
     MachineLinkHistory machineLinkHistory = MachineLinkHistory.EMPTY;
     final List<LiveMonitoringPayload.MachineStatusData> liveData = new ArrayList<>();
     final List<ScanResultPayload.Candidate> lastScanResults = new ArrayList<>();
@@ -59,6 +61,7 @@ class MonitoringState {
         state.linkedMachines.addAll(goal.linkedMachines());
         state.machineLinkHistory = goal.machineLinkHistory();
         state.rejectedMachines.addAll(goal.rejectedMachines());
+        state.machineAssignments.putAll(goal.machineAssignments());
 
         Minecraft mc = Minecraft.getInstance();
         if (mc.level != null) {
@@ -188,12 +191,12 @@ class MonitoringState {
             ResourceLocation machineId = resolveMachineId(pos);
             LiveMonitoringPayload.MachineStatusData live = liveByPos.get(pos);
             ResourceLocation recipeId = live == null ? null : live.recipeId().orElse(null);
-            String productLabel = recipeId == null ? null : resolveProductLabel(recipeId);
+            String productLabel = recipeId == null ? null : DisplayFormat.productLabel(recipeId);
             if (productLabel == null) {
                 ScanResultPayload.Candidate candidate = candidatesByPos.get(pos);
                 if (candidate != null) {
                     recipeId = candidate.recipeId();
-                    productLabel = resolveProductLabel(recipeId);
+                    productLabel = DisplayFormat.productLabel(recipeId);
                     if (machineId.equals(ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "unknown"))) {
                         machineId = candidate.machineId();
                     }
@@ -210,7 +213,7 @@ class MonitoringState {
             boolean isRejected = rejectedMachines.contains(candidate.pos());
             if (isRejected && !showRejected)
                 continue;
-            String productLabel = resolveProductLabel(candidate.recipeId());
+            String productLabel = DisplayFormat.productLabel(candidate.recipeId());
             rows.add(new ReviewListPanel.ReviewRow(candidate.pos(), candidate.machineId(), false, isRejected, true,
                     productLabel, candidate.recipeId()));
             seen.add(candidate.pos());
@@ -269,29 +272,4 @@ class MonitoringState {
         return texts;
     }
 
-    /**
-     * Resolves a recipe ID to formatted product names, or null if the recipe cannot
-     * be found.
-     */
-    static @Nullable String resolveProductLabel(ResourceLocation recipeId) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null)
-            return null;
-        var holder = mc.level.getRecipeManager().byKey(recipeId).orElse(null);
-        if (holder == null || !(holder.value() instanceof MachineRecipe recipe))
-            return null;
-
-        List<String> names = new ArrayList<>();
-        for (var output : recipe.itemOutputs) {
-            if (output.amount() > 0 && output.probability() > 0) {
-                names.add(DisplayFormat.formatId(BuiltInRegistries.ITEM.getKey(output.variant().getItem())));
-            }
-        }
-        for (var output : recipe.fluidOutputs) {
-            if (output.amount() > 0 && output.probability() > 0) {
-                names.add(DisplayFormat.formatId(BuiltInRegistries.FLUID.getKey(output.fluid())));
-            }
-        }
-        return names.isEmpty() ? null : String.join(", ", names);
-    }
 }

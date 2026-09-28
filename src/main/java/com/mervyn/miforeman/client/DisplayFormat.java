@@ -1,8 +1,15 @@
 package com.mervyn.miforeman.client;
 
+import aztech.modern_industrialization.machines.recipe.MachineRecipe;
 import com.mervyn.miforeman.goal.FailureReason;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Client-side text and resource ID formatting utilities.
@@ -40,5 +47,31 @@ public final class DisplayFormat {
     }
 
     private DisplayFormat() {
+    }
+
+    /**
+     * Resolves a recipe ID to formatted product names, or null if the recipe cannot
+     * be found.
+     */
+    public static @Nullable String productLabel(ResourceLocation recipeId) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null)
+            return null;
+        var holder = mc.level.getRecipeManager().byKey(recipeId).orElse(null);
+        if (holder == null || !(holder.value() instanceof MachineRecipe recipe))
+            return null;
+
+        List<String> names = new ArrayList<>();
+        for (var output : recipe.itemOutputs) {
+            if (output.amount() > 0 && output.probability() > 0) {
+                names.add(formatId(BuiltInRegistries.ITEM.getKey(output.variant().getItem())));
+            }
+        }
+        for (var output : recipe.fluidOutputs) {
+            if (output.amount() > 0 && output.probability() > 0) {
+                names.add(formatId(BuiltInRegistries.FLUID.getKey(output.fluid())));
+            }
+        }
+        return names.isEmpty() ? null : String.join(", ", names);
     }
 }

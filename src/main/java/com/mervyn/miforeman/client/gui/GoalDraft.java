@@ -111,14 +111,15 @@ class GoalDraft {
     }
 
     ProductionGoal buildGoal(List<GlobalPos> linkedMachines, MachineLinkHistory machineLinkHistory,
-                              List<GlobalPos> rejectedMachines) {
+                              List<GlobalPos> rejectedMachines, java.util.Map<GlobalPos, ResourceLocation> machineAssignments) {
         ResourceLocation targetRes = ResourceLocation.tryParse(this.targetIdStr);
+        // Re-applying the links drops assignments for machines unlinked since they were placed.
         return new ProductionGoal(
                 this.goalName, this.targetType, targetRes, adjustedRatePerMinute(), this.recipeSelections,
                 this.currentPlan != null ? Optional.of(this.currentPlan) : Optional.empty(),
                 this.perHour, this.threshold, linkedMachines, this.graphLayout,
-                machineLinkHistory, rejectedMachines, this.uiState
-        );
+                machineLinkHistory, rejectedMachines, this.uiState, java.util.Map.copyOf(machineAssignments)
+        ).withLinkedMachines(linkedMachines, machineLinkHistory);
     }
 
     /** Returns true if goal name and target ID inputs are non-empty and valid. */

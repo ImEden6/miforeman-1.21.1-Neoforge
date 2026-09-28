@@ -431,6 +431,15 @@ public class ClipboardScreen extends Screen {
                     graphViewMode,
                     graphDragEnabled,
                     this.goalDraft.perHour);
+            graphCanvas.setMachineAssignmentHandler((pos, recipeId) -> {
+                if (recipeId == null) {
+                    monitoringState.machineAssignments.remove(pos);
+                } else {
+                    monitoringState.machineAssignments.put(pos, recipeId);
+                }
+                syncGoal();
+            });
+            graphCanvas.updateLiveStatus(monitoringState.liveData);
             // Constructed when expanded so toolbar lambdas remain valid, but not added as a widget.
             if (!detailCardExpanded) {
                 this.addRenderableWidget(graphCanvas);
@@ -736,7 +745,7 @@ public class ClipboardScreen extends Screen {
 
     private ProductionGoal buildCurrentGoal() {
         return goalDraft.buildGoal(monitoringState.linkedMachines, monitoringState.machineLinkHistory,
-                monitoringState.rejectedMachines);
+                monitoringState.rejectedMachines, monitoringState.machineAssignments);
     }
 
     private void syncGoal() {
@@ -983,6 +992,9 @@ public class ClipboardScreen extends Screen {
                 if (graphCanvas.keyPressed(keyCode, scanCode, modifiers)) {
                     return true;
                 }
+            }
+            if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE && graphCanvas.cancelPlacement()) {
+                return true;
             }
             if (graphCanvas.isSearchVisible() && keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
                 graphCanvas.toggleSearch();

@@ -30,7 +30,8 @@ public record ProductionGoal(
         GraphLayoutState graphLayout,
         MachineLinkHistory machineLinkHistory,
         List<GlobalPos> rejectedMachines,
-        ClipboardUiState uiState
+        ClipboardUiState uiState,
+        Map<GlobalPos, ResourceLocation> machineAssignments
 ) {
     public static final Codec<List<GlobalPos>> GLOBAL_POS_LIST_CODEC = Codec.either(
             GlobalPos.CODEC.listOf(),
@@ -77,24 +78,45 @@ public record ProductionGoal(
         this(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, ClipboardUiState.EMPTY);
     }
 
+    public ProductionGoal(String name, TargetType type, ResourceLocation targetId, double rate, Map<ResourceLocation, ResourceLocation> recipeSelections, Optional<FactoryPlan> plan, boolean perHour, double threshold, List<GlobalPos> linkedMachines, GraphLayoutState graphLayout, MachineLinkHistory machineLinkHistory, List<GlobalPos> rejectedMachines, ClipboardUiState uiState) {
+        this(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState, Map.of());
+    }
+
     public ProductionGoal withGraphLayout(GraphLayoutState graphLayout) {
-        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState);
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState, machineAssignments);
     }
 
     public ProductionGoal withPlan(Optional<FactoryPlan> plan) {
-        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState);
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState, machineAssignments);
     }
 
     public ProductionGoal withRecipeSelections(Map<ResourceLocation, ResourceLocation> recipeSelections) {
-        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState);
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState, machineAssignments);
     }
 
+    /** Also drops assignments for machines no longer linked, so every path that unlinks a
+     *  machine (right-click, review list, server-side validation) clears its assignment too. */
     public ProductionGoal withLinkedMachines(List<GlobalPos> linkedMachines, MachineLinkHistory machineLinkHistory) {
-        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState);
+        Map<GlobalPos, ResourceLocation> kept = new java.util.HashMap<>(machineAssignments);
+        kept.keySet().retainAll(new java.util.HashSet<>(linkedMachines));
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState, Map.copyOf(kept));
+    }
+
+    /** Places a linked machine on the MACHINE node {@code recipeId}, or clears its placement when
+     *  {@code recipeId} is null. Only consulted while the machine has no recipe history of its
+     *  own: its first real craft takes over. See {@code ServerMonitoringManager.resolveDisplayRecipe}. */
+    public ProductionGoal withMachineAssignment(GlobalPos pos, @Nullable ResourceLocation recipeId) {
+        Map<GlobalPos, ResourceLocation> updated = new java.util.HashMap<>(machineAssignments);
+        if (recipeId == null) {
+            updated.remove(pos);
+        } else {
+            updated.put(pos, recipeId);
+        }
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState, Map.copyOf(updated));
     }
 
     public ProductionGoal withUiState(ClipboardUiState uiState) {
-        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState);
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState, machineAssignments);
     }
 
     /** Adds a machine to the rejected set. No-op if already present. */
@@ -104,7 +126,7 @@ public record ProductionGoal(
         }
         List<GlobalPos> updated = new java.util.ArrayList<>(rejectedMachines);
         updated.add(pos);
-        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, updated, uiState);
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, updated, uiState, machineAssignments);
     }
 
     /** Removes a machine from the rejected set. No-op if not present. */
@@ -114,7 +136,7 @@ public record ProductionGoal(
         }
         List<GlobalPos> updated = new java.util.ArrayList<>(rejectedMachines);
         updated.remove(pos);
-        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, updated, uiState);
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, updated, uiState, machineAssignments);
     }
 
     public enum TargetType implements StringRepresentable {
@@ -247,6 +269,28 @@ public record ProductionGoal(
         );
     }
 
+    /** GlobalPos can't be a map key in a Codec (keys must encode as strings), so the
+     *  assignments are stored as a list of {pos, recipe} pairs. */
+    private record Assignment(GlobalPos pos, ResourceLocation recipeId) {
+        static final Codec<Assignment> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                GlobalPos.CODEC.fieldOf("pos").forGetter(Assignment::pos),
+                ResourceLocation.CODEC.fieldOf("recipe").forGetter(Assignment::recipeId)
+        ).apply(instance, Assignment::new));
+    }
+
+    private static final Codec<Map<GlobalPos, ResourceLocation>> ASSIGNMENTS_CODEC = Assignment.CODEC.listOf().xmap(
+            list -> {
+                Map<GlobalPos, ResourceLocation> map = new java.util.HashMap<>();
+                list.forEach(a -> map.put(a.pos(), a.recipeId()));
+                return Map.copyOf(map);
+            },
+            map -> map.entrySet().stream().map(e -> new Assignment(e.getKey(), e.getValue())).toList());
+
+    private static final StreamCodec<RegistryFriendlyByteBuf, Map<GlobalPos, ResourceLocation>> ASSIGNMENTS_STREAM_CODEC =
+            ByteBufCodecs.<RegistryFriendlyByteBuf, GlobalPos, ResourceLocation, Map<GlobalPos, ResourceLocation>>map(
+                    java.util.HashMap::new, GlobalPos.STREAM_CODEC, ResourceLocation.STREAM_CODEC)
+                    .map(Map::copyOf, java.util.HashMap::new);
+
     public static final Codec<ProductionGoal> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.STRING.fieldOf("name").forGetter(ProductionGoal::name),
             StringRepresentable.fromEnum(TargetType::values).fieldOf("type").forGetter(ProductionGoal::type),
@@ -260,7 +304,8 @@ public record ProductionGoal(
             GraphLayoutState.CODEC.optionalFieldOf("graph_layout", GraphLayoutState.EMPTY).forGetter(ProductionGoal::graphLayout),
             MachineLinkHistory.CODEC.optionalFieldOf("machine_link_history", MachineLinkHistory.EMPTY).forGetter(ProductionGoal::machineLinkHistory),
             GLOBAL_POS_LIST_CODEC.optionalFieldOf("rejected_machines", List.of()).forGetter(ProductionGoal::rejectedMachines),
-            ClipboardUiState.CODEC.optionalFieldOf("ui_state", ClipboardUiState.EMPTY).forGetter(ProductionGoal::uiState)
+            ClipboardUiState.CODEC.optionalFieldOf("ui_state", ClipboardUiState.EMPTY).forGetter(ProductionGoal::uiState),
+            ASSIGNMENTS_CODEC.optionalFieldOf("machine_assignments", Map.of()).forGetter(ProductionGoal::machineAssignments)
     ).apply(instance, ProductionGoal::new));
 
     public static final StreamCodec<RegistryFriendlyByteBuf, ProductionGoal> STREAM_CODEC = new StreamCodec<RegistryFriendlyByteBuf, ProductionGoal>() {
@@ -279,7 +324,8 @@ public record ProductionGoal(
             MachineLinkHistory machineLinkHistory = MachineLinkHistory.STREAM_CODEC.decode(buf);
             List<GlobalPos> rejectedMachines = GlobalPos.STREAM_CODEC.apply(ByteBufCodecs.list()).decode(buf);
             ClipboardUiState uiState = ClipboardUiState.STREAM_CODEC.decode(buf);
-            return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState);
+            Map<GlobalPos, ResourceLocation> machineAssignments = ASSIGNMENTS_STREAM_CODEC.decode(buf);
+            return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState, machineAssignments);
         }
 
         @Override
@@ -297,6 +343,7 @@ public record ProductionGoal(
             MachineLinkHistory.STREAM_CODEC.encode(buf, goal.machineLinkHistory());
             GlobalPos.STREAM_CODEC.apply(ByteBufCodecs.list()).encode(buf, goal.rejectedMachines());
             ClipboardUiState.STREAM_CODEC.encode(buf, goal.uiState());
+            ASSIGNMENTS_STREAM_CODEC.encode(buf, goal.machineAssignments());
         }
     };
 }

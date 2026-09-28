@@ -1263,7 +1263,8 @@ public class ForemanGameTests {
                 com.mervyn.miforeman.network.LiveMonitoringPayload.MachineStatusData> machine = (status, recipe) ->
                 new com.mervyn.miforeman.network.LiveMonitoringPayload.MachineStatusData(
                         GlobalPos.of(Level.OVERWORLD, BlockPos.ZERO), status,
-                        com.mervyn.miforeman.goal.FailureReason.NONE, 0.0, 0.0, machineId, recipe);
+                        com.mervyn.miforeman.goal.FailureReason.NONE, 0.0, 0.0, machineId, recipe,
+                        false, java.util.Optional.empty());
 
         // The starved machine goes first among four on one recipe: the old last-put-wins map
         // would have shown the GREEN one after it and hidden the problem.
@@ -1488,22 +1489,156 @@ public class ForemanGameTests {
     }
 
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
-    public static void testCountMachinesOffGraph(GameTestHelper helper) {
-        ResourceLocation onGraph = ResourceLocation.parse("modern_industrialization:materials/iron/compressor/main");
-        ResourceLocation offPlan = ResourceLocation.parse("modern_industrialization:materials/gold/compressor/main");
-        var machineId = ResourceLocation.parse("modern_industrialization:electric_compressor");
-        java.util.function.Function<java.util.Optional<ResourceLocation>, com.mervyn.miforeman.network.LiveMonitoringPayload.MachineStatusData> machine =
-                recipe -> new com.mervyn.miforeman.network.LiveMonitoringPayload.MachineStatusData(
-                        GlobalPos.of(Level.OVERWORLD, BlockPos.ZERO), com.mervyn.miforeman.goal.MachineStatus.RED,
-                        com.mervyn.miforeman.goal.FailureReason.STARVED, 0.0, 0.0, machineId, recipe);
+    public static void testMachinePlacementClassifyAndCompatibleNodes(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        RecipeGraphTraverser.clearGraphCache();
+        var graph = RecipeGraphTraverser.computeRecipeGraph(level, new ProductionGoal("placement_test",
+                ProductionGoal.TargetType.ITEM, ResourceLocation.parse("modern_industrialization:iron_plate"), 1.0));
+        ResourceLocation compressorType = ResourceLocation.parse("modern_industrialization:compressor");
+        var compatible = com.mervyn.miforeman.goal.MachinePlacement.compatibleNodes(graph.nodes().values(), compressorType);
+        if (compatible.isEmpty()) {
+            helper.fail("Expected iron_plate's graph to have at least one compressor node to place a compressor on.");
+            return;
+        }
+        for (var node : compatible) {
+            if (node.getType() != com.mervyn.miforeman.goal.NodeType.MACHINE || !compressorType.equals(node.getMachineType())) {
+                helper.fail("compatibleNodes offered a node a compressor can't run: " + node.getId());
+                return;
+            }
+        }
+        // A machine whose type couldn't be read is offered nothing, rather than every node.
+        if (!com.mervyn.miforeman.goal.MachinePlacement.compatibleNodes(graph.nodes().values(), null).isEmpty()) {
+            helper.fail("A machine with an unknown recipe type must not be offered any node.");
+            return;
+        }
 
-        int count = com.mervyn.miforeman.goal.RecipeLiveSummary.countOffGraph(List.of(
-                machine.apply(java.util.Optional.of(onGraph)),
-                machine.apply(java.util.Optional.of(offPlan)),
-                machine.apply(java.util.Optional.empty())), Set.of(onGraph));
-        // Never-run and running-something-off-plan both count; the on-graph one doesn't.
-        if (count != 2) {
-            helper.fail("Expected 2 machines off the graph, got " + count);
+        ResourceLocation onGraph = compatible.get(0).getId();
+        ResourceLocation offPlan = ResourceLocation.parse("modern_industrialization:materials/gold/compressor/main");
+        Set<ResourceLocation> machineNodeIds = new java.util.HashSet<>();
+        graph.nodes().forEach((id, node) -> {
+            if (node.getType() == com.mervyn.miforeman.goal.NodeType.MACHINE) machineNodeIds.add(id);
+        });
+        record Case(java.util.Optional<ResourceLocation> recipe, boolean assigned, com.mervyn.miforeman.goal.MachinePlacement.Kind expected) {}
+        for (Case c : List.of(
+                new Case(java.util.Optional.empty(), false, com.mervyn.miforeman.goal.MachinePlacement.Kind.UNPLACED),
+                new Case(java.util.Optional.of(onGraph), true, com.mervyn.miforeman.goal.MachinePlacement.Kind.ASSIGNED),
+                new Case(java.util.Optional.of(onGraph), false, com.mervyn.miforeman.goal.MachinePlacement.Kind.ON_GRAPH),
+                new Case(java.util.Optional.of(offPlan), false, com.mervyn.miforeman.goal.MachinePlacement.Kind.OFF_PLAN))) {
+            var machine = new com.mervyn.miforeman.network.LiveMonitoringPayload.MachineStatusData(
+                    GlobalPos.of(Level.OVERWORLD, BlockPos.ZERO), com.mervyn.miforeman.goal.MachineStatus.RED,
+                    com.mervyn.miforeman.goal.FailureReason.STARVED, 0.0, 0.0,
+                    ResourceLocation.parse("modern_industrialization:electric_compressor"), c.recipe(), c.assigned(),
+                    java.util.Optional.of(compressorType));
+            var kind = com.mervyn.miforeman.goal.MachinePlacement.classify(machine, machineNodeIds);
+            if (kind != c.expected()) {
+                helper.fail("classify(recipe=" + c.recipe() + ", assigned=" + c.assigned() + ") = " + kind + ", expected " + c.expected());
+                return;
+            }
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testRecipeTypeIdOfRealMachineMatchesGraphNodes(GameTestHelper helper) {
+        // The whole placement filter rests on this: the type id the server reads off a placed
+        // machine must be the same id the graph stamps on that machine's nodes.
+        ServerLevel level = helper.getLevel();
+        BlockPos relativePos = new BlockPos(1, 1, 1);
+        helper.setBlock(relativePos, net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+                ResourceLocation.parse("modern_industrialization:bronze_compressor")));
+        if (!(helper.getBlockEntity(relativePos) instanceof MachineBlockEntity machine)) {
+            helper.fail("Placed block is not a MachineBlockEntity!");
+            return;
+        }
+        var typeId = ServerMonitoringManager.recipeTypeIdOf(machine);
+        if (typeId.isEmpty()) {
+            helper.fail("Could not read a recipe type off a bronze compressor.");
+            return;
+        }
+        RecipeGraphTraverser.clearGraphCache();
+        var graph = RecipeGraphTraverser.computeRecipeGraph(level, new ProductionGoal("type_match_test",
+                ProductionGoal.TargetType.ITEM, ResourceLocation.parse("modern_industrialization:iron_plate"), 1.0));
+        if (com.mervyn.miforeman.goal.MachinePlacement.compatibleNodes(graph.nodes().values(), typeId.get()).isEmpty()) {
+            helper.fail("A real compressor's type id " + typeId.get() + " matched no compressor node in iron_plate's graph.");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testResolveDisplayRecipeAssignmentPrecedence(GameTestHelper helper) {
+        ResourceLocation assignment = ResourceLocation.parse("modern_industrialization:materials/iron/compressor/main");
+        ResourceLocation real = ResourceLocation.parse("modern_industrialization:materials/copper/compressor/main");
+
+        var never = new ServerMonitoringManager.MachineTracker(BlockPos.ZERO);
+        var placed = ServerMonitoringManager.resolveDisplayRecipe(never, assignment);
+        if (!assignment.equals(placed.recipeId()) || !placed.assigned()) {
+            helper.fail("A never-run machine should show on its assigned node, flagged as assigned: " + placed);
+            return;
+        }
+        var nothing = ServerMonitoringManager.resolveDisplayRecipe(never, null);
+        if (nothing.recipeId() != null || nothing.assigned()) {
+            helper.fail("A never-run, unplaced machine should show nowhere: " + nothing);
+            return;
+        }
+        // Its first real craft takes over from the placement, even a wrong one.
+        var ran = new ServerMonitoringManager.MachineTracker(BlockPos.ZERO);
+        ServerMonitoringManager.recordActiveRecipe(ran, real);
+        var afterCraft = ServerMonitoringManager.resolveDisplayRecipe(ran, assignment);
+        if (!real.equals(afterCraft.recipeId()) || afterCraft.assigned()) {
+            helper.fail("A machine's own recipe must win over its assignment: " + afterCraft);
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testMachineAssignmentsPersistAndFollowLinks(GameTestHelper helper) {
+        var level = helper.getLevel();
+        GlobalPos kept = GlobalPos.of(Level.OVERWORLD, new BlockPos(1, 64, 1));
+        GlobalPos dropped = GlobalPos.of(Level.NETHER, new BlockPos(2, 70, 2));
+        ResourceLocation recipe = ResourceLocation.parse("modern_industrialization:materials/iron/compressor/main");
+
+        ProductionGoal goal = new ProductionGoal("assign_test", ProductionGoal.TargetType.ITEM,
+                ResourceLocation.parse("modern_industrialization:iron_plate"), 1.0)
+                .withLinkedMachines(List.of(kept, dropped), com.mervyn.miforeman.goal.MachineLinkHistory.EMPTY)
+                .withMachineAssignment(kept, recipe)
+                .withMachineAssignment(dropped, recipe);
+
+        // Saved to the clipboard item (NBT) and sent over the network (stream codec).
+        var nbt = ProductionGoal.CODEC.encodeStart(net.minecraft.nbt.NbtOps.INSTANCE, goal).getOrThrow();
+        var fromNbt = ProductionGoal.CODEC.parse(net.minecraft.nbt.NbtOps.INSTANCE, nbt).getOrThrow();
+        if (!goal.machineAssignments().equals(fromNbt.machineAssignments())) {
+            helper.fail("Assignments lost in the NBT codec: " + fromNbt.machineAssignments());
+            return;
+        }
+        @SuppressWarnings("deprecation")
+        var buf = new net.minecraft.network.RegistryFriendlyByteBuf(io.netty.buffer.Unpooled.buffer(), level.registryAccess());
+        ProductionGoal.STREAM_CODEC.encode(buf, goal);
+        var fromStream = ProductionGoal.STREAM_CODEC.decode(buf);
+        if (!goal.machineAssignments().equals(fromStream.machineAssignments()) || buf.readableBytes() != 0) {
+            helper.fail("Assignments lost in the stream codec: " + fromStream.machineAssignments());
+            return;
+        }
+
+        // A clipboard saved before this feature has no assignments field and must still load.
+        var legacy = ((net.minecraft.nbt.CompoundTag) nbt).copy();
+        legacy.remove("machine_assignments");
+        var fromLegacy = ProductionGoal.CODEC.parse(net.minecraft.nbt.NbtOps.INSTANCE, legacy).getOrThrow();
+        if (!fromLegacy.machineAssignments().isEmpty()) {
+            helper.fail("An old clipboard should load with no assignments, got " + fromLegacy.machineAssignments());
+            return;
+        }
+
+        // Unlinking a machine, by any path, clears its placement.
+        var unlinked = goal.withLinkedMachines(List.of(kept), goal.machineLinkHistory());
+        if (!unlinked.machineAssignments().equals(Map.of(kept, recipe))) {
+            helper.fail("Unlinking should drop only that machine's assignment, got " + unlinked.machineAssignments());
+            return;
+        }
+        // Unplacing removes it.
+        if (!unlinked.withMachineAssignment(kept, null).machineAssignments().isEmpty()) {
+            helper.fail("Unplacing a machine should remove its assignment.");
             return;
         }
         helper.succeed();
@@ -1634,7 +1769,9 @@ public class ForemanGameTests {
                         12.5,
                         0.0,
                         ResourceLocation.parse("modern_industrialization:bronze_compressor"),
-                        java.util.Optional.of(ResourceLocation.parse("modern_industrialization:materials/iron/compressor/main"))),
+                        java.util.Optional.of(ResourceLocation.parse("modern_industrialization:materials/iron/compressor/main")),
+                        false,
+                        java.util.Optional.of(ResourceLocation.parse("modern_industrialization:compressor"))),
                 new com.mervyn.miforeman.network.LiveMonitoringPayload.MachineStatusData(
                         GlobalPos.of(net.minecraft.world.level.Level.NETHER, new BlockPos(4, 5, 6)),
                         com.mervyn.miforeman.goal.MachineStatus.ORANGE,
@@ -1642,6 +1779,8 @@ public class ForemanGameTests {
                         0.0,
                         1.0,
                         ResourceLocation.parse("modern_industrialization:electric_compressor"),
+                        java.util.Optional.empty(),
+                        false,
                         java.util.Optional.empty()),
                 new com.mervyn.miforeman.network.LiveMonitoringPayload.MachineStatusData(
                         GlobalPos.of(net.minecraft.world.level.Level.OVERWORLD, new BlockPos(7, 8, 9)),
@@ -1650,7 +1789,9 @@ public class ForemanGameTests {
                         99.9,
                         0.9,
                         ResourceLocation.parse("modern_industrialization:macerator"),
-                        java.util.Optional.of(ResourceLocation.parse("modern_industrialization:materials/iron/macerator/main")))));
+                        java.util.Optional.of(ResourceLocation.parse("modern_industrialization:materials/iron/macerator/main")),
+                        true,
+                        java.util.Optional.of(ResourceLocation.parse("modern_industrialization:macerator")))));
 
         @SuppressWarnings("deprecation")
         var buf = new net.minecraft.network.RegistryFriendlyByteBuf(io.netty.buffer.Unpooled.buffer(),

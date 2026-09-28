@@ -115,17 +115,27 @@ public class MonitoringScreen extends Screen {
         }
     }
 
+    /** A recipe the client can't resolve to a label (e.g. a runtime-built furnace recipe) still
+     *  ran, so it gets no label rather than a waiting one. */
+    private static @org.jetbrains.annotations.Nullable String rowLabel(LiveMonitoringPayload.MachineStatusData m) {
+        if (m.recipeId().isEmpty()) {
+            return net.minecraft.client.resources.language.I18n.get("miforeman.monitoring.waiting_first_craft");
+        }
+        String product = com.mervyn.miforeman.client.DisplayFormat.productLabel(m.recipeId().get());
+        if (m.assigned()) {
+            return net.minecraft.client.resources.language.I18n.get("miforeman.monitoring.placed_waiting",
+                    product != null ? product : com.mervyn.miforeman.client.DisplayFormat.formatId(m.recipeId().get()));
+        }
+        return product;
+    }
+
     private List<MonitoringListPanel.MonitoringRow> buildDisplayRows() {
         List<LiveMonitoringPayload.MachineStatusData> sorted = new ArrayList<>(state.liveData);
         sorted.sort(Comparator.comparingInt(this::statusRank));
 
         List<MonitoringListPanel.MonitoringRow> rows = sorted.stream()
                 // A machine with no recipe yet has only ever been idle since it was linked.
-                // A recipe the client can't resolve to a label (e.g. a runtime-built furnace
-                // recipe) still ran, so it gets no label rather than the waiting one.
-                .map(m -> new MonitoringListPanel.MonitoringRow(m, m.recipeId().isEmpty()
-                        ? net.minecraft.client.resources.language.I18n.get("miforeman.monitoring.waiting_first_craft")
-                        : MonitoringState.resolveProductLabel(m.recipeId().get())))
+                .map(m -> new MonitoringListPanel.MonitoringRow(m, rowLabel(m)))
                 .toList();
 
         searchState.setQuery(searchQuery, searchQuery.isBlank() ? Map.of() : searchableTexts(rows));

@@ -18,6 +18,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.core.GlobalPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
@@ -32,6 +33,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 /**
@@ -123,8 +125,14 @@ public class GraphCanvas extends AbstractWidget {
     /** Live status of every machine on each recipe, keyed by recipe ID. Empty until
      *  {@link #updateLiveStatus} is called. */
     private Map<ResourceLocation, RecipeLiveSummary> liveStatusByRecipeId = Map.of();
-    /** Linked machines reporting live data that no node can show; see {@link RecipeLiveSummary#countOffGraph}. */
-    private int machinesOffGraph = 0;
+    /** Last live data received, kept so a placement can update the view before the next poll. */
+    private List<LiveMonitoringPayload.MachineStatusData> liveMachines = List.of();
+    private final MachinePlacementPanel placementPanel;
+    private @Nullable BiConsumer<GlobalPos, @Nullable ResourceLocation> onMachineAssignment;
+    /** Pick mode: the machine being placed and the nodes it may go on. Null when not picking. */
+    private @Nullable GlobalPos placingPos;
+    private String placingName = "";
+    private Set<ResourceLocation> placeTargets = Set.of();
 
     public GraphCanvas(int x, int y, int width, int height, RecipeGraph graph,
             GraphLayoutState layoutState, double panX, double panY, float zoom,
@@ -162,6 +170,20 @@ public class GraphCanvas extends AbstractWidget {
                 null);
         this.hiddenNodesDrawer = new HiddenNodesDrawer(Minecraft.getInstance().font, () -> this.layoutState,
                 () -> this.graph, this::toggleNodeVisibility, this::unhideAll);
+        this.placementPanel = new MachinePlacementPanel(Minecraft.getInstance().font, () -> this.graph,
+                new MachinePlacementPanel.Actions() {
+                    @Override
+                    public void assign(GlobalPos pos, @Nullable ResourceLocation recipeId) {
+                        assignMachine(pos, recipeId);
+                    }
+
+                    @Override
+                    public void beginPicking(GlobalPos pos, String machineName, Set<ResourceLocation> targets) {
+                        placingPos = pos;
+                        placingName = machineName;
+                        placeTargets = targets;
+                    }
+                });
         updateSearchBarPosition();
         updateDrawerPosition();
         computeFilteredView();
@@ -195,13 +217,50 @@ public class GraphCanvas extends AbstractWidget {
      * Updates machine status colors from incoming monitoring data.
      */
     public void updateLiveStatus(List<LiveMonitoringPayload.MachineStatusData> data) {
+        this.liveMachines = List.copyOf(data);
         this.liveStatusByRecipeId = RecipeLiveSummary.byRecipe(data);
         Set<ResourceLocation> machineNodeIds = new HashSet<>();
         graph.nodes().forEach((id, node) -> {
             if (node.getType() == NodeType.MACHINE)
                 machineNodeIds.add(id);
         });
-        this.machinesOffGraph = RecipeLiveSummary.countOffGraph(data, machineNodeIds);
+        placementPanel.update(data, machineNodeIds);
+    }
+
+    /** Called with a machine's new placement (null recipe = unplaced) so the screen can save it. */
+    public void setMachineAssignmentHandler(BiConsumer<GlobalPos, @Nullable ResourceLocation> handler) {
+        this.onMachineAssignment = handler;
+    }
+
+    private void assignMachine(GlobalPos pos, @Nullable ResourceLocation recipeId) {
+        cancelPicking();
+        if (onMachineAssignment != null) {
+            onMachineAssignment.accept(pos, recipeId);
+        }
+        // Show the change now rather than on the next poll, up to a second later. Only a machine
+        // with no history of its own can be (un)placed, so its recipe is exactly the placement.
+        List<LiveMonitoringPayload.MachineStatusData> updated = new ArrayList<>();
+        for (LiveMonitoringPayload.MachineStatusData m : liveMachines) {
+            updated.add(!m.pos().equals(pos) ? m
+                    : new LiveMonitoringPayload.MachineStatusData(m.pos(), m.status(), m.reason(), m.actualRate(),
+                            m.disposalRatio(), m.machineId(), java.util.Optional.ofNullable(recipeId), recipeId != null,
+                            m.recipeTypeId()));
+        }
+        updateLiveStatus(updated);
+    }
+
+    private void cancelPicking() {
+        placingPos = null;
+        placeTargets = Set.of();
+    }
+
+    /** Esc handling: leaves pick mode or closes the placement list. True if either was open. */
+    public boolean cancelPlacement() {
+        if (placingPos != null) {
+            cancelPicking();
+            return true;
+        }
+        return placementPanel.close();
     }
 
     /**
@@ -783,8 +842,11 @@ public class GraphCanvas extends AbstractWidget {
                 continue;
             boolean selected = selectedNodeIds.contains(node.getId());
             boolean hoveredNode = node.getId().equals(hoveredNodeId);
-            boolean isMatch = !isSearching || searchState.isMatch(node.getId());
-            boolean isCurrentMatch = isSearching && searchState.isCurrentMatch(node.getId());
+            // Pick mode borrows the search styling: valid targets highlighted, the rest dimmed.
+            boolean picking = placingPos != null;
+            boolean isMatch = picking ? placeTargets.contains(node.getId())
+                    : !isSearching || searchState.isMatch(node.getId());
+            boolean isCurrentMatch = picking ? isMatch : isSearching && searchState.isCurrentMatch(node.getId());
 
             int fillTop = !isMatch ? COLOUR_NODE_FILL_TOP_DIM : COLOUR_NODE_FILL_TOP;
             int fillBottom = !isMatch ? COLOUR_NODE_FILL_BOTTOM_DIM : COLOUR_NODE_FILL_BOTTOM;
@@ -879,16 +941,18 @@ public class GraphCanvas extends AbstractWidget {
 
         guiGraphics.pose().popPose();
 
-        // Screen-space chip, bottom-right (the search bar owns the top-right, the hidden-nodes
-        // drawer the left), for linked machines the graph has no node to show on.
-        if (machinesOffGraph > 0) {
-            Component chip = Component.translatable("miforeman.graph.machines_off_graph", machinesOffGraph);
-            int chipW = mc.font.width(chip) + 8;
-            int chipX = getX() + getWidth() - 6 - chipW;
-            int chipY = getY() + getHeight() - 6 - 14;
-            guiGraphics.fill(chipX, chipY, chipX + chipW, chipY + 14, COLOUR_CHIP_FILL);
-            guiGraphics.renderOutline(chipX, chipY, chipW, 14, COLOUR_BORDER_DARK);
-            guiGraphics.drawString(mc.font, chip, chipX + 4, chipY + 3, COLOUR_TEXT, false);
+        // Screen-space, bottom-right (the search bar owns the top-right, the hidden-nodes drawer
+        // the left): linked machines the graph has no node to show on.
+        placementPanel.setCorner(getX() + getWidth(), getY() + getHeight());
+        placementPanel.render(guiGraphics, mouseX, mouseY);
+        if (placingPos != null) {
+            Component hint = Component.translatable("miforeman.graph.picking_hint", placingName);
+            int hintW = mc.font.width(hint) + 8;
+            int hintX = getX() + (getWidth() - hintW) / 2;
+            int hintY = getY() + 6;
+            guiGraphics.fill(hintX, hintY, hintX + hintW, hintY + 14, COLOUR_CHIP_FILL);
+            guiGraphics.renderOutline(hintX, hintY, hintW, 14, COLOUR_BORDER_DARK);
+            guiGraphics.drawString(mc.font, hint, hintX + 4, hintY + 3, COLOUR_TEXT, false);
         }
 
         guiGraphics.disableScissor();
@@ -1014,6 +1078,24 @@ public class GraphCanvas extends AbstractWidget {
             if (hiddenNodesDrawer.mouseClicked(mouseX, mouseY, button)) {
                 return true;
             }
+        }
+
+        // Pick mode: a click on a highlighted node places the machine there; any other click,
+        // or a right-click, cancels.
+        if (placingPos != null && mouseX >= getX() && mouseX < getX() + getWidth()
+                && mouseY >= getY() && mouseY < getY() + getHeight()) {
+            RecipeGraphNode target = button == 0 ? nodeAt(mouseX, mouseY) : null;
+            if (target != null && placeTargets.contains(target.getId())) {
+                assignMachine(placingPos, target.getId());
+            } else {
+                cancelPicking();
+            }
+            return true;
+        }
+
+        placementPanel.setCorner(getX() + getWidth(), getY() + getHeight());
+        if (placementPanel.mouseClicked(mouseX, mouseY, button)) {
+            return true;
         }
 
         if (button == 1) {

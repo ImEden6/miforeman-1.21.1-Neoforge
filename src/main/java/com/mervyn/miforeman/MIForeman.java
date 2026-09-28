@@ -92,7 +92,8 @@ public class MIForeman {
         // Bump whenever any payload's wire format changes, so a mismatched client and server
         // are refused at connect instead of misreading each other's packets.
         // 2: scan request/result carry a radius.
-        var registrar = event.registrar("2");
+        // 3: goals carry machine assignments; live status carries assigned + recipe type.
+        var registrar = event.registrar("3");
         registrar.playToServer(
                 com.mervyn.miforeman.network.GoalUpdatePayload.TYPE,
                 com.mervyn.miforeman.network.GoalUpdatePayload.STREAM_CODEC,

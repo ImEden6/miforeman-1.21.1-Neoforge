@@ -16,10 +16,15 @@ import java.util.Optional;
 public record LiveMonitoringPayload(List<LiveMonitoringPayload.MachineStatusData> machines) implements CustomPacketPayload {
     public static final Type<LiveMonitoringPayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "live_monitoring"));
 
-    // 7 fields exceeds StreamCodec.composite's max arity (6), so this is hand-coded,
+    // Too many fields for StreamCodec.composite's max arity (6), so this is hand-coded,
     // matching the pattern in ClipboardUiState.STREAM_CODEC.
+    /** {@code recipeId} is the recipe this machine shows under on the graph. {@code assigned}
+     *  says it came from the player's manual placement rather than the machine actually running
+     *  it. {@code recipeTypeId} is the machine's recipe type (a RECIPE_TYPE registry key, the
+     *  same id graph MACHINE nodes carry), used to offer only nodes it could serve. */
     public record MachineStatusData(GlobalPos pos, MachineStatus status, FailureReason reason, double actualRate,
-                                     double disposalRatio, ResourceLocation machineId, Optional<ResourceLocation> recipeId) {
+                                     double disposalRatio, ResourceLocation machineId, Optional<ResourceLocation> recipeId,
+                                     boolean assigned, Optional<ResourceLocation> recipeTypeId) {
         public static final StreamCodec<RegistryFriendlyByteBuf, MachineStatusData> STREAM_CODEC =
                 new StreamCodec<>() {
                     @Override
@@ -31,7 +36,10 @@ public record LiveMonitoringPayload(List<LiveMonitoringPayload.MachineStatusData
                         double disposalRatio = ByteBufCodecs.DOUBLE.decode(buf);
                         ResourceLocation machineId = ResourceLocation.STREAM_CODEC.decode(buf);
                         Optional<ResourceLocation> recipeId = ByteBufCodecs.optional(ResourceLocation.STREAM_CODEC).decode(buf);
-                        return new MachineStatusData(pos, status, reason, actualRate, disposalRatio, machineId, recipeId);
+                        boolean assigned = ByteBufCodecs.BOOL.decode(buf);
+                        Optional<ResourceLocation> recipeTypeId = ByteBufCodecs.optional(ResourceLocation.STREAM_CODEC).decode(buf);
+                        return new MachineStatusData(pos, status, reason, actualRate, disposalRatio, machineId, recipeId,
+                                assigned, recipeTypeId);
                     }
 
                     @Override
@@ -43,6 +51,8 @@ public record LiveMonitoringPayload(List<LiveMonitoringPayload.MachineStatusData
                         ByteBufCodecs.DOUBLE.encode(buf, value.disposalRatio());
                         ResourceLocation.STREAM_CODEC.encode(buf, value.machineId());
                         ByteBufCodecs.optional(ResourceLocation.STREAM_CODEC).encode(buf, value.recipeId());
+                        ByteBufCodecs.BOOL.encode(buf, value.assigned());
+                        ByteBufCodecs.optional(ResourceLocation.STREAM_CODEC).encode(buf, value.recipeTypeId());
                     }
                 };
     }

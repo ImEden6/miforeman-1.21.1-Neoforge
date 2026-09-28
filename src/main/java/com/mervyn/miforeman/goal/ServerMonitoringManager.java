@@ -184,6 +184,29 @@ public class ServerMonitoringManager {
         return tracker.lastKnownRecipeId;
     }
 
+    /** The machine's recipe type as a RECIPE_TYPE registry key: the same id graph MACHINE nodes
+     *  carry as their machine type, so the two compare directly. Empty when the crafter's type
+     *  can't be read (some modular addon machines). */
+    public static java.util.Optional<ResourceLocation> recipeTypeIdOf(MachineBlockEntity machine) {
+        UnifiedCrafter crafter = getCrafter(machine);
+        var recipeType = crafter != null ? crafter.getRecipeType() : null;
+        return recipeType != null
+                ? java.util.Optional.ofNullable(net.minecraft.core.registries.BuiltInRegistries.RECIPE_TYPE.getKey(recipeType))
+                : java.util.Optional.empty();
+    }
+
+    /** What a machine shows under on the graph, and whether that's a manual placement. */
+    public record DisplayRecipe(@Nullable ResourceLocation recipeId, boolean assigned) {}
+
+    /** The machine's own recipe history always wins: the player's assignment only fills in
+     *  while there is none, so the first real craft takes over from a wrong or stale guess.
+     *  Extracted from {@code MonitoringPacketHandlers.handleRequest} for unit tests. */
+    public static DisplayRecipe resolveDisplayRecipe(MachineTracker tracker, @Nullable ResourceLocation assignment) {
+        ResourceLocation own = resolveDisplayRecipeId(tracker);
+        if (own != null) return new DisplayRecipe(own, false);
+        return new DisplayRecipe(assignment, assignment != null);
+    }
+
     /** Unions every linking goal's cyclic-resource set: a resource counts as "on a recycling
      *  loop" for a shared machine if any goal that links it says so, rather than picking one
      *  goal's context arbitrarily. Extracted from {@link #onServerTick} so it's unit-testable

@@ -93,8 +93,10 @@ public class MonitoringPacketHandlers {
                         primaryRate = rates.values().iterator().next(); // Fallback to first output
                     }
 
-                    ResourceLocation displayRecipeId = ServerMonitoringManager.resolveDisplayRecipeId(tracker);
-                    list.add(new LiveMonitoringPayload.MachineStatusData(pos, status, reason, primaryRate, tracker.disposalRatio, blockId, Optional.ofNullable(displayRecipeId)));
+                    var display = ServerMonitoringManager.resolveDisplayRecipe(tracker, goal.machineAssignments().get(pos));
+                    Optional<ResourceLocation> recipeTypeId = ServerMonitoringManager.recipeTypeIdOf(machine);
+                    list.add(new LiveMonitoringPayload.MachineStatusData(pos, status, reason, primaryRate, tracker.disposalRatio, blockId,
+                            Optional.ofNullable(display.recipeId()), display.assigned(), recipeTypeId));
                 }
             }
 

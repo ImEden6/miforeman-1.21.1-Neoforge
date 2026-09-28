@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The recipe graph shows how many linked machines it has no node for (never run yet, or
   running a recipe outside the plan), and the monitoring list marks machines still waiting
   for their first craft.
+- Click that count to list those machines and place a never-run one on a graph node by hand.
+  Only nodes the machine can actually run are offered, and when just one fits it's a single
+  click. The machine's first real craft replaces the placement.
 
 ### Changed
 - Recipe graph wires now route around machine and resource cards instead of running

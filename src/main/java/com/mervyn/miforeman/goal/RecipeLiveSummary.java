@@ -6,7 +6,6 @@ import net.minecraft.resources.ResourceLocation;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * Live status of every linked machine working one recipe, folded into what a single graph
@@ -26,19 +25,6 @@ public record RecipeLiveSummary(MachineStatus worst, int running, int total) {
             entry.recipeId().ifPresent(recipeId -> result.merge(recipeId, of(entry.status()), RecipeLiveSummary::combine));
         }
         return result;
-    }
-
-    /** Linked machines no graph node can show: never seen running anything, or running a recipe
-     *  that isn't part of this plan. Counted against every node in the graph, not just the
-     *  visible ones, so hiding a node or switching view mode doesn't make its machines "missing". */
-    public static int countOffGraph(List<LiveMonitoringPayload.MachineStatusData> data, Set<ResourceLocation> machineNodeIds) {
-        int count = 0;
-        for (LiveMonitoringPayload.MachineStatusData entry : data) {
-            if (entry.recipeId().map(id -> !machineNodeIds.contains(id)).orElse(true)) {
-                count++;
-            }
-        }
-        return count;
     }
 
     private static RecipeLiveSummary of(MachineStatus status) {
