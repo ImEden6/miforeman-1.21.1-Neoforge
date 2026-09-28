@@ -11,6 +11,7 @@ import com.mervyn.miforeman.goal.NodePosition;
 import com.mervyn.miforeman.goal.NodeType;
 import com.mervyn.miforeman.goal.RecipeGraph;
 import com.mervyn.miforeman.goal.RecipeGraphNode;
+import com.mervyn.miforeman.goal.RecipeLiveSummary;
 import com.mervyn.miforeman.network.LiveMonitoringPayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -118,8 +119,9 @@ public class GraphCanvas extends AbstractWidget {
     private final SearchState<ResourceLocation> searchState = new SearchState<>();
     private final GraphSearchBar searchBar;
     private final HiddenNodesDrawer hiddenNodesDrawer;
-    /** Live machine status keyed by recipe ID. Empty until {@link #updateLiveStatus} is called. */
-    private Map<ResourceLocation, LiveMonitoringPayload.MachineStatusData> liveStatusByRecipeId = Map.of();
+    /** Live status of every machine on each recipe, keyed by recipe ID. Empty until
+     *  {@link #updateLiveStatus} is called. */
+    private Map<ResourceLocation, RecipeLiveSummary> liveStatusByRecipeId = Map.of();
 
     public GraphCanvas(int x, int y, int width, int height, RecipeGraph graph,
             GraphLayoutState layoutState, double panX, double panY, float zoom,
@@ -190,11 +192,7 @@ public class GraphCanvas extends AbstractWidget {
      * Updates machine status colors from incoming monitoring data.
      */
     public void updateLiveStatus(List<LiveMonitoringPayload.MachineStatusData> data) {
-        Map<ResourceLocation, LiveMonitoringPayload.MachineStatusData> byRecipeId = new HashMap<>();
-        for (LiveMonitoringPayload.MachineStatusData entry : data) {
-            entry.recipeId().ifPresent(recipeId -> byRecipeId.put(recipeId, entry));
-        }
-        this.liveStatusByRecipeId = byRecipeId;
+        this.liveStatusByRecipeId = RecipeLiveSummary.byRecipe(data);
     }
 
     /**
@@ -207,10 +205,10 @@ public class GraphCanvas extends AbstractWidget {
     private int bottleneckEdgeColour(GraphEdge edge) {
         MachineStatus worst = null;
         for (ResourceLocation nodeId : List.of(edge.from(), edge.to())) {
-            LiveMonitoringPayload.MachineStatusData live = liveStatusByRecipeId.get(nodeId);
+            RecipeLiveSummary live = liveStatusByRecipeId.get(nodeId);
             if (live == null)
                 continue;
-            MachineStatus status = live.status();
+            MachineStatus status = live.worst();
             if (status != MachineStatus.RED && status != MachineStatus.ORANGE)
                 continue;
             if (worst == null || status.ordinal() < worst.ordinal()) {
@@ -781,12 +779,12 @@ public class GraphCanvas extends AbstractWidget {
 
             int fillTop = !isMatch ? COLOUR_NODE_FILL_TOP_DIM : COLOUR_NODE_FILL_TOP;
             int fillBottom = !isMatch ? COLOUR_NODE_FILL_BOTTOM_DIM : COLOUR_NODE_FILL_BOTTOM;
-            LiveMonitoringPayload.MachineStatusData liveStatus = node.getType() == NodeType.MACHINE
+            RecipeLiveSummary liveStatus = node.getType() == NodeType.MACHINE
                     ? liveStatusByRecipeId.get(node.getId())
                     : null;
             // Use the status color directly for borders when live status is present.
-            int defaultBorderLight = liveStatus != null ? liveStatus.status().colour() : COLOUR_BORDER_LIGHT;
-            int defaultBorderDark = liveStatus != null ? liveStatus.status().colour() : COLOUR_BORDER_DARK;
+            int defaultBorderLight = liveStatus != null ? liveStatus.worst().colour() : COLOUR_BORDER_LIGHT;
+            int defaultBorderDark = liveStatus != null ? liveStatus.worst().colour() : COLOUR_BORDER_DARK;
             int borderLight = isCurrentMatch ? COLOUR_SEARCH_CURRENT_MATCH
                     : (isSearching && isMatch ? COLOUR_SEARCH_MATCH_BORDER
                             : (!isMatch ? COLOUR_BORDER_LIGHT_DIM : defaultBorderLight));
@@ -839,9 +837,19 @@ public class GraphCanvas extends AbstractWidget {
             }
             guiGraphics.drawString(mc.font, name, pos.x() + textInset, pos.y() + 3, textColour, false);
 
+            // Running count, right-aligned on the rate line. It's what explains a red node
+            // whose output looks fine: the colour is the worst machine, the count the rest.
+            int rateWidth = maxTextWidth;
+            if (liveStatus != null) {
+                String countText = liveStatus.running() + "/" + liveStatus.total();
+                int countWidth = mc.font.width(countText);
+                guiGraphics.drawString(mc.font, countText, pos.x() + NODE_WIDTH - textInset - countWidth, pos.y() + 14,
+                        !isMatch ? COLOUR_MUTED_DIM : liveStatus.worst().colour(), false);
+                rateWidth -= countWidth + 4;
+            }
             String rateText = DisplayFormat.formatRate(node.getRequiredRate(), this.perHour);
-            if (mc.font.width(rateText) > maxTextWidth) {
-                rateText = mc.font.plainSubstrByWidth(rateText, maxTextWidth - 8) + "..";
+            if (mc.font.width(rateText) > rateWidth) {
+                rateText = mc.font.plainSubstrByWidth(rateText, rateWidth - 8) + "..";
             }
             guiGraphics.drawString(mc.font, rateText, pos.x() + textInset, pos.y() + 14, rateColour, false);
         }

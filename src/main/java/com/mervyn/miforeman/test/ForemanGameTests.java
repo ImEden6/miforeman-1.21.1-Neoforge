@@ -1255,6 +1255,51 @@ public class ForemanGameTests {
      *  lastRecipeId -> saturatedRecipeId -> lastKnownRecipeId. A RED machine that has run before
      *  still reports a recipe ID, enabling graph coloration and search matching. */
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testRecipeLiveSummaryWorstStatusAndRunningCount(GameTestHelper helper) {
+        ResourceLocation shared = ResourceLocation.parse("modern_industrialization:materials/iron/macerator/ore");
+        ResourceLocation solo = ResourceLocation.parse("modern_industrialization:materials/copper/macerator/ore");
+        var machineId = ResourceLocation.parse("modern_industrialization:electric_macerator");
+        java.util.function.BiFunction<com.mervyn.miforeman.goal.MachineStatus, java.util.Optional<ResourceLocation>,
+                com.mervyn.miforeman.network.LiveMonitoringPayload.MachineStatusData> machine = (status, recipe) ->
+                new com.mervyn.miforeman.network.LiveMonitoringPayload.MachineStatusData(
+                        GlobalPos.of(Level.OVERWORLD, BlockPos.ZERO), status,
+                        com.mervyn.miforeman.goal.FailureReason.NONE, 0.0, 0.0, machineId, recipe);
+
+        // The starved machine goes first among four on one recipe: the old last-put-wins map
+        // would have shown the GREEN one after it and hidden the problem.
+        var summaries = com.mervyn.miforeman.goal.RecipeLiveSummary.byRecipe(List.of(
+                machine.apply(com.mervyn.miforeman.goal.MachineStatus.RED, java.util.Optional.of(shared)),
+                machine.apply(com.mervyn.miforeman.goal.MachineStatus.GREEN, java.util.Optional.of(shared)),
+                machine.apply(com.mervyn.miforeman.goal.MachineStatus.YELLOW, java.util.Optional.of(shared)),
+                machine.apply(com.mervyn.miforeman.goal.MachineStatus.GREEN, java.util.Optional.of(shared)),
+                machine.apply(com.mervyn.miforeman.goal.MachineStatus.ORANGE, java.util.Optional.of(solo)),
+                machine.apply(com.mervyn.miforeman.goal.MachineStatus.GREEN, java.util.Optional.empty())));
+
+        var sharedSummary = summaries.get(shared);
+        if (sharedSummary == null || sharedSummary.worst() != com.mervyn.miforeman.goal.MachineStatus.RED) {
+            helper.fail("Expected the shared recipe to report its worst machine (RED), got " + sharedSummary);
+            return;
+        }
+        // GREEN and YELLOW both count as running; RED does not.
+        if (sharedSummary.running() != 3 || sharedSummary.total() != 4) {
+            helper.fail("Expected 3/4 running on the shared recipe, got " + sharedSummary.running() + "/" + sharedSummary.total());
+            return;
+        }
+        var soloSummary = summaries.get(solo);
+        if (soloSummary == null || soloSummary.worst() != com.mervyn.miforeman.goal.MachineStatus.ORANGE
+                || soloSummary.running() != 0 || soloSummary.total() != 1) {
+            helper.fail("Expected the solo recipe to be ORANGE 0/1, got " + soloSummary);
+            return;
+        }
+        // A machine with no recipe id has no node, so it must not appear under any key.
+        if (summaries.size() != 2) {
+            helper.fail("Expected exactly two recipe entries, got " + summaries.keySet());
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testResolveDisplayRecipeIdFallsBackToLastKnown(GameTestHelper helper) {
         var tracker = new ServerMonitoringManager.MachineTracker(new BlockPos(0, 0, 0));
         ResourceLocation active = ResourceLocation.parse("modern_industrialization:materials/iron/compressor/main");
