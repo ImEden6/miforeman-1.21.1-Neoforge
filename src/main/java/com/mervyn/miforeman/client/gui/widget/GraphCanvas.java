@@ -49,6 +49,15 @@ public class GraphCanvas extends AbstractWidget {
     private static final int COLOUR_EDGE = 0xFF8A7A68;
     private static final int COLOUR_EDGE_DIM = 0x558A7A68;
     private static final int COLOUR_EDGE_HIGHLIGHT = 0xFFD4A017;
+    // Every wire is painted twice: a casing, then the coloured core on top. Where two wires
+    // cross, the upper one's casing cuts a gap in the lower, so crossings stay readable even
+    // where the router couldn't separate them. The canvas sits on light paper, so the casing
+    // is a paper-coloured halo rather than a dark outline, which would thicken every wire.
+    // RGB only: each wire's casing takes its core's alpha, so dimmed wires stay faint.
+    private static final int COLOUR_EDGE_CASING = 0x00EFE0BE;
+    private static final int EDGE_CORE_HALF_WIDTH = 1;
+    // A 2px core plus max(2, core * 0.22) of casing: 1px of rim each side.
+    private static final int EDGE_CASING_PAD = 1;
     private static final int COLOUR_GROUP_FILL = 0x22D4A017;
     private static final int COLOUR_GROUP_BORDER = 0x66D4A017;
     private static final int COLOUR_MARQUEE_FILL = 0x334A90D9;
@@ -718,36 +727,45 @@ public class GraphCanvas extends AbstractWidget {
         if (routesDirty && !dragging)
             computeRoutes();
 
-        for (int edgeIndex = 0; edgeIndex < visibleEdges.size(); edgeIndex++) {
-            GraphEdge edge = visibleEdges.get(edgeIndex);
-            RecipeGraphNode from = visibleNodes.get(edge.from());
-            RecipeGraphNode to = visibleNodes.get(edge.to());
-            if (from == null || to == null)
-                continue;
-            NodePosition fromPos = positionOf(from);
-            NodePosition toPos = positionOf(to);
-            if (fromPos == null || toPos == null)
-                continue;
-            int colour = bottleneckEdgeColour(edge);
-            if (isSearching) {
-                boolean bothMatch = searchState.isMatch(edge.from()) && searchState.isMatch(edge.to());
-                boolean touchesSelected = selectedNodeIds.contains(edge.from()) || selectedNodeIds.contains(edge.to());
-                colour = (bothMatch || touchesSelected) ? COLOUR_EDGE_HIGHLIGHT : COLOUR_EDGE_DIM;
-            } else if (!selectedNodeIds.isEmpty()) {
-                boolean touchesSelected = selectedNodeIds.contains(edge.from()) || selectedNodeIds.contains(edge.to());
-                colour = touchesSelected ? COLOUR_EDGE_HIGHLIGHT : COLOUR_EDGE_DIM;
-            }
-            boolean touchesDragged = dragging
-                    && (draggingId.equals(edge.from()) || draggingId.equals(edge.to()));
-            com.mervyn.miforeman.goal.EdgeRouter.Route route = !touchesDragged && edgeIndex < routedEdges.size()
-                    ? routedEdges.get(edgeIndex)
-                    : null;
-            if (route != null) {
-                drawPolyline(guiGraphics, route.points(), colour);
-            } else {
-                com.mervyn.miforeman.goal.EdgeRouter.Request request = edgeRequest(fromPos, toPos);
-                drawElbowConnector(guiGraphics,
-                        request.fromX(), request.fromY(), request.toX(), request.toY(), colour);
+        // Two passes so highlighted wires paint last: each wire's casing cuts a gap in
+        // whatever it crosses, and a dimmed wire must never cut through a highlighted one.
+        for (int pass = 0; pass < 2; pass++) {
+            boolean highlightPass = pass == 1;
+            for (int edgeIndex = 0; edgeIndex < visibleEdges.size(); edgeIndex++) {
+                GraphEdge edge = visibleEdges.get(edgeIndex);
+                RecipeGraphNode from = visibleNodes.get(edge.from());
+                RecipeGraphNode to = visibleNodes.get(edge.to());
+                if (from == null || to == null)
+                    continue;
+                NodePosition fromPos = positionOf(from);
+                NodePosition toPos = positionOf(to);
+                if (fromPos == null || toPos == null)
+                    continue;
+                int colour = bottleneckEdgeColour(edge);
+                if (isSearching) {
+                    boolean bothMatch = searchState.isMatch(edge.from()) && searchState.isMatch(edge.to());
+                    boolean touchesSelected = selectedNodeIds.contains(edge.from())
+                            || selectedNodeIds.contains(edge.to());
+                    colour = (bothMatch || touchesSelected) ? COLOUR_EDGE_HIGHLIGHT : COLOUR_EDGE_DIM;
+                } else if (!selectedNodeIds.isEmpty()) {
+                    boolean touchesSelected = selectedNodeIds.contains(edge.from())
+                            || selectedNodeIds.contains(edge.to());
+                    colour = touchesSelected ? COLOUR_EDGE_HIGHLIGHT : COLOUR_EDGE_DIM;
+                }
+                if ((colour == COLOUR_EDGE_HIGHLIGHT) != highlightPass)
+                    continue;
+                boolean touchesDragged = dragging
+                        && (draggingId.equals(edge.from()) || draggingId.equals(edge.to()));
+                com.mervyn.miforeman.goal.EdgeRouter.Route route = !touchesDragged && edgeIndex < routedEdges.size()
+                        ? routedEdges.get(edgeIndex)
+                        : null;
+                if (route != null) {
+                    drawPolyline(guiGraphics, route.points(), colour);
+                } else {
+                    com.mervyn.miforeman.goal.EdgeRouter.Request request = edgeRequest(fromPos, toPos);
+                    drawElbowConnector(guiGraphics,
+                            request.fromX(), request.fromY(), request.toX(), request.toY(), colour);
+                }
             }
         }
 
@@ -904,33 +922,50 @@ public class GraphCanvas extends AbstractWidget {
         return (a << 24) | (r << 16) | (g << 8) | b;
     }
 
-    /** Draws a routed wire as a chain of axis-aligned segments. */
+    /**
+     * Draws a routed wire as a chain of axis-aligned segments: every segment's casing first,
+     * then every segment's core. Casing and core per segment instead would let each segment's
+     * casing notch the previous segment's core at the corner.
+     */
     private void drawPolyline(GuiGraphics guiGraphics, List<com.mervyn.miforeman.goal.EdgeRouter.Point> points,
             int colour) {
+        int casing = (colour & 0xFF000000) | COLOUR_EDGE_CASING;
         for (int i = 0; i < points.size() - 1; i++) {
             com.mervyn.miforeman.goal.EdgeRouter.Point a = points.get(i);
             com.mervyn.miforeman.goal.EdgeRouter.Point b = points.get(i + 1);
-            drawLine(guiGraphics, a.x(), a.y(), b.x(), b.y(), colour);
+            drawLine(guiGraphics, a.x(), a.y(), b.x(), b.y(), EDGE_CORE_HALF_WIDTH + EDGE_CASING_PAD, casing);
+        }
+        for (int i = 0; i < points.size() - 1; i++) {
+            com.mervyn.miforeman.goal.EdgeRouter.Point a = points.get(i);
+            com.mervyn.miforeman.goal.EdgeRouter.Point b = points.get(i + 1);
+            drawLine(guiGraphics, a.x(), a.y(), b.x(), b.y(), EDGE_CORE_HALF_WIDTH, colour);
         }
     }
 
     private void drawElbowConnector(GuiGraphics guiGraphics, int fromX, int fromY, int toX, int toY, int colour) {
         int midX = (fromX + toX) / 2;
-        drawLine(guiGraphics, fromX, fromY, midX, fromY, colour);
-        drawLine(guiGraphics, midX, fromY, midX, toY, colour);
-        drawLine(guiGraphics, midX, toY, toX, toY, colour);
+        drawPolyline(guiGraphics, List.of(
+                new com.mervyn.miforeman.goal.EdgeRouter.Point(fromX, fromY),
+                new com.mervyn.miforeman.goal.EdgeRouter.Point(midX, fromY),
+                new com.mervyn.miforeman.goal.EdgeRouter.Point(midX, toY),
+                new com.mervyn.miforeman.goal.EdgeRouter.Point(toX, toY)), colour);
     }
 
-    private void drawLine(GuiGraphics guiGraphics, int x1, int y1, int x2, int y2, int colour) {
-        int thickness = 1;
+    /**
+     * Fills one axis-aligned segment {@code halfWidth} either side of its centreline. The
+     * extra {@code halfWidth - EDGE_CORE_HALF_WIDTH} at each end gives the casing a rim
+     * around the core's end caps too, not just along its sides.
+     */
+    private void drawLine(GuiGraphics guiGraphics, int x1, int y1, int x2, int y2, int halfWidth, int colour) {
+        int cap = halfWidth - EDGE_CORE_HALF_WIDTH;
         if (y1 == y2) {
-            int minX = Math.min(x1, x2);
-            int maxX = Math.max(x1, x2);
-            guiGraphics.fill(minX, y1 - thickness, maxX, y1 + thickness, colour);
+            int minX = Math.min(x1, x2) - cap;
+            int maxX = Math.max(x1, x2) + cap;
+            guiGraphics.fill(minX, y1 - halfWidth, maxX, y1 + halfWidth, colour);
         } else {
-            int minY = Math.min(y1, y2);
-            int maxY = Math.max(y1, y2);
-            guiGraphics.fill(x1 - thickness, minY, x1 + thickness, maxY, colour);
+            int minY = Math.min(y1, y2) - cap;
+            int maxY = Math.max(y1, y2) + cap;
+            guiGraphics.fill(x1 - halfWidth, minY, x1 + halfWidth, maxY, colour);
         }
     }
 
