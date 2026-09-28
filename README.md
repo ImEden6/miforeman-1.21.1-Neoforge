@@ -11,7 +11,7 @@ Features
 - **Node graph editor.** The plan renders as a graph of machine and resource nodes with the flows between them. Nodes can be grouped or split, rates switch between per-minute and per-hour, and layout edits (node positions, grouping) persist on the clipboard.
 - **Auto-Arrange and node groups.** One button tidies the whole graph layout. Select several nodes (ctrl/shift-click, or drag a selection box) and lock them into a group, and Auto-Arrange moves the group as one block instead of scattering your hand-arranged cluster, unless you turn on the toggle that lets it rearrange group interiors too. Single nodes can be pulled back out of a group, or the group dissolved outright, and an Auto-Arrange that moves dozens of nodes still undoes in one step.
 - **Machine linking.** Right-click a placed MI machine with the clipboard to link or unlink it from the goal. Links are tracked server-side, so they work the same in multiplayer, and synced back to every client holding that clipboard.
-- **Auto-detect scan.** Instead of clicking every machine by hand, scan a chunk radius around the player for machines whose active recipe matches the plan, then review and accept or reject candidates from a dedicated list screen.
+- **Auto-detect scan.** Instead of clicking every machine by hand, scan a chunk radius around the player for machines whose active recipe matches the plan, then review and accept or reject candidates from a dedicated list screen. The radius can be widened or narrowed for a single scan from the clipboard, and newly found machines give off a brief particle burst so you can spot them in the world.
 - **In-world highlighting.** Linked, candidate, and selected machines get an on-screen block highlight, with configurable colors (RGB, HSV, or HSL sliders, or a raw hex code).
 - **Live monitoring.** Linked machines report input/output rates averaged over a rolling window (default one hour, configurable). A monitoring screen lists every linked machine with a status of green, yellow, orange, or red based on how far its actual rate has fallen from the plan's expected rate, so a struggling machine stands out without you needing to watch it directly.
 - **Commands (development builds only).** `/miforeman goal create|print|plan|select` and `/miforeman recipes print` cover the same goal and planning operations from the console. They are registered only outside a production environment, so they do not appear in a normal install.
@@ -26,7 +26,8 @@ Dependencies
 Configuration
 -------------
 Server-side config options (see [Config.java](src/main/java/com/mervyn/miforeman/Config.java)):
-- `autolinkScanRadiusChunks`: chunk radius for the auto-detect scan, centered on the player.
+- `autolinkScanRadiusChunks`: default chunk radius for the auto-detect scan, centered on the player.
+- `autolinkScanMaxRadiusChunks`: the widest radius a player may pick for a single scan. Lower it on busy servers.
 - `monitoringWindowTicks`: length of the rolling rate-history window per linked machine.
 - `trackerPruneIntervalTicks`: how often stale machine trackers get cleaned up.
 - `defaultEfficiencyThreshold`: ratio of actual to expected rate below which a machine is flagged as underperforming.

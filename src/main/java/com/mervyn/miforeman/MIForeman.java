@@ -89,7 +89,10 @@ public class MIForeman {
     }
 
     private void registerPackets(net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent event) {
-        var registrar = event.registrar("1");
+        // Bump whenever any payload's wire format changes, so a mismatched client and server
+        // are refused at connect instead of misreading each other's packets.
+        // 2: scan request/result carry a radius.
+        var registrar = event.registrar("2");
         registrar.playToServer(
                 com.mervyn.miforeman.network.GoalUpdatePayload.TYPE,
                 com.mervyn.miforeman.network.GoalUpdatePayload.STREAM_CODEC,

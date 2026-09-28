@@ -48,6 +48,8 @@ public class ClipboardScreen extends Screen {
     private static final int MIN_GUI_HEIGHT = 230;
     private static final int PADDING = 8;
     private static final int FIELD_HEIGHT = 14;
+    /** Monitor step: x offset of the scan radius stepper, just past the Scan and Highlights buttons. */
+    private static final int SCAN_RADIUS_X = 188;
 
     // --- "From EMI" button, shown next to the target-ID field only when
     // EmiCompat.isLoaded() ---
@@ -652,6 +654,18 @@ public class ClipboardScreen extends Screen {
                 });
         this.addRenderableWidget(highlightsButton);
 
+        // Radius for the next scan; its label is drawn beside these in renderStepMonitor.
+        this.addRenderableWidget(new ClipboardButton(contentX + SCAN_RADIUS_X, contentY + 28, 14, 14,
+                Component.literal("-"), b -> {
+                    monitoringState.stepScanRadius(-1);
+                    rebuildStep(STEP_MONITOR);
+                }));
+        this.addRenderableWidget(new ClipboardButton(contentX + SCAN_RADIUS_X + 16, contentY + 28, 14, 14,
+                Component.literal("+"), b -> {
+                    monitoringState.stepScanRadius(1);
+                    rebuildStep(STEP_MONITOR);
+                }));
+
         List<ReviewListPanel.ReviewRow> rows = monitoringState.buildReviewRows();
         monitoringState.updateWorldHighlightPositions(rows);
 
@@ -709,13 +723,15 @@ public class ClipboardScreen extends Screen {
         if (this.goalDraft.currentPlan == null)
             return;
         ProductionGoal goal = buildCurrentGoal();
-        new ScanRequestPayload(goal).sendToServer();
+        new ScanRequestPayload(goal, monitoringState.scanRadiusChunks).sendToServer();
     }
 
-    public void updateScanResults(List<ScanResultPayload.Candidate> candidates) {
-        monitoringState.setScanResults(candidates);
+    /** Returns the newly found candidates, for {@link com.mervyn.miforeman.client.ScanPing}. */
+    public List<net.minecraft.core.GlobalPos> updateScanResults(List<ScanResultPayload.Candidate> candidates, int radiusChunks) {
+        List<net.minecraft.core.GlobalPos> newlyFound = monitoringState.setScanResults(candidates, radiusChunks);
         if (currentStep == STEP_MONITOR)
             rebuildStep(STEP_MONITOR);
+        return newlyFound;
     }
 
     private ProductionGoal buildCurrentGoal() {
@@ -884,6 +900,8 @@ public class ClipboardScreen extends Screen {
         int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
 
         guiGraphics.drawString(this.font, Component.translatable("miforeman.clipboard.factory_monitoring_title"), contentX, contentY, COLOUR_TITLE);
+        guiGraphics.drawString(this.font, this.monitoringState.scanRadiusLabel(),
+                contentX + SCAN_RADIUS_X + 34, contentY + 31, COLOUR_TEXT, false);
 
         int currentY = contentY + 16;
         if (this.monitoringState.liveData.isEmpty()) {

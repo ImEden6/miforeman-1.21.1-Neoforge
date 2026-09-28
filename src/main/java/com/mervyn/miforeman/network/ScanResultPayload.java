@@ -10,7 +10,9 @@ import net.minecraft.resources.ResourceLocation;
 
 import java.util.List;
 
-public record ScanResultPayload(List<ScanResultPayload.Candidate> candidates) implements CustomPacketPayload {
+/** {@code radiusChunks} is the radius the scan actually ran at, after the server resolved the
+ *  default and applied its cap, so the client can show it without knowing the server's config. */
+public record ScanResultPayload(List<ScanResultPayload.Candidate> candidates, int radiusChunks) implements CustomPacketPayload {
     public record Candidate(GlobalPos pos, ResourceLocation machineId, ResourceLocation recipeId) {
         public static final StreamCodec<RegistryFriendlyByteBuf, Candidate> STREAM_CODEC = StreamCodec.composite(
                 GlobalPos.STREAM_CODEC, Candidate::pos,
@@ -25,6 +27,8 @@ public record ScanResultPayload(List<ScanResultPayload.Candidate> candidates) im
     public static final StreamCodec<RegistryFriendlyByteBuf, ScanResultPayload> STREAM_CODEC = StreamCodec.composite(
             Candidate.STREAM_CODEC.apply(ByteBufCodecs.list()),
             ScanResultPayload::candidates,
+            ByteBufCodecs.VAR_INT,
+            ScanResultPayload::radiusChunks,
             ScanResultPayload::new
     );
 

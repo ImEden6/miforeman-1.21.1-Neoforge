@@ -6,6 +6,7 @@ import com.mervyn.miforeman.client.DisplayFormat;
 import com.mervyn.miforeman.client.WorldHighlightRenderer;
 import com.mervyn.miforeman.client.gui.widget.ReviewListPanel;
 import com.mervyn.miforeman.goal.MachineLinkHistory;
+import com.mervyn.miforeman.goal.MachineScanner;
 import com.mervyn.miforeman.goal.ProductionGoal;
 import com.mervyn.miforeman.network.LiveMonitoringPayload;
 import com.mervyn.miforeman.network.ScanResultPayload;
@@ -32,6 +33,11 @@ class MonitoringState {
     MachineLinkHistory machineLinkHistory = MachineLinkHistory.EMPTY;
     final List<LiveMonitoringPayload.MachineStatusData> liveData = new ArrayList<>();
     final List<ScanResultPayload.Candidate> lastScanResults = new ArrayList<>();
+    /** Radius the player picked for the next scan, or {@link MachineScanner#DEFAULT_RADIUS}.
+     *  Lives only as long as this screen session; never written back to config. */
+    int scanRadiusChunks = MachineScanner.DEFAULT_RADIUS;
+    /** Radius the last scan actually ran at, as the server reported it; 0 before any scan. */
+    int lastScanRadiusChunks = 0;
     boolean showRejected = false;
     boolean showInWorldHighlights;
     /** Which hand's clipboard this state belongs to. Set by ClipboardScreen right after
@@ -112,9 +118,49 @@ class MonitoringState {
         onChange.run();
     }
 
-    void setScanResults(List<ScanResultPayload.Candidate> candidates) {
+    /** Replaces the scan results and returns the candidates worth pointing out in the world:
+     *  ones the previous scan didn't find, that aren't linked or rejected already. Rescanning
+     *  the same area therefore pings nothing new. */
+    List<GlobalPos> setScanResults(List<ScanResultPayload.Candidate> candidates, int radiusChunks) {
+        Set<GlobalPos> known = new HashSet<>(linkedMachines);
+        known.addAll(rejectedMachines);
+        for (ScanResultPayload.Candidate previous : lastScanResults) {
+            known.add(previous.pos());
+        }
+        List<GlobalPos> newlyFound = new ArrayList<>();
+        for (ScanResultPayload.Candidate candidate : candidates) {
+            if (!known.contains(candidate.pos())) {
+                newlyFound.add(candidate.pos());
+            }
+        }
+
         this.lastScanResults.clear();
         this.lastScanResults.addAll(candidates);
+        this.lastScanRadiusChunks = radiusChunks;
+        // The server capped the pick: show the radius that actually ran, not the one asked for.
+        if (scanRadiusChunks != MachineScanner.DEFAULT_RADIUS && radiusChunks < scanRadiusChunks) {
+            scanRadiusChunks = radiusChunks;
+        }
+        return newlyFound;
+    }
+
+    /** Moves the next scan's radius by {@code delta} chunks. Starting from "default", it steps
+     *  from the radius the default last resolved to, or the local config as a best guess before
+     *  any scan (exact in singleplayer; a dedicated server may differ, and the scan corrects it). */
+    void stepScanRadius(int delta) {
+        int from = scanRadiusChunks != MachineScanner.DEFAULT_RADIUS ? scanRadiusChunks
+                : lastScanRadiusChunks > 0 ? lastScanRadiusChunks
+                : com.mervyn.miforeman.Config.AUTOLINK_SCAN_RADIUS_CHUNKS.get();
+        scanRadiusChunks = Math.max(1, Math.min(from + delta, MachineScanner.MAX_SCAN_RADIUS));
+    }
+
+    net.minecraft.network.chat.Component scanRadiusLabel() {
+        if (scanRadiusChunks != MachineScanner.DEFAULT_RADIUS) {
+            return net.minecraft.network.chat.Component.translatable("miforeman.scan.radius", scanRadiusChunks);
+        }
+        return lastScanRadiusChunks > 0
+                ? net.minecraft.network.chat.Component.translatable("miforeman.scan.radius_default_known", lastScanRadiusChunks)
+                : net.minecraft.network.chat.Component.translatable("miforeman.scan.radius_default");
     }
 
     void setLiveData(List<LiveMonitoringPayload.MachineStatusData> data) {

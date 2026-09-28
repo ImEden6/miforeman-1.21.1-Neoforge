@@ -1300,6 +1300,42 @@ public class ForemanGameTests {
     }
 
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testScanRadiusOverrideClampAndLinkValidation(GameTestHelper helper) {
+        int dflt = com.mervyn.miforeman.goal.MachineScanner.DEFAULT_RADIUS;
+        record Case(int requested, int defaultRadius, int maxRadius, int expected, String why) {}
+        List<Case> cases = List.of(
+                new Case(dflt, 4, 16, 4, "no pick uses the configured default"),
+                new Case(8, 4, 16, 8, "a pick inside the cap is honoured"),
+                new Case(12, 4, 8, 8, "a pick above the cap is clamped to it"),
+                new Case(dflt, 4, 2, 2, "an admin cap below the default also caps the default scan"),
+                new Case(-3, 4, 16, 1, "a malformed negative pick still scans at least one chunk"));
+        for (Case c : cases) {
+            int actual = com.mervyn.miforeman.goal.MachineScanner.effectiveScanRadius(c.requested(), c.defaultRadius(), c.maxRadius());
+            if (actual != c.expected()) {
+                helper.fail("effectiveScanRadius(" + c.requested() + ", " + c.defaultRadius() + ", " + c.maxRadius()
+                        + ") = " + actual + ", expected " + c.expected() + ": " + c.why());
+                return;
+            }
+        }
+
+        // Accepting a machine an 8-chunk scan found must survive link validation, even though
+        // it's outside the 4-chunk default: validation has to use the widest scan allowed.
+        int validation = com.mervyn.miforeman.goal.MachineScanner.linkValidationRadius(4, 16);
+        BlockPos player = BlockPos.ZERO;
+        BlockPos eightChunksAway = new BlockPos(8 * 16, 64, 0);
+        if (!com.mervyn.miforeman.goal.MachineScanner.isWithinScanRadius(player, eightChunksAway, validation)) {
+            helper.fail("A machine 8 chunks away (inside the 16-chunk cap) failed link validation at radius " + validation);
+            return;
+        }
+        // Lowering the cap below the default must not start rejecting default-radius links.
+        if (com.mervyn.miforeman.goal.MachineScanner.linkValidationRadius(4, 2) != 4) {
+            helper.fail("Link validation must never be tighter than the default scan radius.");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testResolveDisplayRecipeIdFallsBackToLastKnown(GameTestHelper helper) {
         var tracker = new ServerMonitoringManager.MachineTracker(new BlockPos(0, 0, 0));
         ResourceLocation active = ResourceLocation.parse("modern_industrialization:materials/iron/compressor/main");

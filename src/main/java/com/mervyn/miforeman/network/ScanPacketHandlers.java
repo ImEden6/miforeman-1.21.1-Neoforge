@@ -36,13 +36,14 @@ public class ScanPacketHandlers {
             RecipeGraph graph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
 
             Set<ResourceLocation> recipeIndex = MachineScanner.buildRecipeIndex(graph);
-            int radius = Config.AUTOLINK_SCAN_RADIUS_CHUNKS.get();
+            int radius = MachineScanner.effectiveScanRadius(payload.radiusChunks(),
+                    Config.AUTOLINK_SCAN_RADIUS_CHUNKS.get(), Config.AUTOLINK_SCAN_MAX_RADIUS_CHUNKS.get());
             List<MachineScanner.ScanCandidate> found = MachineScanner.scan(level, player.blockPosition(), radius, recipeIndex);
 
             List<ScanResultPayload.Candidate> candidates = found.stream()
                     .map(c -> new ScanResultPayload.Candidate(c.pos(), c.machineId(), c.recipeId()))
                     .toList();
-            context.reply(new ScanResultPayload(candidates));
+            context.reply(new ScanResultPayload(candidates, radius));
         });
     }
 

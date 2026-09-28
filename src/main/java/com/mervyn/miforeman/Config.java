@@ -7,7 +7,13 @@ public class Config {
 
     public static final ModConfigSpec.IntValue AUTOLINK_SCAN_RADIUS_CHUNKS = BUILDER
             .comment("Chunk radius for the machine auto-detect scan, centered on the player.")
-            .defineInRange("autolinkScanRadiusChunks", 4, 1, 16);
+            .defineInRange("autolinkScanRadiusChunks", 4, 1, com.mervyn.miforeman.goal.MachineScanner.MAX_SCAN_RADIUS);
+
+    public static final ModConfigSpec.IntValue AUTOLINK_SCAN_MAX_RADIUS_CHUNKS = BUILDER
+            .comment("Largest chunk radius a player may pick for a single scan from the clipboard. "
+                    + "Lower it on busy servers: only already-loaded chunks are scanned, but each scan walks "
+                    + "every block entity in range. The default scan never exceeds this either.")
+            .defineInRange("autolinkScanMaxRadiusChunks", 16, 1, com.mervyn.miforeman.goal.MachineScanner.MAX_SCAN_RADIUS);
 
     public static final ModConfigSpec.IntValue MONITORING_WINDOW_TICKS = BUILDER
             .comment("Rolling energy event history window in ticks per linked machine (default: 72000 ticks = 1 hour).")

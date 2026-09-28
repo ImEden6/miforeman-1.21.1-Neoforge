@@ -46,7 +46,8 @@ public class GoalUpdateHandler {
 
                 ProductionGoal oldGoal = stack.get(ModComponents.PRODUCTION_GOAL.get());
                 List<GlobalPos> validatedLinked = validateLinkedMachines(
-                        level, player.blockPosition(), Config.AUTOLINK_SCAN_RADIUS_CHUNKS.get(),
+                        level, player.blockPosition(), MachineScanner.linkValidationRadius(
+                                Config.AUTOLINK_SCAN_RADIUS_CHUNKS.get(), Config.AUTOLINK_SCAN_MAX_RADIUS_CHUNKS.get()),
                         newGoal.linkedMachines(), oldGoal != null ? oldGoal.linkedMachines() : null);
 
                 ProductionGoal updatedGoal = newGoal

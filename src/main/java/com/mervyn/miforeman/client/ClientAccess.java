@@ -26,9 +26,9 @@ public class ClientAccess {
     public static void handleScanResult(com.mervyn.miforeman.network.ScanResultPayload payload) {
         var screen = Minecraft.getInstance().screen;
         if (screen instanceof ClipboardScreen clipScreen) {
-            clipScreen.updateScanResults(payload.candidates());
+            ScanPing.ping(clipScreen.updateScanResults(payload.candidates(), payload.radiusChunks()));
         } else if (screen instanceof ReviewMachinesScreen revScreen) {
-            revScreen.updateScanResults(payload.candidates());
+            ScanPing.ping(revScreen.updateScanResults(payload.candidates(), payload.radiusChunks()));
         }
     }
 

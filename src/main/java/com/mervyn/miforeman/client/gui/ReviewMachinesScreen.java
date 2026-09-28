@@ -195,9 +195,11 @@ public class ReviewMachinesScreen extends Screen {
         return rows.stream().filter(r -> searchState.isMatch(r.pos())).toList();
     }
 
-    public void updateScanResults(List<ScanResultPayload.Candidate> candidates) {
-        state.setScanResults(candidates);
+    /** Returns the newly found candidates, for {@link com.mervyn.miforeman.client.ScanPing}. */
+    public List<GlobalPos> updateScanResults(List<ScanResultPayload.Candidate> candidates, int radiusChunks) {
+        List<GlobalPos> newlyFound = state.setScanResults(candidates, radiusChunks);
         rebuild();
+        return newlyFound;
     }
 
     @Override

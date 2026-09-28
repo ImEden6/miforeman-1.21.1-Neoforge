@@ -38,6 +38,29 @@ public class MachineScanner {
         return index;
     }
 
+    /** Sentinel radius in a scan request meaning "use the server's configured default". The
+     *  client can't pick the default itself: the config is COMMON, so a dedicated server's
+     *  value never reaches it. */
+    public static final int DEFAULT_RADIUS = 0;
+
+    /** Hard ceiling on any scan radius, matching the top of both radius config ranges. */
+    public static final int MAX_SCAN_RADIUS = 16;
+
+    /** The radius a scan actually runs at. {@link #DEFAULT_RADIUS} resolves to the configured
+     *  default; anything else is the player's pick. Both are capped at {@code maxRadius}, so an
+     *  admin who lowers the cap below the default isn't overridden by it. */
+    public static int effectiveScanRadius(int requested, int defaultRadius, int maxRadius) {
+        int wanted = requested == DEFAULT_RADIUS ? defaultRadius : requested;
+        return Math.max(1, Math.min(wanted, maxRadius));
+    }
+
+    /** How far from the player a newly linked machine may be. Must cover the widest scan a
+     *  player can run, or accepting a machine found by a wide scan silently drops it. Never
+     *  tighter than the default either, so lowering the cap doesn't break default-radius links. */
+    public static int linkValidationRadius(int defaultRadius, int maxRadius) {
+        return Math.max(defaultRadius, maxRadius);
+    }
+
     /** Returns true if {@code pos} lies within the square chunk grid bounded by {@code radiusChunks}. */
     public static boolean isWithinScanRadius(BlockPos center, BlockPos pos, int radiusChunks) {
         ChunkPos centerChunk = new ChunkPos(center);
