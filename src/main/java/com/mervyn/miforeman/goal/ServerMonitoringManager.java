@@ -232,73 +232,12 @@ public class ServerMonitoringManager {
         for (Map.Entry<net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>, List<BlockPos>> entry : byDimension.entrySet()) {
             ServerLevel level = event.getServer().getLevel(entry.getKey());
             if (level == null) continue;
-            long tick = level.getGameTime();
             for (BlockPos pos : entry.getValue()) {
                 if (!level.isLoaded(pos)) {
                     continue;
                 }
                 GlobalPos key = GlobalPos.of(entry.getKey(), pos);
-                BlockEntity be = level.getBlockEntity(pos);
-                if (be instanceof MachineBlockEntity machine) {
-                    UnifiedCrafter crafter = getCrafter(machine);
-                    if (crafter == null) continue;
-
-                    MachineTracker tracker = trackerFor(key);
-                    // A crafter whose recipe type can't be read (some modular addons) is trusted
-                    // as-is: an unverifiable entry is still better than no node at all.
-                    var recipeType = crafter.getRecipeType();
-                    seedLastKnownRecipe(tracker, history, key,
-                            id -> recipeType == null || recipeType.getRecipe(level, id) != null);
-                    tracker.disposalRatio = computeDisposalRatio(crafter);
-                    boolean hasActive = crafter.hasActiveRecipe();
-
-                    if (hasActive) {
-                        var activeHolder = crafter.getActiveRecipe();
-                        if (activeHolder != null) {
-                            ResourceLocation recipeId = activeHolder.id();
-                            long recipeEnergy = activeHolder.value().getTotalEu();
-                            long usedEnergy = Math.round(crafter.getProgress() * recipeEnergy);
-
-                            double consumed = 0;
-                            if (recipeId.equals(tracker.lastRecipeId)) {
-                                if (usedEnergy >= tracker.lastUsedEnergy) {
-                                    consumed = usedEnergy - tracker.lastUsedEnergy;
-                                } else {
-                                    consumed = (tracker.lastRecipeEnergy - tracker.lastUsedEnergy) + usedEnergy;
-                                }
-                            } else {
-                                consumed = Math.max(0, tracker.lastRecipeEnergy - tracker.lastUsedEnergy) + usedEnergy;
-                            }
-
-                            if (consumed > 0) {
-                                tracker.addEnergy(tick, recipeId, consumed, recipeEnergy);
-                            }
-
-                            recordActiveRecipe(tracker, recipeId);
-                            history.record(key, recipeId);
-                            tracker.lastUsedEnergy = usedEnergy;
-                            tracker.lastRecipeEnergy = recipeEnergy;
-                        }
-                        tracker.status = MachineStatus.GREEN;
-                        tracker.failureReason = FailureReason.NONE;
-                        tracker.saturatedRecipeId = null;
-                    } else {
-                        tracker.lastRecipeId = null;
-                        tracker.lastUsedEnergy = 0;
-                        tracker.lastRecipeEnergy = 0;
-                        List<ProductionGoal> linkingGoals = goalsByPos.getOrDefault(key, List.of());
-                        Set<ResourceLocation> cyclicResourceIds = unionCyclicResourceIds(linkingGoals);
-                        PassiveStatus passive = getMachinePassiveStatusDetailed(crafter, level, cyclicResourceIds,
-                                tracker.lastKnownRecipeId);
-                        tracker.status = passive.status();
-                        tracker.failureReason = passive.reason();
-                        tracker.saturatedRecipeId = passive.matchedRecipeId();
-                    }
-                } else {
-                    // Loaded, still linked, but no machine there anymore (broken or wrenched
-                    // out). Forget its recipe so a different machine placed later starts clean.
-                    history.forget(key);
-                }
+                updateMachine(level, key, history, goalsByPos.getOrDefault(key, List.of()));
             }
         }
 
@@ -307,6 +246,74 @@ public class ServerMonitoringManager {
         if (lastPruneTick == Long.MIN_VALUE || pruneTick - lastPruneTick >= getPruneIntervalTicks()) {
             lastPruneTick = pruneTick;
             pruneTrackers(activeKeys);
+        }
+    }
+
+    /** One linked, loaded machine's per-tick update: restores its recipe history if the tracker
+     *  is fresh, samples energy and the active recipe, and classifies its status. Extracted from
+     *  {@link #onServerTick}, which only runs with a player online, so gametests can drive it. */
+    public static void updateMachine(ServerLevel level, GlobalPos key, MachineRecipeHistory history,
+                                     List<ProductionGoal> linkingGoals) {
+        long tick = level.getGameTime();
+        BlockEntity be = level.getBlockEntity(key.pos());
+        if (be instanceof MachineBlockEntity machine) {
+            UnifiedCrafter crafter = getCrafter(machine);
+            if (crafter == null) return;
+
+            MachineTracker tracker = trackerFor(key);
+            // A crafter whose recipe type can't be read (some modular addons) is trusted
+            // as-is: an unverifiable entry is still better than no node at all.
+            var recipeType = crafter.getRecipeType();
+            seedLastKnownRecipe(tracker, history, key,
+                    id -> recipeType == null || recipeType.getRecipe(level, id) != null);
+            tracker.disposalRatio = computeDisposalRatio(crafter);
+            boolean hasActive = crafter.hasActiveRecipe();
+
+            if (hasActive) {
+                var activeHolder = crafter.getActiveRecipe();
+                if (activeHolder != null) {
+                    ResourceLocation recipeId = activeHolder.id();
+                    long recipeEnergy = activeHolder.value().getTotalEu();
+                    long usedEnergy = Math.round(crafter.getProgress() * recipeEnergy);
+
+                    double consumed = 0;
+                    if (recipeId.equals(tracker.lastRecipeId)) {
+                        if (usedEnergy >= tracker.lastUsedEnergy) {
+                            consumed = usedEnergy - tracker.lastUsedEnergy;
+                        } else {
+                            consumed = (tracker.lastRecipeEnergy - tracker.lastUsedEnergy) + usedEnergy;
+                        }
+                    } else {
+                        consumed = Math.max(0, tracker.lastRecipeEnergy - tracker.lastUsedEnergy) + usedEnergy;
+                    }
+
+                    if (consumed > 0) {
+                        tracker.addEnergy(tick, recipeId, consumed, recipeEnergy);
+                    }
+
+                    recordActiveRecipe(tracker, recipeId);
+                    history.record(key, recipeId);
+                    tracker.lastUsedEnergy = usedEnergy;
+                    tracker.lastRecipeEnergy = recipeEnergy;
+                }
+                tracker.status = MachineStatus.GREEN;
+                tracker.failureReason = FailureReason.NONE;
+                tracker.saturatedRecipeId = null;
+            } else {
+                tracker.lastRecipeId = null;
+                tracker.lastUsedEnergy = 0;
+                tracker.lastRecipeEnergy = 0;
+                Set<ResourceLocation> cyclicResourceIds = unionCyclicResourceIds(linkingGoals);
+                PassiveStatus passive = getMachinePassiveStatusDetailed(crafter, level, cyclicResourceIds,
+                        tracker.lastKnownRecipeId);
+                tracker.status = passive.status();
+                tracker.failureReason = passive.reason();
+                tracker.saturatedRecipeId = passive.matchedRecipeId();
+            }
+        } else {
+            // Loaded, still linked, but no machine there anymore (broken or wrenched
+            // out). Forget its recipe so a different machine placed later starts clean.
+            history.forget(key);
         }
     }
 

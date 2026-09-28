@@ -61,6 +61,38 @@ public class MachineScanner {
         return Math.max(defaultRadius, maxRadius);
     }
 
+    /** The radius the scan stepper moves to. From {@link #DEFAULT_RADIUS} it steps from what the
+     *  default last resolved to ({@code lastRunRadius}, 0 before any scan), else from
+     *  {@code localDefault}: the client's own config, exact in singleplayer and a best guess on a
+     *  dedicated server until the first scan reports the real value. */
+    public static int stepScanRadius(int currentPick, int lastRunRadius, int localDefault, int delta) {
+        int from = currentPick != DEFAULT_RADIUS ? currentPick
+                : lastRunRadius > 0 ? lastRunRadius
+                : localDefault;
+        return Math.max(1, Math.min(from + delta, MAX_SCAN_RADIUS));
+    }
+
+    /** The pick to show once a scan reports the radius it actually ran at: if the server capped
+     *  it, show the capped value rather than the one asked for. A default pick stays default. */
+    public static int pickAfterScan(int currentPick, int ranAtRadius) {
+        if (currentPick != DEFAULT_RADIUS && ranAtRadius < currentPick) {
+            return ranAtRadius;
+        }
+        return currentPick;
+    }
+
+    /** Positions from {@code found} worth pointing out in the world: anything not already in
+     *  {@code known} (linked, rejected, or turned up by the previous scan). */
+    public static List<GlobalPos> newlyFound(List<GlobalPos> found, Set<GlobalPos> known) {
+        List<GlobalPos> result = new ArrayList<>();
+        for (GlobalPos pos : found) {
+            if (!known.contains(pos)) {
+                result.add(pos);
+            }
+        }
+        return result;
+    }
+
     /** Returns true if {@code pos} lies within the square chunk grid bounded by {@code radiusChunks}. */
     public static boolean isWithinScanRadius(BlockPos center, BlockPos pos, int radiusChunks) {
         ChunkPos centerChunk = new ChunkPos(center);

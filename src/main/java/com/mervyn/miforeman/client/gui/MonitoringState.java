@@ -127,31 +127,20 @@ class MonitoringState {
         for (ScanResultPayload.Candidate previous : lastScanResults) {
             known.add(previous.pos());
         }
-        List<GlobalPos> newlyFound = new ArrayList<>();
-        for (ScanResultPayload.Candidate candidate : candidates) {
-            if (!known.contains(candidate.pos())) {
-                newlyFound.add(candidate.pos());
-            }
-        }
+        List<GlobalPos> newlyFound = MachineScanner.newlyFound(
+                candidates.stream().map(ScanResultPayload.Candidate::pos).toList(), known);
 
         this.lastScanResults.clear();
         this.lastScanResults.addAll(candidates);
         this.lastScanRadiusChunks = radiusChunks;
-        // The server capped the pick: show the radius that actually ran, not the one asked for.
-        if (scanRadiusChunks != MachineScanner.DEFAULT_RADIUS && radiusChunks < scanRadiusChunks) {
-            scanRadiusChunks = radiusChunks;
-        }
+        this.scanRadiusChunks = MachineScanner.pickAfterScan(scanRadiusChunks, radiusChunks);
         return newlyFound;
     }
 
-    /** Moves the next scan's radius by {@code delta} chunks. Starting from "default", it steps
-     *  from the radius the default last resolved to, or the local config as a best guess before
-     *  any scan (exact in singleplayer; a dedicated server may differ, and the scan corrects it). */
+    /** Moves the next scan's radius by {@code delta} chunks; see {@link MachineScanner#stepScanRadius}. */
     void stepScanRadius(int delta) {
-        int from = scanRadiusChunks != MachineScanner.DEFAULT_RADIUS ? scanRadiusChunks
-                : lastScanRadiusChunks > 0 ? lastScanRadiusChunks
-                : com.mervyn.miforeman.Config.AUTOLINK_SCAN_RADIUS_CHUNKS.get();
-        scanRadiusChunks = Math.max(1, Math.min(from + delta, MachineScanner.MAX_SCAN_RADIUS));
+        scanRadiusChunks = MachineScanner.stepScanRadius(scanRadiusChunks, lastScanRadiusChunks,
+                com.mervyn.miforeman.Config.AUTOLINK_SCAN_RADIUS_CHUNKS.get(), delta);
     }
 
     net.minecraft.network.chat.Component scanRadiusLabel() {

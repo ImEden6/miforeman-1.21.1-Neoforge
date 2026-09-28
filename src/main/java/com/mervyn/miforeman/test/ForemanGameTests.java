@@ -1354,6 +1354,140 @@ public class ForemanGameTests {
     }
 
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testUpdateMachineRestoresAndForgetsRecipeHistory(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos relativePos = new BlockPos(1, 1, 1);
+        helper.setBlock(relativePos, net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+                ResourceLocation.parse("modern_industrialization:bronze_compressor")));
+        GlobalPos key = GlobalPos.of(level.dimension(), helper.absolutePos(relativePos));
+
+        var compressorRecipes = aztech.modern_industrialization.machines.init.MIMachineRecipeTypes.COMPRESSOR.getRecipesWithCache(level);
+        var maceratorRecipes = aztech.modern_industrialization.machines.init.MIMachineRecipeTypes.MACERATOR.getRecipesWithCache(level);
+        if (compressorRecipes.isEmpty() || maceratorRecipes.isEmpty()) {
+            helper.fail("Expected MI to register compressor and macerator recipes.");
+            return;
+        }
+        ResourceLocation compressorRecipe = compressorRecipes.iterator().next().id();
+        ResourceLocation maceratorRecipe = maceratorRecipes.iterator().next().id();
+
+        try {
+            // The clipboard was put away, so the tracker was pruned; the machine sits idle.
+            ServerMonitoringManager.TRACKERS.remove(key);
+            var history = new com.mervyn.miforeman.goal.MachineRecipeHistory();
+            history.record(key, compressorRecipe);
+            ServerMonitoringManager.updateMachine(level, key, history, List.of());
+
+            var tracker = ServerMonitoringManager.TRACKERS.get(key);
+            if (tracker == null || !compressorRecipe.equals(ServerMonitoringManager.resolveDisplayRecipeId(tracker))) {
+                helper.fail("An idle machine's saved recipe was not restored after its tracker was pruned: "
+                        + (tracker == null ? "no tracker" : tracker.lastKnownRecipeId));
+                return;
+            }
+            if (tracker.status != com.mervyn.miforeman.goal.MachineStatus.RED) {
+                helper.fail("An empty, idle compressor should still report RED, got " + tracker.status);
+                return;
+            }
+
+            // A saved recipe this machine can't run (the spot used to hold a macerator) is
+            // dropped rather than pinning the compressor to a macerator node.
+            ServerMonitoringManager.TRACKERS.remove(key);
+            history.record(key, maceratorRecipe);
+            ServerMonitoringManager.updateMachine(level, key, history, List.of());
+            tracker = ServerMonitoringManager.TRACKERS.get(key);
+            if (tracker.lastKnownRecipeId != null || history.get(key) != null) {
+                helper.fail("A macerator recipe was accepted for a compressor: tracker=" + tracker.lastKnownRecipeId
+                        + ", history=" + history.get(key));
+                return;
+            }
+
+            // Breaking the machine forgets its recipe, so whatever gets placed there starts clean.
+            history.record(key, compressorRecipe);
+            helper.setBlock(relativePos, net.minecraft.world.level.block.Blocks.AIR);
+            ServerMonitoringManager.updateMachine(level, key, history, List.of());
+            if (history.get(key) != null) {
+                helper.fail("A broken machine's recipe history was kept: " + history.get(key));
+                return;
+            }
+        } finally {
+            ServerMonitoringManager.TRACKERS.remove(key);
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testScanPayloadsCarryRadius(GameTestHelper helper) {
+        var level = helper.getLevel();
+        ProductionGoal goal = new ProductionGoal("scan_payload_goal", ProductionGoal.TargetType.ITEM,
+                ResourceLocation.parse("modern_industrialization:iron_plate"), 2.0);
+
+        @SuppressWarnings("deprecation")
+        var buf = new net.minecraft.network.RegistryFriendlyByteBuf(io.netty.buffer.Unpooled.buffer(), level.registryAccess());
+        var request = new com.mervyn.miforeman.network.ScanRequestPayload(goal, 7);
+        com.mervyn.miforeman.network.ScanRequestPayload.STREAM_CODEC.encode(buf, request);
+        var decodedRequest = com.mervyn.miforeman.network.ScanRequestPayload.STREAM_CODEC.decode(buf);
+        if (decodedRequest.radiusChunks() != 7 || !decodedRequest.goal().equals(goal)) {
+            helper.fail("ScanRequestPayload did not round-trip: radius=" + decodedRequest.radiusChunks());
+            return;
+        }
+
+        var result = new com.mervyn.miforeman.network.ScanResultPayload(List.of(
+                new com.mervyn.miforeman.network.ScanResultPayload.Candidate(
+                        GlobalPos.of(Level.OVERWORLD, new BlockPos(10, 64, -3)),
+                        ResourceLocation.parse("modern_industrialization:electric_compressor"),
+                        ResourceLocation.parse("modern_industrialization:materials/iron/compressor/main"))), 5);
+        com.mervyn.miforeman.network.ScanResultPayload.STREAM_CODEC.encode(buf, result);
+        var decodedResult = com.mervyn.miforeman.network.ScanResultPayload.STREAM_CODEC.decode(buf);
+        if (!decodedResult.equals(result)) {
+            helper.fail("ScanResultPayload did not round-trip: " + decodedResult);
+            return;
+        }
+        if (buf.readableBytes() != 0) {
+            helper.fail("Scan payloads left " + buf.readableBytes() + " unread bytes, so encode and decode disagree.");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testScanStepperAndNewCandidates(GameTestHelper helper) {
+        int dflt = com.mervyn.miforeman.goal.MachineScanner.DEFAULT_RADIUS;
+        record Step(int pick, int lastRun, int localDefault, int delta, int expected, String why) {}
+        List<Step> steps = List.of(
+                new Step(dflt, 0, 4, 1, 5, "before any scan, steps from the local config default"),
+                new Step(dflt, 6, 4, -1, 5, "once a default scan ran, steps from the radius it reported"),
+                new Step(8, 6, 4, 1, 9, "an explicit pick steps from itself"),
+                new Step(1, 0, 4, -1, 1, "never below one chunk"),
+                new Step(16, 0, 4, 1, 16, "never above the hard maximum"));
+        for (Step s : steps) {
+            int actual = com.mervyn.miforeman.goal.MachineScanner.stepScanRadius(s.pick(), s.lastRun(), s.localDefault(), s.delta());
+            if (actual != s.expected()) {
+                helper.fail("stepScanRadius gave " + actual + ", expected " + s.expected() + ": " + s.why());
+                return;
+            }
+        }
+
+        if (com.mervyn.miforeman.goal.MachineScanner.pickAfterScan(12, 8) != 8) {
+            helper.fail("A pick the server capped should show the capped radius afterwards.");
+            return;
+        }
+        if (com.mervyn.miforeman.goal.MachineScanner.pickAfterScan(dflt, 4) != dflt) {
+            helper.fail("A default pick must stay default after a scan, not turn into a fixed number.");
+            return;
+        }
+
+        GlobalPos linked = GlobalPos.of(Level.OVERWORLD, new BlockPos(1, 64, 1));
+        GlobalPos seenLastScan = GlobalPos.of(Level.OVERWORLD, new BlockPos(2, 64, 2));
+        GlobalPos fresh = GlobalPos.of(Level.OVERWORLD, new BlockPos(3, 64, 3));
+        var newlyFound = com.mervyn.miforeman.goal.MachineScanner.newlyFound(
+                List.of(linked, seenLastScan, fresh), Set.of(linked, seenLastScan));
+        if (!newlyFound.equals(List.of(fresh))) {
+            helper.fail("Only the machine no earlier scan or link knew about should be pinged, got " + newlyFound);
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testCountMachinesOffGraph(GameTestHelper helper) {
         ResourceLocation onGraph = ResourceLocation.parse("modern_industrialization:materials/iron/compressor/main");
         ResourceLocation offPlan = ResourceLocation.parse("modern_industrialization:materials/gold/compressor/main");

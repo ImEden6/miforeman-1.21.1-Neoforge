@@ -120,6 +120,9 @@
 | `testRecordActiveRecipeNeverGoesStale` | `lastKnownRecipeId` always reflects the latest recipe a machine ran |
 | `testResolveDisplayRecipeIdFallsBackToLastKnown` | Fallback chain lastRecipeId -> saturatedRecipeId -> lastKnownRecipeId, so a RED machine still reports a recipe |
 | `testMachineRecipeHistoryRestoresPrunedTracker` | Saved recipe history survives save/load, restores a pruned or post-restart tracker, never overrides live history, and drops an entry the machine at that spot can no longer run |
+| `testUpdateMachineRestoresAndForgetsRecipeHistory` | On a real placed compressor, the per-tick update restores a pruned tracker's saved recipe, rejects a saved recipe of another machine type, and forgets the entry once the machine is broken |
+| `testScanPayloadsCarryRadius` | Scan request and result payloads round-trip their radius with no leftover bytes |
+| `testScanStepperAndNewCandidates` | The radius stepper starts from the right base and stays in 1-16, a capped pick shows the capped value, and only machines no link or earlier scan knew about get pinged |
 | `testCountMachinesOffGraph` | Linked machines that have never run, or run a recipe outside the plan, are counted as not on the graph |
 | `testScanRadiusOverrideClampAndLinkValidation` | A per-scan radius pick resolves the default and is clamped to the admin cap; link validation accepts anything the widest allowed scan can find, never tighter than the default |
 | `testRecipeLiveSummaryWorstStatusAndRunningCount` | Several machines on one recipe fold into the worst status plus a running/total count; machines with no recipe id are left out |
