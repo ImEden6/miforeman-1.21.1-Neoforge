@@ -121,8 +121,11 @@ public class MonitoringScreen extends Screen {
 
         List<MonitoringListPanel.MonitoringRow> rows = sorted.stream()
                 // A machine with no recipe yet has only ever been idle since it was linked.
-                .map(m -> new MonitoringListPanel.MonitoringRow(m, m.recipeId().map(MonitoringState::resolveProductLabel)
-                        .orElseGet(() -> net.minecraft.client.resources.language.I18n.get("miforeman.monitoring.waiting_first_craft"))))
+                // A recipe the client can't resolve to a label (e.g. a runtime-built furnace
+                // recipe) still ran, so it gets no label rather than the waiting one.
+                .map(m -> new MonitoringListPanel.MonitoringRow(m, m.recipeId().isEmpty()
+                        ? net.minecraft.client.resources.language.I18n.get("miforeman.monitoring.waiting_first_craft")
+                        : MonitoringState.resolveProductLabel(m.recipeId().get())))
                 .toList();
 
         searchState.setQuery(searchQuery, searchQuery.isBlank() ? Map.of() : searchableTexts(rows));

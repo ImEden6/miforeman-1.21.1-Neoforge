@@ -54,6 +54,49 @@ quantum_upgrade included, routes on the render thread.
   and how a stale route referencing a since-removed node is kept from being drawn. A
   cheaper alternative worth weighing first: re-route only the wires whose endpoints moved.
 
+### How the reference actually paints a wire (scouted 2026-09-24)
+
+Edges are real SVG `<path>`s from a custom React Flow edge component
+(`ResourceEdgeComponent`, `FactoryFlow.tsx`), not an HTML canvas for the wire geometry
+itself — canvas is used only for the animated dash overlay, as its own separate
+optimisation (see below). Two things worth lifting into `GraphCanvas` if cable
+legibility comes up again:
+
+- **Casing/core double-stroke.** *Built 2026-09-24 (`78e43352`), as a paper-coloured halo rather
+  than a dark casing, since this canvas sits on light paper.* Every wire paints twice on the same geometry: a dark
+  casing underneath (`edgeCasingWidth(core) = core + max(2, core*0.22)` — proportional,
+  not a flat `+2`, so it still reads at both hairline and pipe widths) and the resource-
+  coloured core on top. This is the actual crossing-legibility mechanism: two wires
+  crossing always show a dark rim around each, independent of whatever the router itself
+  couldn't fully separate. `GuiGraphics.fill` draws flat rects, not real strokes, so
+  porting this would mean one extra inflated-rect pass per segment before the coloured
+  one — cheap. Paint-order note that cost them a real bug: draw order and "which wire
+  hops over which at a crossing" must agree (both by thinner-line-on-top), or a fat pipe
+  with a later index visually buries a thin line drawn nominally above it.
+  (`compareEdgeDepth`, `edge-geometry.ts`.)
+- **Lane assignment by shared endpoint, not shared drawn line.** `assignEdgeLanes`
+  (`edge-geometry.ts`) is greedy graph colouring over the real conflict relation — two
+  edges conflict if they share a source or share a target — so a fan-out from one
+  machine's outputs or a fan-in to another's inputs never lands on the same offset by
+  chance. Our `EdgeRouter.packIntoLanes` only separates wires that end up drawn on the
+  same line after routing, which is weaker: it fixes the symptom where it happens to
+  occur rather than the structural cause (shared endpoint).
+- **The animated marker follows the real path, not interpolated endpoints — by
+  construction, not by corner-casing.** The "marching dashes" (`edge-pulse.ts`) are
+  `ctx.stroke(path2d, {dash, gap})` with an advancing `lineDashOffset`, where `path2d` is
+  built from the *exact same path string* the SVG wire draws. It moved off SVG only
+  because `stroke-dashoffset` is a paint property that invalidated the whole edge layer
+  every frame (616 edges cost ~90ms/frame). `GraphCanvas` has no animated marker of any
+  kind today — nothing to fix, but if one is ever added, driving it off the same
+  `EdgeRouter.Route.points()` list (not a lerp between the two endpoints) is what keeps
+  it glued to the path through corners for free.
+- Also present but lower priority: **hop bumps** where two routed wires visually cross
+  (`hop-map.ts` — a small arc "jumps over" the other line) and **highlight via opacity**
+  rather than a colour swap (`isHighlighted` sets `strokeOpacity: 1` + a glow filter on
+  the same colour, dimming everything else to ~0.72, instead of swapping to a separate
+  dim/highlight palette the way `GraphCanvas`'s `COLOUR_EDGE_DIM`/`COLOUR_EDGE_HIGHLIGHT`
+  do).
+
 ## Solver / MachineTracker
 
 - **Staged LP instead of iterative descent for "what's actually running"**
@@ -93,9 +136,11 @@ quantum_upgrade included, routes on the render thread.
 
 ## Feature ideas (carried over)
 
-- **Scan upgrades** — per-scan radius override in the Review panel (planned in
-  `.scratch/machine-auto-detection/map.md`, never built), optional gentle force-load of
-  scanned chunks, particle ping on newly found candidates.
+- **Scan upgrades** — per-scan radius override and particle ping on newly found candidates
+  *built 2026-09-29 (`5ce02d0b`)*; the stepper sits beside Scan Nearby on the Monitor step,
+  capped by `autolinkScanMaxRadiusChunks`. Force-loading scanned chunks deliberately skipped:
+  scanning only loaded chunks is on purpose, and loading chunks from a GUI click is a server
+  performance risk.
 
 ## Deferred from the 2026-09-05 three-skill code review
 
@@ -103,7 +148,11 @@ Findings from running `code-review`, `code-review-skill`, and `mattpocock-skills
 against everything since the 1.0.1 changelog. The correctness/efficiency findings were fixed
 directly; these two are lower-value or need a design call, not a blind patch.
 
-- **GraphCanvas live-status colouring is keyed by `lastKnownRecipeId`**, which can miss a
+- *Resolved 2026-09-29 (`5093fccd`, `1bb8c953`): nodes take the worst of all their machines
+  with a running count, last recipes persist in `MachineRecipeHistory` (SavedData) across
+  tracker prunes and restarts, and a chip counts machines with no node. Guessing a node from
+  machine type was considered and left out; a never-run machine lands on its node after its
+  first craft.* **GraphCanvas live-status colouring is keyed by `lastKnownRecipeId`**, which can miss a
   just-re-linked machine's node until the physical machine actually runs its newly-assigned
   recipe. Arguably correct (no live data exists yet for the new assignment) rather than a bug --
   worth a real design decision about what to show for "no data under the current assignment" before
