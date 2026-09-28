@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of always using the configured default. Server admins can cap it with the new
   `autolinkScanMaxRadiusChunks` option.
 - Machines a scan newly finds give off a brief particle burst, so they are easy to spot.
+- The recipe graph shows how many linked machines it has no node for (never run yet, or
+  running a recipe outside the plan), and the monitoring list marks machines still waiting
+  for their first craft.
 
 ### Changed
 - Recipe graph wires now route around machine and resource cards instead of running
@@ -25,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - A graph node with several machines on its recipe showed whichever machine happened to be
   linked last, so a starved machine could hide behind a working one. It now shows the worst.
+- Idle machines no longer drop off the recipe graph after the clipboard is put away for a few
+  seconds, or after a server restart. Each machine's last recipe is now saved with the world.
 
 ## [1.2.0] - 2026-09-08
 

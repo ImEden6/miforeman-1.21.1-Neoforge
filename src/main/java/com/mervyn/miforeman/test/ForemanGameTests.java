@@ -1300,6 +1300,82 @@ public class ForemanGameTests {
     }
 
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testMachineRecipeHistoryRestoresPrunedTracker(GameTestHelper helper) {
+        var history = new com.mervyn.miforeman.goal.MachineRecipeHistory();
+        GlobalPos key = GlobalPos.of(Level.OVERWORLD, new BlockPos(3, 64, 7));
+        ResourceLocation recipe = ResourceLocation.parse("modern_industrialization:materials/iron/compressor/main");
+
+        // Re-recording the same recipe (a machine running it every tick) must not dirty the save.
+        history.record(key, recipe);
+        history.setDirty(false);
+        history.record(key, recipe);
+        if (history.isDirty()) {
+            helper.fail("Recording an unchanged recipe marked the history dirty.");
+            return;
+        }
+
+        // Survives a save/load round trip, as it must across a restart.
+        var registries = helper.getLevel().registryAccess();
+        var reloaded = com.mervyn.miforeman.goal.MachineRecipeHistory.load(
+                history.save(new net.minecraft.nbt.CompoundTag(), registries), registries);
+        if (!recipe.equals(reloaded.get(key))) {
+            helper.fail("Recipe history lost its entry across save/load: " + reloaded.get(key));
+            return;
+        }
+
+        // A fresh tracker (the clipboard was put away and the old one pruned) gets the recipe back.
+        var tracker = new ServerMonitoringManager.MachineTracker(key.pos());
+        ServerMonitoringManager.seedLastKnownRecipe(tracker, reloaded, key, id -> true);
+        if (!recipe.equals(tracker.lastKnownRecipeId)) {
+            helper.fail("A pruned tracker was not restored from recipe history: " + tracker.lastKnownRecipeId);
+            return;
+        }
+
+        // Live history always wins over saved history.
+        ResourceLocation live = ResourceLocation.parse("modern_industrialization:materials/copper/compressor/main");
+        var running = new ServerMonitoringManager.MachineTracker(key.pos());
+        running.lastKnownRecipeId = live;
+        ServerMonitoringManager.seedLastKnownRecipe(running, reloaded, key, id -> true);
+        if (!live.equals(running.lastKnownRecipeId)) {
+            helper.fail("Seeding overwrote a tracker that already had a live recipe.");
+            return;
+        }
+
+        // A recipe the machine now at that spot can't run (swapped machine, removed recipe) is
+        // dropped instead of pinning the machine to the wrong node.
+        var swapped = new ServerMonitoringManager.MachineTracker(key.pos());
+        ServerMonitoringManager.seedLastKnownRecipe(swapped, reloaded, key, id -> false);
+        if (swapped.lastKnownRecipeId != null || reloaded.get(key) != null) {
+            helper.fail("An invalid saved recipe was used or kept: tracker=" + swapped.lastKnownRecipeId
+                    + ", history=" + reloaded.get(key));
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testCountMachinesOffGraph(GameTestHelper helper) {
+        ResourceLocation onGraph = ResourceLocation.parse("modern_industrialization:materials/iron/compressor/main");
+        ResourceLocation offPlan = ResourceLocation.parse("modern_industrialization:materials/gold/compressor/main");
+        var machineId = ResourceLocation.parse("modern_industrialization:electric_compressor");
+        java.util.function.Function<java.util.Optional<ResourceLocation>, com.mervyn.miforeman.network.LiveMonitoringPayload.MachineStatusData> machine =
+                recipe -> new com.mervyn.miforeman.network.LiveMonitoringPayload.MachineStatusData(
+                        GlobalPos.of(Level.OVERWORLD, BlockPos.ZERO), com.mervyn.miforeman.goal.MachineStatus.RED,
+                        com.mervyn.miforeman.goal.FailureReason.STARVED, 0.0, 0.0, machineId, recipe);
+
+        int count = com.mervyn.miforeman.goal.RecipeLiveSummary.countOffGraph(List.of(
+                machine.apply(java.util.Optional.of(onGraph)),
+                machine.apply(java.util.Optional.of(offPlan)),
+                machine.apply(java.util.Optional.empty())), Set.of(onGraph));
+        // Never-run and running-something-off-plan both count; the on-graph one doesn't.
+        if (count != 2) {
+            helper.fail("Expected 2 machines off the graph, got " + count);
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testScanRadiusOverrideClampAndLinkValidation(GameTestHelper helper) {
         int dflt = com.mervyn.miforeman.goal.MachineScanner.DEFAULT_RADIUS;
         record Case(int requested, int defaultRadius, int maxRadius, int expected, String why) {}

@@ -59,6 +59,7 @@ public class GraphCanvas extends AbstractWidget {
     private static final int EDGE_CORE_HALF_WIDTH = 1;
     // A 2px core plus max(2, core * 0.22) of casing: 1px of rim each side.
     private static final int EDGE_CASING_PAD = 1;
+    private static final int COLOUR_CHIP_FILL = 0xEEEFE0BE;
     private static final int COLOUR_GROUP_FILL = 0x22D4A017;
     private static final int COLOUR_GROUP_BORDER = 0x66D4A017;
     private static final int COLOUR_MARQUEE_FILL = 0x334A90D9;
@@ -122,6 +123,8 @@ public class GraphCanvas extends AbstractWidget {
     /** Live status of every machine on each recipe, keyed by recipe ID. Empty until
      *  {@link #updateLiveStatus} is called. */
     private Map<ResourceLocation, RecipeLiveSummary> liveStatusByRecipeId = Map.of();
+    /** Linked machines reporting live data that no node can show; see {@link RecipeLiveSummary#countOffGraph}. */
+    private int machinesOffGraph = 0;
 
     public GraphCanvas(int x, int y, int width, int height, RecipeGraph graph,
             GraphLayoutState layoutState, double panX, double panY, float zoom,
@@ -193,6 +196,12 @@ public class GraphCanvas extends AbstractWidget {
      */
     public void updateLiveStatus(List<LiveMonitoringPayload.MachineStatusData> data) {
         this.liveStatusByRecipeId = RecipeLiveSummary.byRecipe(data);
+        Set<ResourceLocation> machineNodeIds = new HashSet<>();
+        graph.nodes().forEach((id, node) -> {
+            if (node.getType() == NodeType.MACHINE)
+                machineNodeIds.add(id);
+        });
+        this.machinesOffGraph = RecipeLiveSummary.countOffGraph(data, machineNodeIds);
     }
 
     /**
@@ -869,6 +878,19 @@ public class GraphCanvas extends AbstractWidget {
         }
 
         guiGraphics.pose().popPose();
+
+        // Screen-space chip, bottom-right (the search bar owns the top-right, the hidden-nodes
+        // drawer the left), for linked machines the graph has no node to show on.
+        if (machinesOffGraph > 0) {
+            Component chip = Component.translatable("miforeman.graph.machines_off_graph", machinesOffGraph);
+            int chipW = mc.font.width(chip) + 8;
+            int chipX = getX() + getWidth() - 6 - chipW;
+            int chipY = getY() + getHeight() - 6 - 14;
+            guiGraphics.fill(chipX, chipY, chipX + chipW, chipY + 14, COLOUR_CHIP_FILL);
+            guiGraphics.renderOutline(chipX, chipY, chipW, 14, COLOUR_BORDER_DARK);
+            guiGraphics.drawString(mc.font, chip, chipX + 4, chipY + 3, COLOUR_TEXT, false);
+        }
+
         guiGraphics.disableScissor();
 
         // Render search bar overlay on top of canvas

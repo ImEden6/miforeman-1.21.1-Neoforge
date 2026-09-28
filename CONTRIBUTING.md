@@ -119,6 +119,8 @@
 | `testComputeDisposalRatioUsesRealCapacityNotAdjustedCapacity` | Disposal ratio uses real stack-size-clamped capacity, so a full non-stackable output flags correctly |
 | `testRecordActiveRecipeNeverGoesStale` | `lastKnownRecipeId` always reflects the latest recipe a machine ran |
 | `testResolveDisplayRecipeIdFallsBackToLastKnown` | Fallback chain lastRecipeId -> saturatedRecipeId -> lastKnownRecipeId, so a RED machine still reports a recipe |
+| `testMachineRecipeHistoryRestoresPrunedTracker` | Saved recipe history survives save/load, restores a pruned or post-restart tracker, never overrides live history, and drops an entry the machine at that spot can no longer run |
+| `testCountMachinesOffGraph` | Linked machines that have never run, or run a recipe outside the plan, are counted as not on the graph |
 | `testScanRadiusOverrideClampAndLinkValidation` | A per-scan radius pick resolves the default and is clamped to the admin cap; link validation accepts anything the widest allowed scan can find, never tighter than the default |
 | `testRecipeLiveSummaryWorstStatusAndRunningCount` | Several machines on one recipe fold into the worst status plus a running/total count; machines with no recipe id are left out |
 | `testSearchStateGenericOverArbitraryId` | `SearchState` works over a non-`ResourceLocation` ID type with a hand-built text map |

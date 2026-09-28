@@ -120,7 +120,9 @@ public class MonitoringScreen extends Screen {
         sorted.sort(Comparator.comparingInt(this::statusRank));
 
         List<MonitoringListPanel.MonitoringRow> rows = sorted.stream()
-                .map(m -> new MonitoringListPanel.MonitoringRow(m, m.recipeId().map(MonitoringState::resolveProductLabel).orElse(null)))
+                // A machine with no recipe yet has only ever been idle since it was linked.
+                .map(m -> new MonitoringListPanel.MonitoringRow(m, m.recipeId().map(MonitoringState::resolveProductLabel)
+                        .orElseGet(() -> net.minecraft.client.resources.language.I18n.get("miforeman.monitoring.waiting_first_craft"))))
                 .toList();
 
         searchState.setQuery(searchQuery, searchQuery.isBlank() ? Map.of() : searchableTexts(rows));

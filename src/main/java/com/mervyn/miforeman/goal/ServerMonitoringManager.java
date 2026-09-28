@@ -158,6 +158,23 @@ public class ServerMonitoringManager {
         tracker.lastKnownRecipeId = recipeId;
     }
 
+    /** Gives a fresh tracker (new link, pruned, or after a restart) the recipe its machine was
+     *  last seen running, from {@link MachineRecipeHistory}. {@code stillValid} checks the saved
+     *  recipe still exists for the machine now at that position; if not (the machine was swapped
+     *  for another type, or a datapack removed the recipe) the entry is dropped rather than
+     *  pinning the machine to a node it can't run. Extracted from {@link #onServerTick} for tests. */
+    public static void seedLastKnownRecipe(MachineTracker tracker, MachineRecipeHistory history, GlobalPos key,
+                                           java.util.function.Predicate<ResourceLocation> stillValid) {
+        if (tracker.lastKnownRecipeId != null) return;
+        ResourceLocation saved = history.get(key);
+        if (saved == null) return;
+        if (!stillValid.test(saved)) {
+            history.forget(key);
+            return;
+        }
+        tracker.lastKnownRecipeId = saved;
+    }
+
     /** Recipe id to display for this machine. Prefers active crafting or blocked saturation
      *  recipes. For RED machines (starved or dead-loop), falls back to {@code lastKnownRecipeId}
      *  so nodes retain product labels. */
@@ -211,6 +228,7 @@ public class ServerMonitoringManager {
             byDimension.computeIfAbsent(gp.dimension(), k -> new ArrayList<>()).add(gp.pos());
         }
 
+        MachineRecipeHistory history = activeKeys.isEmpty() ? null : MachineRecipeHistory.get(event.getServer());
         for (Map.Entry<net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>, List<BlockPos>> entry : byDimension.entrySet()) {
             ServerLevel level = event.getServer().getLevel(entry.getKey());
             if (level == null) continue;
@@ -219,12 +237,18 @@ public class ServerMonitoringManager {
                 if (!level.isLoaded(pos)) {
                     continue;
                 }
+                GlobalPos key = GlobalPos.of(entry.getKey(), pos);
                 BlockEntity be = level.getBlockEntity(pos);
                 if (be instanceof MachineBlockEntity machine) {
                     UnifiedCrafter crafter = getCrafter(machine);
                     if (crafter == null) continue;
 
-                    MachineTracker tracker = trackerFor(GlobalPos.of(entry.getKey(), pos));
+                    MachineTracker tracker = trackerFor(key);
+                    // A crafter whose recipe type can't be read (some modular addons) is trusted
+                    // as-is: an unverifiable entry is still better than no node at all.
+                    var recipeType = crafter.getRecipeType();
+                    seedLastKnownRecipe(tracker, history, key,
+                            id -> recipeType == null || recipeType.getRecipe(level, id) != null);
                     tracker.disposalRatio = computeDisposalRatio(crafter);
                     boolean hasActive = crafter.hasActiveRecipe();
 
@@ -251,6 +275,7 @@ public class ServerMonitoringManager {
                             }
 
                             recordActiveRecipe(tracker, recipeId);
+                            history.record(key, recipeId);
                             tracker.lastUsedEnergy = usedEnergy;
                             tracker.lastRecipeEnergy = recipeEnergy;
                         }
@@ -261,7 +286,7 @@ public class ServerMonitoringManager {
                         tracker.lastRecipeId = null;
                         tracker.lastUsedEnergy = 0;
                         tracker.lastRecipeEnergy = 0;
-                        List<ProductionGoal> linkingGoals = goalsByPos.getOrDefault(GlobalPos.of(entry.getKey(), pos), List.of());
+                        List<ProductionGoal> linkingGoals = goalsByPos.getOrDefault(key, List.of());
                         Set<ResourceLocation> cyclicResourceIds = unionCyclicResourceIds(linkingGoals);
                         PassiveStatus passive = getMachinePassiveStatusDetailed(crafter, level, cyclicResourceIds,
                                 tracker.lastKnownRecipeId);
@@ -269,6 +294,10 @@ public class ServerMonitoringManager {
                         tracker.failureReason = passive.reason();
                         tracker.saturatedRecipeId = passive.matchedRecipeId();
                     }
+                } else {
+                    // Loaded, still linked, but no machine there anymore (broken or wrenched
+                    // out). Forget its recipe so a different machine placed later starts clean.
+                    history.forget(key);
                 }
             }
         }

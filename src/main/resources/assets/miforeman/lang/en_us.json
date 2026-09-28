@@ -38,6 +38,8 @@
   "miforeman.button.scan_nearby": "Scan Nearby",
   "miforeman.button.highlights_on": "Highlights: On",
   "miforeman.button.highlights_off": "Highlights: Off",
+  "miforeman.graph.machines_off_graph": "Linked machines not on the graph: %s",
+  "miforeman.monitoring.waiting_first_craft": "Waiting for its first craft",
   "miforeman.scan.radius": "Radius: %s chunks",
   "miforeman.scan.radius_default": "Radius: default",
   "miforeman.scan.radius_default_known": "Radius: default (%s)",
