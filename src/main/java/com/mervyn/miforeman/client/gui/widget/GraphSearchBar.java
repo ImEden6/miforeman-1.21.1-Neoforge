@@ -173,23 +173,23 @@ public class GraphSearchBar {
         boolean hoverPrev = mouseX >= prevX && mouseX < prevX + btnW && mouseY >= btnY && mouseY < btnY + btnH;
         if (hoverPrev)
             guiGraphics.fill(prevX, btnY, prevX + btnW, btnY + btnH, COLOUR_HOVER_BTN);
-        guiGraphics.drawCenteredString(font, "▲", prevX + btnW / 2, btnY + 3,
-                state.getMatchCount() > 0 ? COLOUR_TEXT : COLOUR_MUTED);
+        guiGraphics.drawString(font, "▲", prevX + (btnW - font.width("▲")) / 2, btnY + 3,
+                state.getMatchCount() > 0 ? COLOUR_TEXT : COLOUR_MUTED, false);
 
         // Next button
         int nextX = x + 142;
         boolean hoverNext = mouseX >= nextX && mouseX < nextX + btnW && mouseY >= btnY && mouseY < btnY + btnH;
         if (hoverNext)
             guiGraphics.fill(nextX, btnY, nextX + btnW, btnY + btnH, COLOUR_HOVER_BTN);
-        guiGraphics.drawCenteredString(font, "▼", nextX + btnW / 2, btnY + 3,
-                state.getMatchCount() > 0 ? COLOUR_TEXT : COLOUR_MUTED);
+        guiGraphics.drawString(font, "▼", nextX + (btnW - font.width("▼")) / 2, btnY + 3,
+                state.getMatchCount() > 0 ? COLOUR_TEXT : COLOUR_MUTED, false);
 
         // Close button
         int closeX = x + 156;
         boolean hoverClose = mouseX >= closeX && mouseX < closeX + btnW && mouseY >= btnY && mouseY < btnY + btnH;
         if (hoverClose)
             guiGraphics.fill(closeX, btnY, closeX + btnW, btnY + btnH, COLOUR_HOVER_BTN);
-        guiGraphics.drawCenteredString(font, "✕", closeX + btnW / 2, btnY + 3, COLOUR_TEXT);
+        guiGraphics.drawString(font, "✕", closeX + (btnW - font.width("✕")) / 2, btnY + 3, COLOUR_TEXT, false);
     }
 
     public boolean mouseClicked(double mouseX, double mouseY, int button) {

@@ -294,7 +294,7 @@ public class ColourPickerScreen extends Screen {
 
         int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
         int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 2;
-        guiGraphics.drawString(this.font, Component.translatable("miforeman.screen.colours.title"), contentX, contentY, COLOUR_TITLE);
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.screen.colours.title"), contentX, contentY, COLOUR_TITLE, false);
 
         for (ColourKey key : ColourKey.values()) {
             int y = rowY.get(key);
@@ -303,15 +303,15 @@ public class ColourPickerScreen extends Screen {
         }
 
         int editorX = listX + SWATCH_SIZE + 4 + 150 + 16;
-        guiGraphics.drawString(this.font, Component.literal(selectedKey.label), editorX, editorLabelY, COLOUR_LABEL);
+        guiGraphics.drawString(this.font, Component.literal(selectedKey.label), editorX, editorLabelY, COLOUR_LABEL, false);
         int previewArgb = ColourPalette.get(selectedKey);
         guiGraphics.fill(editorX, editorSwatchY, editorX + SWATCH_SIZE * 4, editorSwatchY + PREVIEW_HEIGHT, 0xFF000000 | previewArgb);
         guiGraphics.renderOutline(editorX, editorSwatchY, SWATCH_SIZE * 4, PREVIEW_HEIGHT, COLOUR_LABEL);
 
         if (hexInvalid) {
-            guiGraphics.drawString(this.font, Component.translatable("miforeman.colour_picker.invalid_hex"), editorX, editorHintY, COLOUR_ERROR);
+            guiGraphics.drawString(this.font, Component.translatable("miforeman.colour_picker.invalid_hex"), editorX, editorHintY, COLOUR_ERROR, false);
         } else {
-            guiGraphics.drawString(this.font, Component.translatable("miforeman.colour_picker.hex_placeholder"), editorX, editorHintY, COLOUR_TEXT);
+            guiGraphics.drawString(this.font, Component.translatable("miforeman.colour_picker.hex_placeholder"), editorX, editorHintY, COLOUR_TEXT, false);
         }
 
         super.render(guiGraphics, mouseX, mouseY, partialTick);

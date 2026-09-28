@@ -73,7 +73,8 @@ public class ChannelSlider extends AbstractSliderButton {
         guiGraphics.fill(handleX, getY(), handleX + HANDLE_WIDTH, getY() + getHeight(), COLOUR_TEXT);
         guiGraphics.renderOutline(handleX, getY(), HANDLE_WIDTH, getHeight(), COLOUR_HANDLE_BORDER);
 
-        guiGraphics.drawCenteredString(Minecraft.getInstance().font, getMessage(),
-                getX() + getWidth() / 2, getY() + (getHeight() - 8) / 2, COLOUR_TEXT);
+        var font = Minecraft.getInstance().font;
+        guiGraphics.drawString(font, getMessage(), getX() + (getWidth() - font.width(getMessage())) / 2,
+                getY() + (getHeight() - 8) / 2, COLOUR_TEXT, false);
     }
 }

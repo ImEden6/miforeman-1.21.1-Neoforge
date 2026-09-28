@@ -138,7 +138,7 @@ public class HiddenNodesDrawer {
                 int badgeX = x + TAB_WIDTH - badgeW - 1;
                 int badgeY = y + 1;
                 guiGraphics.fill(badgeX, badgeY, badgeX + badgeW, badgeY + badgeH, COLOUR_GREEN);
-                guiGraphics.drawCenteredString(font, countText, badgeX + badgeW / 2, badgeY, 0xFFFFFFFF);
+                guiGraphics.drawString(font, countText, badgeX + (badgeW - font.width(countText)) / 2, badgeY, 0xFFFFFFFF, false);
             }
             return;
         }

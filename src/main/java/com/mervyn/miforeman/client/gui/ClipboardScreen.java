@@ -823,7 +823,7 @@ public class ClipboardScreen extends Screen {
         int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
 
         guiGraphics.drawString(this.font, Component.translatable("miforeman.clipboard.summary_title"), contentX, contentY,
-                COLOUR_TITLE);
+                COLOUR_TITLE, false);
 
         int currentY = contentY + 20;
 
@@ -868,7 +868,7 @@ public class ClipboardScreen extends Screen {
         int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
         int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
 
-        guiGraphics.drawString(this.font, Component.translatable("miforeman.clipboard.define_goal_title"), contentX, contentY, COLOUR_TITLE);
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.clipboard.define_goal_title"), contentX, contentY, COLOUR_TITLE, false);
 
         int y = contentY + 16;
         guiGraphics.drawString(this.font, Component.translatable("miforeman.field.goal_name"), contentX, y, COLOUR_LABEL, false);
@@ -892,14 +892,14 @@ public class ClipboardScreen extends Screen {
     private void renderStepReviewPlan(GuiGraphics guiGraphics, int left, int top) {
         int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
         int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
-        guiGraphics.drawString(this.font, Component.translatable("miforeman.clipboard.factory_plan_title"), contentX, contentY, COLOUR_TITLE);
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.clipboard.factory_plan_title"), contentX, contentY, COLOUR_TITLE, false);
     }
 
     private void renderStepMonitor(GuiGraphics guiGraphics, int left, int top) {
         int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
         int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
 
-        guiGraphics.drawString(this.font, Component.translatable("miforeman.clipboard.factory_monitoring_title"), contentX, contentY, COLOUR_TITLE);
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.clipboard.factory_monitoring_title"), contentX, contentY, COLOUR_TITLE, false);
         guiGraphics.drawString(this.font, this.monitoringState.scanRadiusLabel(),
                 contentX + SCAN_RADIUS_X + 34, contentY + 31, COLOUR_TEXT, false);
 

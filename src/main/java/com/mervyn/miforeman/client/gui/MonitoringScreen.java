@@ -198,7 +198,7 @@ public class MonitoringScreen extends Screen {
 
         int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
         int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 2;
-        guiGraphics.drawString(this.font, Component.translatable("miforeman.screen.live_monitoring.title"), contentX, contentY, COLOUR_TITLE);
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.screen.live_monitoring.title"), contentX, contentY, COLOUR_TITLE, false);
 
         super.render(guiGraphics, mouseX, mouseY, partialTick);
     }

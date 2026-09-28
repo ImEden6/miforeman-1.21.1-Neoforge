@@ -30,7 +30,9 @@ public class ClipboardButton extends Button {
         NineSliceTexture.blit(guiGraphics, tex, getX(), getY(), getWidth(), getHeight(), BORDER, TEX_SIZE);
 
         int colour = active ? COLOUR_TEXT : COLOUR_TEXT_DISABLED;
-        guiGraphics.drawCenteredString(Minecraft.getInstance().font, getMessage(),
-                getX() + getWidth() / 2, getY() + (getHeight() - 8) / 2, colour);
+        // drawCenteredString always adds a drop shadow, which doesn't suit the flat clipboard style.
+        var font = Minecraft.getInstance().font;
+        guiGraphics.drawString(font, getMessage(), getX() + (getWidth() - font.width(getMessage())) / 2,
+                getY() + (getHeight() - 8) / 2, colour, false);
     }
 }
