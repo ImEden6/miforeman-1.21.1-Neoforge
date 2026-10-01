@@ -3394,6 +3394,164 @@ public class ForemanGameTests {
                 ROUTER_NODE_W, ROUTER_NODE_H, ROUTER_COL_SPACING - ROUTER_NODE_W);
     }
 
+    private static final int ROUTER_CHAMFER = 6;
+
+    /** One PortLayout wire per graph edge, in graph edge order (skipping unplaced ends). */
+    private static List<com.mervyn.miforeman.goal.PortLayout.Wire> routerPortWiresFor(
+            com.mervyn.miforeman.goal.RecipeGraph graph,
+            Map<ResourceLocation, com.mervyn.miforeman.goal.NodePosition> positions) {
+        List<com.mervyn.miforeman.goal.PortLayout.Wire> wires = new java.util.ArrayList<>();
+        for (com.mervyn.miforeman.goal.GraphEdge edge : graph.edges()) {
+            com.mervyn.miforeman.goal.NodePosition from = positions.get(edge.from());
+            com.mervyn.miforeman.goal.NodePosition to = positions.get(edge.to());
+            if (from == null || to == null)
+                continue;
+            wires.add(new com.mervyn.miforeman.goal.PortLayout.Wire(edge.from(), edge.to(),
+                    from.x(), from.y(), graph.node(edge.from()).getType() == com.mervyn.miforeman.goal.NodeType.MACHINE,
+                    to.x(), to.y(), graph.node(edge.to()).getType() == com.mervyn.miforeman.goal.NodeType.MACHINE));
+        }
+        return wires;
+    }
+
+    /** Router requests for {@code wires}, attached at the ports PortLayout picked, as GraphCanvas does. */
+    private static List<com.mervyn.miforeman.goal.EdgeRouter.Request> routerRequestsWithPorts(
+            List<com.mervyn.miforeman.goal.PortLayout.Wire> wires) {
+        var ports = com.mervyn.miforeman.goal.PortLayout.assign(wires, ROUTER_NODE_H, ROUTER_CHAMFER);
+        List<com.mervyn.miforeman.goal.EdgeRouter.Request> requests = new java.util.ArrayList<>();
+        for (int i = 0; i < wires.size(); i++) {
+            var w = wires.get(i);
+            boolean leftward = w.toX() < w.fromX();
+            int fromX = leftward ? w.fromX() : w.fromX() + ROUTER_NODE_W;
+            int toX = leftward ? w.toX() + ROUTER_NODE_W : w.toX();
+            requests.add(new com.mervyn.miforeman.goal.EdgeRouter.Request(
+                    fromX, w.fromY() + ports.get(i).fromOffset(), toX, w.toY() + ports.get(i).toOffset()));
+        }
+        return requests;
+    }
+
+    private static com.mervyn.miforeman.goal.PortLayout.Wire portWire(String from, int fromX, int fromY, boolean fromMachine,
+            String to, int toX, int toY, boolean toMachine) {
+        return new com.mervyn.miforeman.goal.PortLayout.Wire(ResourceLocation.parse("miforeman_test:" + from),
+                ResourceLocation.parse("miforeman_test:" + to), fromX, fromY, fromMachine, toX, toY, toMachine);
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testPortLayoutSpreadsSharedFaces(GameTestHelper helper) {
+        // Fan-out of three from a resource card to targets on its left, listed out of y order.
+        List<com.mervyn.miforeman.goal.PortLayout.Wire> fan = List.of(
+                portWire("src", 280, 40, false, "low", 0, 80, true),
+                portWire("src", 280, 40, false, "top", 0, 0, true),
+                portWire("src", 280, 40, false, "mid", 0, 40, true));
+        var fanPorts = com.mervyn.miforeman.goal.PortLayout.assign(fan, ROUTER_NODE_H, ROUTER_CHAMFER);
+        int top = fanPorts.get(1).fromOffset(), mid = fanPorts.get(2).fromOffset(), low = fanPorts.get(0).fromOffset();
+        if (!(top < mid && mid < low)) {
+            helper.fail("A fan-out should leave in the order of its targets' heights, got top=" + top + " mid=" + mid + " low=" + low);
+            return;
+        }
+        if (mid - top < com.mervyn.miforeman.goal.PortLayout.MIN_SPACING || low - mid < com.mervyn.miforeman.goal.PortLayout.MIN_SPACING) {
+            helper.fail("Fan-out ports closer than the minimum spacing: " + top + ", " + mid + ", " + low);
+            return;
+        }
+        // Each target receives one wire, so its port stays at the face centre.
+        if (fanPorts.get(0).toOffset() != ROUTER_NODE_H / 2) {
+            helper.fail("A lone wire on a face should attach at the centre, got " + fanPorts.get(0).toOffset());
+            return;
+        }
+
+        // A machine card's corners are cut, so its ports must stay inside the uncut band;
+        // past capacity, neighbouring wires share a slot in order.
+        List<com.mervyn.miforeman.goal.PortLayout.Wire> machineFan = new java.util.ArrayList<>();
+        for (int i = 0; i < 7; i++)
+            machineFan.add(portWire("m", 280, 0, true, "t" + i, 0, i * 40, false));
+        var machinePorts = com.mervyn.miforeman.goal.PortLayout.assign(machineFan, ROUTER_NODE_H, ROUTER_CHAMFER);
+        java.util.TreeSet<Integer> distinct = new java.util.TreeSet<>();
+        int previous = Integer.MIN_VALUE;
+        for (var port : machinePorts) {
+            int y = port.fromOffset();
+            if (y - 1 < ROUTER_CHAMFER || y + 1 > ROUTER_NODE_H - ROUTER_CHAMFER) {
+                helper.fail("A machine port at offset " + y + " runs into the card's cut corner.");
+                return;
+            }
+            if (y < previous) {
+                helper.fail("Overflowing ports must keep their order, got " + machinePorts);
+                return;
+            }
+            previous = y;
+            distinct.add(y);
+        }
+        Integer last = null;
+        for (int y : distinct) {
+            if (last != null && y - last < com.mervyn.miforeman.goal.PortLayout.MIN_SPACING) {
+                helper.fail("Shared machine slots closer than the minimum spacing: " + distinct);
+                return;
+            }
+            last = y;
+        }
+
+        // A card's in-ports (right face, here) and out-ports (left face) are laid out separately.
+        List<com.mervyn.miforeman.goal.PortLayout.Wire> through = List.of(
+                portWire("up", 420, 0, false, "x", 140, 0, false),
+                portWire("x", 140, 0, false, "down", 0, 0, false));
+        var throughPorts = com.mervyn.miforeman.goal.PortLayout.assign(through, ROUTER_NODE_H, ROUTER_CHAMFER);
+        if (throughPorts.get(0).toOffset() != ROUTER_NODE_H / 2 || throughPorts.get(1).fromOffset() != ROUTER_NODE_H / 2) {
+            helper.fail("One wire in and one wire out on different faces should both stay centred: " + throughPorts);
+            return;
+        }
+
+        if (!com.mervyn.miforeman.goal.PortLayout.assign(machineFan, ROUTER_NODE_H, ROUTER_CHAMFER).equals(machinePorts)) {
+            helper.fail("PortLayout must be deterministic.");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID, timeoutTicks = 600)
+    public static void testEdgeRouterOnRealGraphWithSpreadPorts(GameTestHelper helper) {
+        var level = helper.getLevel();
+        com.mervyn.miforeman.goal.RecipeGraph graph = RecipeGraphTraverser.computeRecipeGraph(level,
+                new ProductionGoal("router_ports", ProductionGoal.TargetType.ITEM,
+                        ResourceLocation.parse("modern_industrialization:analog_circuit"), 60.0));
+        Map<ResourceLocation, com.mervyn.miforeman.goal.NodePosition> positions = routerArrange(graph);
+        List<com.mervyn.miforeman.goal.EdgeRouter.Obstacle> cards = routerCardsFor(positions);
+        var wires = routerPortWiresFor(graph, positions);
+        var requests = routerRequestsWithPorts(wires);
+        var routes = com.mervyn.miforeman.goal.EdgeRouter.route(requests, cards, 6, 3);
+
+        int routed = 0;
+        for (int i = 0; i < routes.size(); i++) {
+            if (routes.get(i).fallback())
+                continue;
+            routed++;
+            if (routeClipsAnyCard(routes.get(i), cards)) {
+                helper.fail("Wire " + i + " clips a card with spread ports: " + routes.get(i).points());
+                return;
+            }
+        }
+        if (routed * 2 < routes.size()) {
+            helper.fail("Only " + routed + " of " + routes.size() + " wires routed with spread ports.");
+            return;
+        }
+
+        // Two wires may only share a start point when their face is over capacity.
+        Map<String, Integer> faceSize = new java.util.HashMap<>();
+        for (var w : wires)
+            faceSize.merge(w.from() + (w.toX() < w.fromX() ? ":L" : ":R"), 1, Integer::sum);
+        Map<String, Integer> startUses = new java.util.HashMap<>();
+        for (var r : requests)
+            startUses.merge(r.fromX() + "," + r.fromY(), 1, Integer::sum);
+        for (int i = 0; i < wires.size(); i++) {
+            var w = wires.get(i);
+            var r = requests.get(i);
+            int capacity = w.fromMachine() ? 4 : 5;
+            int size = faceSize.get(w.from() + (w.toX() < w.fromX() ? ":L" : ":R"));
+            if (startUses.get(r.fromX() + "," + r.fromY()) > 1 && size <= capacity) {
+                helper.fail("Wire " + i + " shares its start point although its face (" + size + " wires) has free slots.");
+                return;
+            }
+        }
+        helper.succeed();
+    }
+
     /**
      * Routes a real recipe graph, laid out by the real layout engine, and asserts every
      * wire is both routed and clear of every card.

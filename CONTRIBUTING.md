@@ -139,6 +139,8 @@
 | `testEdgeRouterPacksSharedLanesApart` | Two wires contending for one corridor get separate lanes instead of one overlapping line |
 | `testEdgeRouterRejectsNonPositiveGridSize` | A zero or negative grid size throws instead of failing somewhere inside the search |
 | `testEdgeRouterOnRealArrangedGraph` | A real arranged analog_circuit graph routes most wires with no clipping |
+| `testPortLayoutSpreadsSharedFaces` | Wires sharing a card face get separate ports ordered by their other end's height, machine ports stay clear of the cut corners, overflow shares slots in order, lone wires stay centred |
+| `testEdgeRouterOnRealGraphWithSpreadPorts` | analog_circuit routed with spread ports: no clipping, most wires route, and only over-capacity faces share a start point |
 | `testEdgeRouterGivesUpWholeGraphWhenBudgetExhausted` | A pass that runs out of budget falls back wholesale, never partially |
 | `testEdgeRouterHandlesLargestRealGraph` | quantum_upgrade (588 cards, 864 wires) still routes, with no wire clipping a card |
 

@@ -111,6 +111,8 @@ public class GraphCanvas extends AbstractWidget {
      *  {@link #routesDirty} is set, never per frame: routing a large graph costs a beat. */
     private List<com.mervyn.miforeman.goal.EdgeRouter.Route> routedEdges = List.of();
     private boolean routesDirty = true;
+    /** Port offsets per visible edge, from the last routing pass; reused by live drag elbows. */
+    private List<com.mervyn.miforeman.goal.PortLayout.Ports> edgePorts = List.of();
     private final Map<ResourceLocation, NodePosition> autoLayout = new HashMap<>();
     private Set<ResourceLocation> selectedNodeIds;
     private final Consumer<Set<ResourceLocation>> onSelect;
@@ -703,6 +705,7 @@ public class GraphCanvas extends AbstractWidget {
     private void computeRoutes() {
         routedEdges = List.of();
         routesDirty = false;
+        edgePorts = computePorts();
         if (visibleEdges.isEmpty() || visibleEdges.size() > MAX_ROUTED_EDGES)
             return;
 
@@ -715,7 +718,8 @@ public class GraphCanvas extends AbstractWidget {
         }
 
         List<com.mervyn.miforeman.goal.EdgeRouter.Request> requests = new ArrayList<>(visibleEdges.size());
-        for (GraphEdge edge : visibleEdges) {
+        for (int i = 0; i < visibleEdges.size(); i++) {
+            GraphEdge edge = visibleEdges.get(i);
             NodePosition fromPos = edgeEndpoint(edge.from());
             NodePosition toPos = edgeEndpoint(edge.to());
             if (fromPos == null || toPos == null) {
@@ -723,7 +727,7 @@ public class GraphCanvas extends AbstractWidget {
                 requests.add(new com.mervyn.miforeman.goal.EdgeRouter.Request(0, 0, 0, 0));
                 continue;
             }
-            requests.add(edgeRequest(fromPos, toPos));
+            requests.add(edgeRequest(fromPos, toPos, i));
         }
         routedEdges = com.mervyn.miforeman.goal.EdgeRouter.route(requests, obstacles, EDGE_GRID_SIZE, EDGE_LANE_GAP);
     }
@@ -736,12 +740,34 @@ public class GraphCanvas extends AbstractWidget {
      * leaving by the right face and arriving at the left one would send those wires out the
      * back of both cards and around.
      */
-    private static com.mervyn.miforeman.goal.EdgeRouter.Request edgeRequest(NodePosition fromPos, NodePosition toPos) {
+    private com.mervyn.miforeman.goal.EdgeRouter.Request edgeRequest(NodePosition fromPos, NodePosition toPos,
+            int edgeIndex) {
         boolean leftward = toPos.x() < fromPos.x();
         int fromX = leftward ? fromPos.x() : fromPos.x() + NODE_WIDTH;
         int toX = leftward ? toPos.x() + NODE_WIDTH : toPos.x();
+        // Stale or missing ports (e.g. a drag before the first route) fall back to the face centre.
+        boolean havePorts = edgePorts.size() == visibleEdges.size() && edgeIndex < edgePorts.size();
+        int fromOffset = havePorts ? edgePorts.get(edgeIndex).fromOffset() : NODE_HEIGHT / 2;
+        int toOffset = havePorts ? edgePorts.get(edgeIndex).toOffset() : NODE_HEIGHT / 2;
         return new com.mervyn.miforeman.goal.EdgeRouter.Request(
-                fromX, fromPos.y() + NODE_HEIGHT / 2, toX, toPos.y() + NODE_HEIGHT / 2);
+                fromX, fromPos.y() + fromOffset, toX, toPos.y() + toOffset);
+    }
+
+    private List<com.mervyn.miforeman.goal.PortLayout.Ports> computePorts() {
+        List<com.mervyn.miforeman.goal.PortLayout.Wire> wires = new ArrayList<>(visibleEdges.size());
+        for (GraphEdge edge : visibleEdges) {
+            RecipeGraphNode from = visibleNodes.get(edge.from());
+            RecipeGraphNode to = visibleNodes.get(edge.to());
+            NodePosition fromPos = from != null ? positionOf(from) : null;
+            NodePosition toPos = to != null ? positionOf(to) : null;
+            if (fromPos == null || toPos == null) {
+                fromPos = toPos = new NodePosition(0, 0);
+            }
+            wires.add(new com.mervyn.miforeman.goal.PortLayout.Wire(edge.from(), edge.to(),
+                    fromPos.x(), fromPos.y(), from != null && from.getType() == NodeType.MACHINE,
+                    toPos.x(), toPos.y(), to != null && to.getType() == NodeType.MACHINE));
+        }
+        return com.mervyn.miforeman.goal.PortLayout.assign(wires, NODE_HEIGHT, MACHINE_CHAMFER);
     }
 
     private @Nullable NodePosition edgeEndpoint(ResourceLocation nodeId) {
@@ -828,7 +854,7 @@ public class GraphCanvas extends AbstractWidget {
                 if (route != null) {
                     drawPolyline(guiGraphics, route.points(), colour);
                 } else {
-                    com.mervyn.miforeman.goal.EdgeRouter.Request request = edgeRequest(fromPos, toPos);
+                    com.mervyn.miforeman.goal.EdgeRouter.Request request = edgeRequest(fromPos, toPos, edgeIndex);
                     drawElbowConnector(guiGraphics,
                             request.fromX(), request.fromY(), request.toX(), request.toY(), colour);
                 }

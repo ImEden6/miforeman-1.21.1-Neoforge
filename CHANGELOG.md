@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   straight through them, and wires sharing a corridor fan out side by side rather than
   overlapping into one line. A wire with nowhere sensible to go keeps its old straight
   connector.
+- Wires sharing a side of a card now attach at separate points, ordered by where they're
+  headed, so a machine feeding several others shows separate wires instead of one thick line.
 - Graph wires have a light outline, so where two cross the upper one visibly breaks the
   lower instead of the two merging.
 - Machine nodes on the graph show how many of their linked machines are running (e.g. 3/4).
