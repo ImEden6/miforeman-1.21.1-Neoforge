@@ -450,7 +450,10 @@ public class ClipboardScreen extends Screen {
                         ? this.goalDraft.currentPlan.graph().node(selectedNodeId)
                         : null;
                 DetailCard.Callbacks detailCardCallbacks = new DetailCard.Callbacks((resId, choiceRecipeId) -> {
-                            this.goalDraft.recipeSelections.put(resId, choiceRecipeId);
+                            if (choiceRecipeId == null)
+                                this.goalDraft.recipeSelections.remove(resId);
+                            else
+                                this.goalDraft.recipeSelections.put(resId, choiceRecipeId);
                             // A machine node's ID is its recipe ID. Re-lookup selectedNodeId on the
                             // rebuilt graph to transfer selection to the new recipe node.
                             RecipeGraphNode cyclingNode = selectedNodeId != null && this.goalDraft.currentPlan != null
@@ -462,7 +465,7 @@ public class ClipboardScreen extends Screen {
                             computePlan();
                             if (this.goalDraft.currentPlan != null && selectedNodeId != null
                                     && this.goalDraft.currentPlan.graph().node(selectedNodeId) == null) {
-                                selectedNodeId = cyclingSelectedMachine
+                                selectedNodeId = cyclingSelectedMachine && choiceRecipeId != null
                                         && this.goalDraft.currentPlan.graph().node(choiceRecipeId) != null
                                                 ? choiceRecipeId
                                                 : null;
@@ -486,7 +489,7 @@ public class ClipboardScreen extends Screen {
                             }
                         }, resId -> {
                             return this.goalDraft.graphLayout != null && this.goalDraft.graphLayout.isHidden(resId);
-                        }, this::expandMaterialNode);
+                        }, this::expandMaterialNode, this.goalDraft.recipeSelections::containsKey);
                 int detailX = detailCardExpanded ? contentX : contentX + canvasWidth + 6;
                 detailCard = new DetailCard(detailX, canvasY, detailWidth, contentH, selectedNode,
                         this.goalDraft.currentPlan,

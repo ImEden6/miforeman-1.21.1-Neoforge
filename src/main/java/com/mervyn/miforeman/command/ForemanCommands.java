@@ -187,10 +187,11 @@ public class ForemanCommands {
             source.sendSuccess(() -> Component.translatable("miforeman.command.calculate.ambiguity_warning"), false);
             for (var amb : plan.ambiguities()) {
                 boolean hasSelection = goal.recipeSelections().containsKey(amb.resourceId());
+                ResourceLocation autoPick = plan.graph() != null ? plan.graph().autoSelections().get(amb.resourceId()) : null;
+                String shown = hasSelection ? goal.recipeSelections().get(amb.resourceId()).toString()
+                        : autoPick != null ? "auto: " + autoPick : "none";
                 source.sendSuccess(() -> Component.translatable("miforeman.command.calculate.ambiguity_row",
-                        amb.resourceId(),
-                        hasSelection ? goal.recipeSelections().get(amb.resourceId()) : "none"
-                ), false);
+                        amb.resourceId(), shown), false);
                 for (var opt : amb.recipeIds()) {
                     source.sendSuccess(() -> Component.translatable("miforeman.command.calculate.ambiguity_option", opt), false);
                 }

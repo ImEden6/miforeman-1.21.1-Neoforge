@@ -16,6 +16,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import aztech.modern_industrialization.machines.MachineBlockEntity;
 import com.mervyn.miforeman.goal.ServerMonitoringManager;
@@ -256,25 +257,21 @@ public class ForemanGameTests {
             return;
         }
 
-        // polyvinyl_chloride rate now matches exactly between computePlan() rawInputs
-        // and
-        // computeRecipeGraph() graph node (437500.0) after resolving the
-        // cycle-detection memoization bug.
         ResourceLocation pvcId = ResourceLocation.parse("modern_industrialization:polyvinyl_chloride");
         double pvcRate = plan.rawInputs().stream()
                 .filter(flow -> flow.resourceId().equals(pvcId))
                 .mapToDouble(ProductionGoal.MaterialFlow::rate)
                 .sum();
 
-        if (Math.abs(pvcRate - 437500.0) > 0.001) {
-            helper.fail("Expected 437500.0 polyvinyl_chloride rate, but calculated: " + pvcRate);
+        if (Math.abs(pvcRate - 461500.0) > 0.001) {
+            helper.fail("Expected 461500.0 polyvinyl_chloride rate, but calculated: " + pvcRate);
             return;
         }
 
         com.mervyn.miforeman.goal.RecipeGraph graph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
         var pvcNode = graph.nodes().get(pvcId);
-        if (pvcNode == null || Math.abs(pvcNode.getRequiredRate() - 437500.0) > 0.001) {
-            helper.fail("Expected 437500.0 polyvinyl_chloride requiredRate on graph node, but calculated: "
+        if (pvcNode == null || Math.abs(pvcNode.getRequiredRate() - 461500.0) > 0.001) {
+            helper.fail("Expected 461500.0 polyvinyl_chloride requiredRate on graph node, but calculated: "
                     + (pvcNode != null ? pvcNode.getRequiredRate() : "null"));
             return;
         }
@@ -531,11 +528,9 @@ public class ForemanGameTests {
             }
         }
 
-        // 864 demand edges, plus 15 byproduct edges where the plan LP routes a byproduct to a
-        // resource the plan already needs. The LP never adds nodes, only those machine -> resource edges.
         var propagated = RecipeGraphTraverser.computeRecipeGraphUncached(level, goal, RecipeGraphTraverser.SolveMode.PROPAGATION_ONLY);
-        if (propagated.edges().size() != 864) {
-            helper.fail("Expected 864 demand edges in the propagated quantum_upgrade graph, but got: " + propagated.edges().size()
+        if (propagated.edges().size() != 751) {
+            helper.fail("Expected 751 demand edges in the propagated quantum_upgrade graph, but got: " + propagated.edges().size()
                     + ". If this changed intentionally, e.g. an MI recipe update, update this snapshot.");
             return;
         }
@@ -553,13 +548,13 @@ public class ForemanGameTests {
                 return;
             }
         }
-        if (graph.edges().size() != 879) {
-            helper.fail("Expected 879 edges (864 demand + 15 byproduct) in the quantum_upgrade graph, but got: "
+        if (graph.edges().size() != 761) {
+            helper.fail("Expected 761 edges (751 demand + 10 byproduct) in the quantum_upgrade graph, but got: "
                     + graph.edges().size() + ". If this changed intentionally, update this snapshot.");
             return;
         }
-        if (graph.nodes().size() != 588) {
-            helper.fail("Expected 588 nodes in the quantum_upgrade graph, but got: " + graph.nodes().size()
+        if (graph.nodes().size() != 519) {
+            helper.fail("Expected 519 nodes in the quantum_upgrade graph, but got: " + graph.nodes().size()
                     + ". If this changed intentionally, e.g. an MI recipe update, update this snapshot.");
             return;
         }
@@ -977,7 +972,8 @@ public class ForemanGameTests {
     public static void testPlanFallsBackWhenTheLpFails(GameTestHelper helper) {
         var level = helper.getLevel();
         var goal = new ProductionGoal("lp_fallback", ProductionGoal.TargetType.ITEM,
-                ResourceLocation.parse("modern_industrialization:iron_plate"), 60.0);
+                ResourceLocation.parse("modern_industrialization:iron_plate"), 60.0,
+                Map.of(ResourceLocation.parse("minecraft:iron_ingot"), IRON_INGOT_PACKER), Optional.empty());
         var propagated = RecipeGraphTraverser.computeRecipeGraphUncached(level, goal, RecipeGraphTraverser.SolveMode.PROPAGATION_ONLY);
         var failed = RecipeGraphTraverser.computeRecipeGraphUncached(level, goal, RecipeGraphTraverser.SolveMode.FAIL_LP);
         if (failed.nodes().size() != propagated.nodes().size() || failed.edges().size() != propagated.edges().size()) {
@@ -1070,6 +1066,188 @@ public class ForemanGameTests {
         var real = com.mervyn.miforeman.goal.CapacitySolver.solve(graph.planModel(), oneEach, realNeeded);
         if (real == null || real.maxRate() <= 0 || (real.bottlenecks().isEmpty() && real.blockers().isEmpty())) {
             helper.fail("iron_plate with one machine per recipe should make something and name a limit: " + real);
+            return;
+        }
+        helper.succeed();
+    }
+
+    private static final ResourceLocation IRON_INGOT_PACKER = ResourceLocation.parse("modern_industrialization:materials/iron/packer/ingot");
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testDeadLoopSolverPieces(GameTestHelper helper) {
+        var pack = planRecipe("pack", 100, Map.of("item:nugget", 9.0), Map.of("item:ingot", 1.0));
+        var unpack = planRecipe("unpack", 100, Map.of("item:ingot", 1.0), Map.of("item:nugget", 9.0));
+        var smelt = planRecipe("smelt", 100, Map.of("item:ore", 1.0), Map.of("item:ingot", 1.0));
+        var loopEdge = new com.mervyn.miforeman.goal.PlanSolver.BackEdge("unpack", "item:ingot");
+
+        if (!com.mervyn.miforeman.goal.PlanSolver.obtainable(List.of(pack, unpack), Set.of(), List.of()).isEmpty()) {
+            helper.fail("A closed loop with no raw input must make nothing.");
+            return;
+        }
+        if (!com.mervyn.miforeman.goal.PlanSolver.obtainable(List.of(pack, unpack), Set.of(), List.of(loopEdge))
+                .containsAll(Set.of("item:ingot", "item:nugget"))) {
+            helper.fail("A free edge should start the loop.");
+            return;
+        }
+        if (!com.mervyn.miforeman.goal.PlanSolver.obtainable(List.of(pack, unpack, smelt), Set.of("item:ore"), List.of())
+                .containsAll(Set.of("item:ingot", "item:nugget"))) {
+            helper.fail("A loop fed from raw ore should make both its resources.");
+            return;
+        }
+        var templated = planRecipe("templated", 100, Map.of("item:ore", 1.0, "item:template", 0.0), Map.of("item:plate", 1.0));
+        if (!com.mervyn.miforeman.goal.PlanSolver.obtainable(List.of(templated), Set.of("item:ore"), List.of()).contains("item:plate")) {
+            helper.fail("A zero-amount input must not block a recipe.");
+            return;
+        }
+
+        var dead = com.mervyn.miforeman.goal.PlanSolver.loopSupply(new com.mervyn.miforeman.goal.PlanSolver.Model(
+                List.of(pack, unpack), Set.of(), "item:ingot", 10.0, List.of(loopEdge)));
+        var fed = com.mervyn.miforeman.goal.PlanSolver.loopSupply(new com.mervyn.miforeman.goal.PlanSolver.Model(
+                List.of(pack, unpack, smelt), Set.of("item:ore"), "item:ingot", 10.0, List.of(loopEdge)));
+        if (dead == null || dead.supply().getOrDefault(loopEdge, 0.0) <= 0 || fed == null || !fed.supply().isEmpty()) {
+            helper.fail("Only the unfed loop should need free supply: unfed " + dead + ", fed " + fed);
+            return;
+        }
+        double fluidCost = com.mervyn.miforeman.goal.PlanSolver.loopCost(
+                Map.of(new com.mervyn.miforeman.goal.PlanSolver.BackEdge("r", "fluid:acid"), 1000.0));
+        if (Math.abs(fluidCost - 1.0) > 1e-9 || com.mervyn.miforeman.goal.PlanSolver.loopCost(dead.supply()) <= 0) {
+            helper.fail("Loop cost should weigh fluids per bucket like imports, got " + fluidCost);
+            return;
+        }
+
+        var electrolyse = planRecipe("electrolyse", 100, Map.of("fluid:acid", 500.0), Map.of("item:sulfur", 1.0, "fluid:water", 200.0));
+        if (!com.mervyn.miforeman.goal.PlanSolver.makesOnly(smelt, "item:ingot")
+                || com.mervyn.miforeman.goal.PlanSolver.makesOnly(electrolyse, "item:sulfur")) {
+            helper.fail("Only a recipe whose sole output is the resource counts as making only it.");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testDeadLoopsAreFixed(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var auto = RecipeGraphTraverser.SolveMode.AUTO;
+        ResourceLocation ingot = ResourceLocation.parse("minecraft:iron_ingot");
+        ResourceLocation nugget = ResourceLocation.parse("minecraft:iron_nugget");
+        ResourceLocation plate = ResourceLocation.parse("modern_industrialization:iron_plate");
+
+        var plateGraph = RecipeGraphTraverser.computeRecipeGraphUncached(level,
+                new ProductionGoal("dead_loop_plate", ProductionGoal.TargetType.ITEM, plate, 60.0), auto);
+        if (!plateGraph.autoImports().equals(Set.of(ingot)) || plateGraph.node(ingot) == null
+                || plateGraph.node(ingot).getType() != com.mervyn.miforeman.goal.NodeType.RAW
+                || !plateGraph.unsourcedResourceIds().isEmpty() || plateGraph.node(nugget) != null) {
+            helper.fail("iron_plate should import iron ingots and drop the nugget loop, got imports " + plateGraph.autoImports()
+                    + ", unsourced " + plateGraph.unsourcedResourceIds());
+            return;
+        }
+        double compressors = plateGraph.nodes().values().stream()
+                .filter(n -> n.getType() == com.mervyn.miforeman.goal.NodeType.MACHINE && n.getMachineType() != null
+                        && n.getMachineType().getPath().equals("compressor"))
+                .mapToDouble(com.mervyn.miforeman.goal.RecipeGraphNode::getMachineCount).sum();
+        if (Math.abs(compressors - 5.0) > 1e-9) {
+            helper.fail("iron_plate at 60/min should still need exactly 5 compressors, got " + compressors);
+            return;
+        }
+
+        var forced = RecipeGraphTraverser.computeRecipeGraphUncached(level, new ProductionGoal("dead_loop_forced",
+                ProductionGoal.TargetType.ITEM, plate, 60.0, Map.of(ingot, IRON_INGOT_PACKER), Optional.empty()), auto);
+        if (!forced.unsourcedResourceIds().contains(ingot) || !forced.autoImports().isEmpty() || !forced.autoSelections().isEmpty()) {
+            helper.fail("A manually picked looping recipe must stay, flagged: unsourced " + forced.unsourcedResourceIds()
+                    + ", imports " + forced.autoImports() + ", picks " + forced.autoSelections());
+            return;
+        }
+
+        var ingotGraph = RecipeGraphTraverser.computeRecipeGraphUncached(level,
+                new ProductionGoal("dead_loop_target", ProductionGoal.TargetType.ITEM, ingot, 60.0), auto);
+        if (ingotGraph.autoImports().contains(ingot) || ingotGraph.node(ingot).getType() != com.mervyn.miforeman.goal.NodeType.TARGET
+                || !ingotGraph.autoImports().contains(nugget) || !ingotGraph.unsourcedResourceIds().isEmpty()) {
+            helper.fail("An iron ingot goal should import nuggets, never its own target: imports " + ingotGraph.autoImports()
+                    + ", unsourced " + ingotGraph.unsourcedResourceIds());
+            return;
+        }
+
+        ResourceLocation cable = ResourceLocation.parse("modern_industrialization:annealed_copper_cable");
+        var cableGraph = RecipeGraphTraverser.computeRecipeGraphUncached(level,
+                new ProductionGoal("dead_loop_pick", ProductionGoal.TargetType.ITEM, cable, 60.0), auto);
+        ResourceLocation picked = cableGraph.autoSelections().get(cable);
+        if (picked == null || !picked.equals(ANNEALED_CABLE_PICK) || !cableGraph.unsourcedResourceIds().isEmpty()
+                || cableGraph.node(picked) == null) {
+            helper.fail("Expected annealed copper cable to be picked as " + ANNEALED_CABLE_PICK + ", got picks "
+                    + cableGraph.autoSelections() + ", imports " + cableGraph.autoImports() + ", unsourced "
+                    + cableGraph.unsourcedResourceIds());
+            return;
+        }
+        helper.succeed();
+    }
+
+    private static final int FIX_PIVOT_CEILING = 5000;
+
+    private static final ResourceLocation ANNEALED_CABLE_PICK =
+            ResourceLocation.parse("modern_industrialization:materials/annealed_copper/assembler/cable_styrene_rubber");
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID, timeoutTicks = 400)
+    public static void testDeadLoopFixIsDeterministic(GameTestHelper helper) {
+        var level = helper.getLevel();
+        ResourceLocation quantum = ResourceLocation.parse("modern_industrialization:quantum_upgrade");
+        long start = System.nanoTime();
+        var first = RecipeGraphTraverser.computeRecipeGraphUncached(level,
+                new ProductionGoal("dead_loop_determinism", ProductionGoal.TargetType.ITEM, quantum, 1.0), RecipeGraphTraverser.SolveMode.AUTO);
+        long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+        var second = RecipeGraphTraverser.computeRecipeGraphUncached(level,
+                new ProductionGoal("dead_loop_determinism", ProductionGoal.TargetType.ITEM, quantum, 1.0), RecipeGraphTraverser.SolveMode.AUTO);
+        var faster = RecipeGraphTraverser.computeRecipeGraphUncached(level,
+                new ProductionGoal("dead_loop_rate", ProductionGoal.TargetType.ITEM, quantum, 600.0), RecipeGraphTraverser.SolveMode.AUTO);
+        int fixPivots = RecipeGraphTraverser.deadLoopFixPivots(level,
+                new ProductionGoal("dead_loop_pivots", ProductionGoal.TargetType.ITEM, quantum, 1.0));
+        MIForeman.LOGGER.info("quantum_upgrade plan with dead loops fixed: {}ms, {} pivots, {} picks, {} imports", elapsedMs,
+                fixPivots, first.autoSelections().size(), first.autoImports().size());
+        if (fixPivots <= 0 || fixPivots > FIX_PIVOT_CEILING) {
+            helper.fail("Fixing quantum_upgrade's dead loops took " + fixPivots + " pivots, past the " + FIX_PIVOT_CEILING
+                    + " ceiling: the fix is doing far more passes or solving far bigger models than it did.");
+            return;
+        }
+        if (!first.unsourcedResourceIds().isEmpty()) {
+            helper.fail("quantum_upgrade still has loops with no outside input: " + first.unsourcedResourceIds());
+            return;
+        }
+        for (var other : List.of(second, faster)) {
+            if (!other.autoSelections().equals(first.autoSelections()) || !other.autoImports().equals(first.autoImports())
+                    || !other.nodes().keySet().equals(first.nodes().keySet())) {
+                helper.fail("Dead-loop fixes changed between identical or rescaled solves: " + first.autoSelections() + " / "
+                        + first.autoImports() + " vs " + other.autoSelections() + " / " + other.autoImports());
+                return;
+            }
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testLayoutSurvivesRemovedNodeIds(GameTestHelper helper) {
+        var level = helper.getLevel();
+        ResourceLocation plate = ResourceLocation.parse("modern_industrialization:iron_plate");
+        var looped = RecipeGraphTraverser.computeRecipeGraphUncached(level, new ProductionGoal("layout_old",
+                ProductionGoal.TargetType.ITEM, plate, 60.0, Map.of(ResourceLocation.parse("minecraft:iron_ingot"), IRON_INGOT_PACKER),
+                Optional.empty()), RecipeGraphTraverser.SolveMode.AUTO);
+        var fixed = RecipeGraphTraverser.computeRecipeGraphUncached(level,
+                new ProductionGoal("layout_new", ProductionGoal.TargetType.ITEM, plate, 60.0), RecipeGraphTraverser.SolveMode.AUTO);
+        Set<ResourceLocation> removed = new java.util.HashSet<>(looped.nodes().keySet());
+        removed.removeAll(fixed.nodes().keySet());
+        if (removed.isEmpty()) {
+            helper.fail("Expected the dead-loop fix to remove nodes from iron_plate's graph.");
+            return;
+        }
+        Map<ResourceLocation, com.mervyn.miforeman.goal.NodePosition> saved = new java.util.HashMap<>();
+        int y = 0;
+        for (var id : looped.nodes().keySet())
+            saved.put(id, new com.mervyn.miforeman.goal.NodePosition(0, y += 40));
+        Set<ResourceLocation> members = new java.util.HashSet<>(removed);
+        members.add(plate);
+        var group = new com.mervyn.miforeman.goal.NodeGroup(java.util.UUID.randomUUID(), members);
+        var arranged = com.mervyn.miforeman.goal.GraphLayoutEngine.arrange(fixed, List.of(group), saved, false, 96, 26, 44);
+        if (!arranged.keySet().containsAll(fixed.nodes().keySet())) {
+            helper.fail("Every node of the fixed graph should be placed, missing: " + fixed.nodes().keySet().stream()
+                    .filter(id -> !arranged.containsKey(id)).toList());
             return;
         }
         helper.succeed();
@@ -1356,17 +1534,11 @@ public class ForemanGameTests {
         }
         com.mervyn.miforeman.goal.RecipeGraph graph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
 
-        // With MI's default recipes sulfuric acid is a closed loop: the chemical reactor takes water,
-        // oxygen and sulfur dust, and the default sulfur dust recipe electrolyses acid back into
-        // exactly those. A plan must either import something or say the loop has no way in.
-        boolean anyNonZeroRawInput = plan.rawInputs().stream().anyMatch(flow -> flow.rate() > 0);
-        if (!anyNonZeroRawInput && graph.unsourcedResourceIds().isEmpty()) {
-            helper.fail("The FLUID target " + targetId + " neither imports anything nor flags a loop with no outside input.");
-            return;
-        }
-        if (!graph.unsourcedResourceIds().contains(targetId)) {
-            helper.fail("Expected the default sulfuric acid loop to be flagged as having no outside input, got "
-                    + graph.unsourcedResourceIds());
+        ResourceLocation sulfurDust = ResourceLocation.parse("modern_industrialization:sulfur_dust");
+        if (!graph.autoImports().equals(Set.of(sulfurDust)) || !graph.unsourcedResourceIds().isEmpty()
+                || plan.rawInputs().stream().noneMatch(flow -> flow.resourceId().equals(sulfurDust) && flow.rate() > 0)) {
+            helper.fail("Expected the sulfuric acid loop to be cut by importing sulfur dust, got imports "
+                    + graph.autoImports() + ", unsourced " + graph.unsourcedResourceIds());
             return;
         }
         if (graph.nodes().isEmpty()) {
@@ -1505,7 +1677,8 @@ public class ForemanGameTests {
         }
 
         ResourceLocation ironPlateTarget = ResourceLocation.parse("modern_industrialization:iron_plate");
-        ProductionGoal ironPlateGoal = new ProductionGoal("iron_plate_cycle_snapshot_test", ProductionGoal.TargetType.ITEM, ironPlateTarget, 1.0);
+        ProductionGoal ironPlateGoal = new ProductionGoal("iron_plate_cycle_snapshot_test", ProductionGoal.TargetType.ITEM, ironPlateTarget, 1.0,
+                Map.of(ResourceLocation.parse("minecraft:iron_ingot"), IRON_INGOT_PACKER), Optional.empty());
         var ironPlateGraph = RecipeGraphTraverser.computeRecipeGraph(level, ironPlateGoal);
 
         var expectedIronCycle = Set.of(ResourceLocation.parse("minecraft:iron_ingot"), ResourceLocation.parse("minecraft:iron_nugget"));
@@ -2654,8 +2827,8 @@ public class ForemanGameTests {
         // Confirm the flag going back off restores the pinned snapshot, ensuring the
         // toggle has no lingering side effects on GRAPH_CACHE or recipe indexing.
         var graphRestored = RecipeGraphTraverser.computeRecipeGraph(level, goal);
-        if (graphRestored.nodes().size() != 588 || graphRestored.edges().size() != 879) {
-            helper.fail("Expected graph to return to the pinned 588 nodes/879 edges after disabling "
+        if (graphRestored.nodes().size() != 519 || graphRestored.edges().size() != 761) {
+            helper.fail("Expected graph to return to the pinned 519 nodes/761 edges after disabling "
                     + "includeProxiedRecipeTypes again, but got: " + graphRestored.nodes().size()
                     + " nodes / " + graphRestored.edges().size() + " edges.");
             return;

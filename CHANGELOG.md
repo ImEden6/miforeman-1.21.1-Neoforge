@@ -39,8 +39,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Plans now solve recycling loops and byproducts exactly. A byproduct one machine gives off is
   used by another branch that needs it before anything is imported, and two products from one
   recipe share its machines instead of each building their own.
-- A loop with no way in (like ingots made from nuggets made from ingots) is now marked with a
-  warning on the graph, pointing you to pick a recipe that brings something in.
+- Plans no longer build loops that make something from nothing, like ingots packed from nuggets
+  unpacked from ingots, or cables "made" by unpacking an energy hatch built from those cables
+  (MI lists that recipe first). The plan switches the loop to a recipe that makes just that item
+  from outside inputs, or imports the item when there isn't one. The item's card says which, and
+  an Auto button next to Cycle Recipe drops your own pick so the plan can choose again. A loop you
+  pick by hand is kept, with a warning. Existing goals switch over the next time their plan is
+  recalculated; linked machines that ran the old loop recipes then show as off the graph. If
+  cycling recipes earlier left a goal with a looping recipe picked, press Auto to let the plan fix
+  it. `/miforeman goal plan` lists these picks as `auto: <recipe>`.
 - Plans asked for 60 times too many machines, and too much power and too many byproducts with
   them: the per-minute goal rate was being treated as per second. Iron plates at 60 a minute
   now need 5 compressors, not 300.

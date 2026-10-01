@@ -87,7 +87,7 @@
 | `testCloseSyncGoalPreservesLastSynced` | `computeCloseSyncGoal` preserves linked machines while applying UI state deltas |
 | `testDimensionKeyedTrackers` | `ServerMonitoringManager` tracker keys are dimension-safe (`GlobalPos`) and prune cleanly |
 | `testPowerDemandMatchesRequirements` | Machine EU/t power demand matches between `computePlan` and `MachineStats` |
-| `testFluidTargetGoalTraversal` | Fluid production target graph traversal and candidate recipe resolution |
+| `testFluidTargetGoalTraversal` | Fluid production target graph traversal and candidate recipe resolution; sulfuric acid's dead loop is cut by importing sulfur dust |
 | `testGraphCacheHitAndInvalidation` | Graph cache returns cached instance and properly invalidates on goal mutation |
 | `testPacketRateLimiterThrottling` | Server-side rate limiter throttles excessive network payloads |
 | `testAmbiguityWrapAroundCycling` | Full-cycle ambiguity rotation returns graph structurally identical to initial state |
@@ -109,7 +109,7 @@
 | `testGraphLayoutStateRemoveFromGroup` | Removing a node keeps remaining members; group dissolves below two members |
 | `testGraphLayoutEngineDeterministicAndRigidGroupTranslation` | `GraphLayoutEngine.arrange` is deterministic and preserves member offsets when moving locked groups |
 | `testGraphLayoutEngineRearrangeInsideGroups` | `arrange(rearrangeInsideGroups=true)` columns members by depth without coordinate drift |
-| `testRecipeGraphCyclicResourceIdsCaptured` | Recycling-loop membership on real recipe data; iron_plate's iron_ingot/nugget 2-cycle as a snapshot |
+| `testRecipeGraphCyclicResourceIdsCaptured` | Recycling-loop membership on real recipe data; iron_plate's iron_ingot/nugget 2-cycle as a snapshot, kept by picking the packer by hand |
 | `testPeekCyclicResourceIdsCacheOnly` | `peekCyclicResourceIds` never forces a compute, and matches the real graph once one exists |
 | `testUnionCyclicResourceIdsAcrossGoals` | A machine shared by two goals is cyclic if either goal's graph says so, order-independently |
 | `testRecipeResourceIdsCollectsInputsAndOutputs` | The shared recipe walk behind `recipeTouchesCycle`, cross-checked against real graph edges |
@@ -121,6 +121,10 @@
 | `testPlanLpConservesEveryResource` | On iron_plate and quantum_upgrade every resource balances, the solve stays under a pivot ceiling, and shuffling the model changes nothing |
 | `testPlanFallsBackWhenTheLpFails` | A failed LP keeps the propagated graph untouched, and zero-rate flows never reach the plan lists |
 | `testCapacitySolverFindsTheLimit` | Linked machines give the right maximum output; a machine at the bottleneck raises it and one elsewhere doesn't; a missing machine blocks; a full recipe whose product can be bought isn't a bottleneck; caps that only bind together are all reported; it runs on a real plan |
+| `testDeadLoopSolverPieces` | Reachability makes nothing from a closed loop until a free edge or raw input feeds it, zero-amount inputs never block, only an unfed loop draws free supply, fluids weigh per bucket, and only a recipe with one output makes only that resource |
+| `testDeadLoopsAreFixed` | iron_plate imports iron ingots (5 compressors, no nugget loop); a manual pick keeps its loop and warning; an iron ingot goal imports nuggets, never its target; annealed copper cable's hatch-unpacking default is replaced by the assembler recipe |
+| `testDeadLoopFixIsDeterministic` | quantum_upgrade ends with no unfed loop, the fix stays under a pivot ceiling, and identical or rescaled solves pick the same recipes and imports |
+| `testLayoutSurvivesRemovedNodeIds` | Auto-arrange places every node when saved positions and a group name nodes the dead-loop fix removed |
 | `testMachineCountUsesPerMinuteRates` | A plan's machine count matches the real recipe at per-minute rates (60 iron plates/min on a 200-tick, 2-plate recipe is 5 machines, not 300) |
 | `testCollectByproductRates` | Byproduct rates are positive, never already-demanded resources, and non-empty for complex chains |
 | `testClassifyLiveStatusDeadLoopReason` | `classifyLiveStatus` separates DEAD_LOOP from NONE and DISPOSAL_THROTTLED shortfalls |

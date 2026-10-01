@@ -10,12 +10,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.TreeSet;
 
-/**
- * The balance rows a {@link PlanSolver.Model} turns into, shared by {@link PlanSolver} and
- * {@link CapacitySolver}. Variables, in order: runs per recipe, raw imports, surplus per produced
- * resource, free supply per loop-closing edge, then optionally the target's output rate. Built in
- * sorted order throughout, so the same model always gives the same matrix.
- */
+/** Balance rows for {@link PlanSolver.Model}. */
 final class PlanMatrix {
     final TreeMap<String, PlanSolver.Recipe> recipes = new TreeMap<>();
     final List<String> recipeIds;
@@ -25,7 +20,6 @@ final class PlanMatrix {
     final int importBase;
     final int surplusBase;
     final int loopBase;
-    /** Index of the target-output variable, or -1 when the target's demand is fixed. */
     final int outputVar;
     final int n;
     final List<Simplex.Row> equalities = new ArrayList<>();
@@ -76,7 +70,6 @@ final class PlanMatrix {
         for (int i = 0; i < loops.size(); i++) {
             PlanSolver.BackEdge edge = loops.get(i);
             rows[rowOf.get(edge.resource())][loopBase + i] = 1;
-            // Free supply covers at most what the loop-closing recipe itself consumes.
             double[] cap = new double[n];
             cap[loopBase + i] = 1;
             cap[recipeIds.indexOf(edge.recipeId())] = -recipes.get(edge.recipeId()).inputs().get(edge.resource());
@@ -123,12 +116,11 @@ final class PlanMatrix {
         return cost;
     }
 
-    /** Every variable is non-negative, so anything under the dust threshold is float noise. */
     static double clamp(double value) {
         return value < 1e-9 ? 0 : value;
     }
 
-    private static double weight(String resource) {
+    static double weight(String resource) {
         return resource.startsWith("fluid:") ? PlanSolver.FLUID_IMPORT_WEIGHT : 1.0;
     }
 }

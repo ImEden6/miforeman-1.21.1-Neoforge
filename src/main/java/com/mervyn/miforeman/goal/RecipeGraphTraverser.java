@@ -25,9 +25,6 @@ public final class RecipeGraphTraverser {
         return planFromGraph(graph);
     }
 
-    /**
-     * Derives a {@link FactoryPlan} directly from a resolved {@link RecipeGraph}.
-     */
     public static FactoryPlan planFromGraph(RecipeGraph graph) {
         Map<ResourceLocation, MachineRequirementAccumulator> machineMap = new LinkedHashMap<>();
         List<MaterialFlow> rawInputs = new ArrayList<>();
@@ -43,7 +40,6 @@ public final class RecipeGraphTraverser {
                             .add(node.getMachineCount(), node.getBaseEuPerTick(), node.getTotalEuPerTick());
                 }
             } else if (node.getRequiredRate() <= 1e-9) {
-                // Fully covered by byproducts, or a loop member the plan doesn't run: nothing to list.
             } else if (node.getType() == NodeType.RAW) {
                 rawInputs.add(new MaterialFlow(getItemOrFluidType(node.getId()), node.getId(), node.getRequiredRate()));
             } else {
@@ -95,15 +91,7 @@ public final class RecipeGraphTraverser {
         return TargetType.ITEM;
     }
 
-    /**
-     * Indexes loaded {@link MachineRecipe} instances by output item and fluid.
-     * Scans the vanilla
-     * {@link RecipeManager} directly to include addon-defined machine recipe types.
-     * <p>
-     * Output candidate lists are deduplicated by recipe ID and sorted by ID.
-     * Deterministic sorting ensures default recipe selection stays consistent
-     * across game loads.
-     */
+    /** Indexes machine recipes by output item and fluid. */
     private static void indexMachineRecipes(
             Level level,
             RecipeManager recipeManager,
@@ -114,12 +102,7 @@ public final class RecipeGraphTraverser {
 
         indexMachineRecipeCollection(recipeManager.getRecipes(), itemByRecipeId, fluidByRecipeId);
 
-        // Addons can supply recipes via a ProxyableMachineRecipeType (such as Extended
-        // Industrialization's runtime-generated canning or bucket recipes) that never register
-        // through RecipeManager. Off by default; see Config for details.
-        //
-        // getRecipesWithCache(ServerLevel) is preferred when available because it is cached.
-        // getRecipesWithoutCache(Level) works with a plain Level and operates on ClientLevel.
+        // Addon proxied recipes (e.g. Extended Industrialization).
         if (com.mervyn.miforeman.Config.INCLUDE_PROXIED_RECIPE_TYPES.get()) {
             for (var recipeType : net.minecraft.core.registries.BuiltInRegistries.RECIPE_TYPE) {
                 if (!(recipeType instanceof aztech.modern_industrialization.machines.recipe.ProxyableMachineRecipeType proxyable)) {
@@ -181,12 +164,6 @@ public final class RecipeGraphTraverser {
         }
     }
 
-    /**
-     * Groups loaded {@link MachineRecipe} instances by {@code RecipeType}. Scans
-     * {@link RecipeManager} directly to include addon-defined machine recipe types.
-     * Used by the
-     * recipe-dump command and game tests.
-     */
     public static Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> groupMachineRecipesByType(
             RecipeManager recipeManager) {
         Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> byType = new LinkedHashMap<>();
@@ -209,9 +186,6 @@ public final class RecipeGraphTraverser {
             Map<ResourceLocation, ResourceLocation> selections) {
     }
 
-    // Bounded LRU cache. Every distinct (target, rate, selections) combination is a
-    // separate key, so bounding prevents unbounded growth across long sessions.
-    // Uses external synchronization on GRAPH_CACHE across client and server threads.
     private static final int GRAPH_CACHE_MAX_SIZE = 50;
     private static final Map<GraphCacheKey, RecipeGraph> GRAPH_CACHE = new LinkedHashMap<>(16, 0.75f, true) {
         @Override
@@ -220,11 +194,6 @@ public final class RecipeGraphTraverser {
         }
     };
 
-    /**
-     * Immutable snapshot of indexed item and fluid recipes, keyed on the {@link RecipeManager}
-     * instance and its dimension. Held behind a {@code volatile} reference so readers across
-     * threads observe consistent state.
-     */
     private record RecipeIndex(
             RecipeManager recipeManager,
             ResourceKey<Level> dimension,
@@ -241,12 +210,6 @@ public final class RecipeGraphTraverser {
         cachedIndex = null;
     }
 
-    /**
-     * Rebuilds the item/fluid recipe index only when the {@link RecipeManager}
-     * instance or the dimension has changed since the last call (e.g. a datapack
-     * reload swaps in a new instance, or the caller moved to a different dimension),
-     * instead of re-scanning {@code RecipeManager.getRecipes()} on every call.
-     */
     private static RecipeIndex ensureRecipeIndex(Level level, RecipeManager recipeManager) {
         RecipeIndex local = cachedIndex;
         if (local != null && local.recipeManager() == recipeManager && local.dimension().equals(level.dimension())) {
@@ -260,10 +223,7 @@ public final class RecipeGraphTraverser {
         return fresh;
     }
 
-    /** Cache-only lookup of a goal's recycling-loop resource IDs, for cheap use from the server
-     *  tick loop. Never triggers {@link #computeRecipeGraph}'s comparatively expensive structure
-     *  resolution or deep copy. Returns an empty set until something else (opening the clipboard
-     *  screen, a plan recompute) has already populated the graph cache for this goal. */
+    /** Cache-only lookup of a goal's recycling-loop resource IDs. */
     public static Set<ResourceLocation> peekCyclicResourceIds(ProductionGoal goal) {
         GraphCacheKey key = new GraphCacheKey(goal.type(), goal.targetId(), goal.rate(),
                 new HashMap<>(goal.recipeSelections()));
@@ -287,17 +247,7 @@ public final class RecipeGraphTraverser {
         }
     }
 
-    /** Every resource id between {@code recipeId}'s machine node and {@code graph}'s target,
-     *  inclusive of both ends. Found by walking forward through {@link RecipeGraphNode#getOutputs()}
-     *  edges, which alternate resource -> machine -> resource all the way to the {@code TARGET}
-     *  node (see the node-id scheme in {@link #finalizeResourceNode}: resource nodes are keyed by
-     *  resource id, machine nodes are keyed by recipe id). Used to answer "does this machine
-     *  contribute anywhere to producing X", not just "is X this machine's own immediate output".
-     *  <p>Returns an empty set if {@code recipeId} isn't a machine node in this graph, e.g. a
-     *  linked machine crafting something unrelated to the current goal. No cycle risk beyond the
-     *  visited-node guard: {@code getOutputs()} reflects the already-cycle-cut DAG used for rate
-     *  propagation (see {@link #collectDag}), so this terminates even when
-     *  {@code graph.cyclicResourceIds()} is non-empty. */
+    /** Collects all resource IDs between a machine recipe and the target. */
     public static Set<ResourceLocation> collectUpstreamResourceIds(RecipeGraph graph, @Nullable ResourceLocation recipeId) {
         RecipeGraphNode start = recipeId == null ? null : graph.nodes().get(recipeId);
         if (start == null) {
@@ -327,17 +277,6 @@ public final class RecipeGraphTraverser {
         return resourceIds;
     }
 
-    /** Byproducts: outputs a machine's real recipe produces beyond what the plan demanded from
-     *  it, aggregated across every MACHINE node and returned as resourceId -> rate (units/minute,
-     *  matching this codebase's rate convention). This graph is a pure top-down demand tree (see
-     *  {@link #finalizeResourceNode}): every non-target resource node exists because it was
-     *  specifically demanded, and gets exactly one output edge, to whatever demanded it, the
-     *  moment it's created. A recipe's other outputs, the ones nobody asked for, are never
-     *  modeled as graph nodes. So this reads the real recipe data directly: for each MACHINE
-     *  node, its {@code itemOutputs}/{@code fluidOutputs}, with each rate computed the same way
-     *  {@code ServerMonitoringManager.getActualRates} does (machines &times; amount &times;
-     *  probability per craft, scaled by duration). Resources already tracked elsewhere in the graph
-     *  are excluded because the plan already relies on them. */
     public static Map<ResourceLocation, Double> collectByproductRates(RecipeGraph graph) {
         Map<ResourceLocation, Double> rates = new LinkedHashMap<>();
         graph.surplusRates().forEach((id, rate) -> {
@@ -347,8 +286,6 @@ public final class RecipeGraphTraverser {
         return rates;
     }
 
-    /** Every item/fluid resource id a recipe touches, inputs and outputs combined. Ignores rates
-     *  and probabilities to check only whether a recipe touches a resource. */
     public static Set<ResourceLocation> recipeResourceIds(MachineRecipe recipe) {
         Set<ResourceLocation> ids = new HashSet<>();
         for (var in : recipe.itemInputs) {
@@ -370,8 +307,6 @@ public final class RecipeGraphTraverser {
         return ids;
     }
 
-    /** How rates get solved. AUTO runs the LP only when the plan's recipes form loops or share
-     *  outputs; the rest exist so tests can pin each path. */
     public enum SolveMode { AUTO, FORCE_LP, PROPAGATION_ONLY, FAIL_LP }
 
     public static RecipeGraph computeRecipeGraph(Level level, ProductionGoal goal) {
@@ -380,7 +315,6 @@ public final class RecipeGraphTraverser {
         synchronized (GRAPH_CACHE) {
             RecipeGraph cached = GRAPH_CACHE.get(key);
             if (cached != null) {
-                // Return a copy so callers mutating node fields cannot alter the shared cache entry.
                 return cached.copy();
             }
         }
@@ -391,10 +325,10 @@ public final class RecipeGraphTraverser {
         return result.copy();
     }
 
-    /** The propagated graph before any LP, with what the LP needs to model it. */
     private record Built(Map<ResourceLocation, StructuralNode> structNodes, Map<ResourceLocation, RecipeGraphNode> nodes,
                          Map<EdgeKey, GraphEdge> edges, Set<ResourceLocation> cyclicResourceIds,
-                         List<ResourceLocation[]> backEdges, PlanKeys keys) {
+                         List<ResourceLocation[]> backEdges, PlanKeys keys, RecipeIndex index,
+                         Map<ResourceLocation, ResourceLocation> selections, Set<ResourceLocation> imported) {
         boolean coupled() {
             return !cyclicResourceIds.isEmpty() || keys.hasDemandedByproduct(nodes);
         }
@@ -404,49 +338,336 @@ public final class RecipeGraphTraverser {
         }
     }
 
-    private static Built build(Level level, ProductionGoal goal) {
+    private static Built build(Level level, ProductionGoal goal, Map<ResourceLocation, ResourceLocation> autoSelections,
+            Set<ResourceLocation> imported) {
         RecipeManager recipeManager = level.getRecipeManager();
 
         RecipeIndex index = ensureRecipeIndex(level, recipeManager);
         Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> itemRecipes = index.itemRecipes();
         Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> fluidRecipes = index.fluidRecipes();
 
-        // Phase 1: resolve DAG structure (recipes and normalized per-unit inputs).
-        // Phase 2: propagate rates and accumulate demands.
+        Map<ResourceLocation, ResourceLocation> selections = new HashMap<>(autoSelections);
+        selections.putAll(goal.recipeSelections());
         Map<ResourceLocation, StructuralNode> structNodes = new HashMap<>();
         resolveStructure(itemRecipes, fluidRecipes, goal.type(), goal.targetId(),
-                goal.recipeSelections(), new HashSet<>(), structNodes, goal.targetId());
+                selections, new HashSet<>(), structNodes, goal.targetId(), imported);
 
         Map<ResourceLocation, RecipeGraphNode> nodes = new HashMap<>();
         Map<EdgeKey, GraphEdge> edges = new LinkedHashMap<>();
         Set<ResourceLocation> cyclicResourceIds = new HashSet<>();
         List<ResourceLocation[]> backEdges = new ArrayList<>();
         propagateRates(goal.targetId(), goal.rate(), 0, structNodes, nodes, edges, cyclicResourceIds, backEdges);
-        return new Built(structNodes, nodes, edges, cyclicResourceIds, backEdges, PlanKeys.of(goal, nodes));
+        return new Built(structNodes, nodes, edges, cyclicResourceIds, backEdges, PlanKeys.of(goal, nodes), index,
+                selections, imported);
     }
 
-    /** The LP model a goal's plan is solved with, for tests that check the solution against it. */
     public static PlanSolver.Model planModel(Level level, ProductionGoal goal) {
-        return build(level, goal).model(goal);
+        return resolve(level, goal, SolveMode.PROPAGATION_ONLY).model();
     }
 
-    /** Whether a goal's plan needs the LP: its recipes form a loop, or a chosen recipe puts out
-     *  something the plan demands elsewhere. */
     public static boolean planIsCoupled(Level level, ProductionGoal goal) {
-        return build(level, goal).coupled();
+        return resolve(level, goal, SolveMode.AUTO).built().coupled();
+    }
+
+    private static final int MAX_FIX_PASSES = 8;
+
+    private record Attempt(Built built, PlanSolver.Model model, @Nullable PlanSolver.Result result,
+                           Map<ResourceLocation, ResourceLocation> autoSelections, Set<ResourceLocation> autoImports,
+                           int fixPivots) {
+    }
+
+    private static Attempt attempt(Level level, ProductionGoal goal, Map<ResourceLocation, ResourceLocation> auto,
+            Set<ResourceLocation> imported) {
+        Built built = build(level, goal, auto, imported);
+        return new Attempt(built, built.model(goal), null, auto, imported, 0);
+    }
+
+    private static boolean lpWanted(SolveMode mode, Built built) {
+        return mode == SolveMode.FORCE_LP || (mode == SolveMode.AUTO && built.coupled());
+    }
+
+    private static Attempt resolve(Level level, ProductionGoal goal, SolveMode mode) {
+        Attempt current = attempt(level, goal, Map.of(), Set.of());
+        if (!current.built().cyclicResourceIds().isEmpty()) {
+            PlanSolver.Result first = null;
+            if (mode != SolveMode.FAIL_LP && lpWanted(mode, current.built())) {
+                first = PlanSolver.solve(current.model());
+                if (first == null || first.unsourced().isEmpty())
+                    return withResult(current, first);
+            }
+            Attempt fixed = fixDeadLoops(level, goal, current);
+            if (fixed.built() == current.built() && first != null)
+                return withResult(current, first);
+            current = fixed;
+        }
+        if (mode == SolveMode.FAIL_LP || !lpWanted(mode, current.built()))
+            return current;
+        return withResult(current, PlanSolver.solve(current.model()));
+    }
+
+    private static Attempt withResult(Attempt attempt, @Nullable PlanSolver.Result result) {
+        return new Attempt(attempt.built(), attempt.model(), result, attempt.autoSelections(), attempt.autoImports(),
+                attempt.fixPivots());
+    }
+
+    private static Attempt fixDeadLoops(Level level, ProductionGoal goal, Attempt current) {
+        PlanSolver.LoopSupply found = PlanSolver.loopSupply(current.model());
+        Map<PlanSolver.BackEdge, Double> dead = found == null ? null : found.supply();
+        int pivots = found == null ? 0 : found.pivots();
+        boolean allowPicks = true;
+        for (int pass = 0; pass < MAX_FIX_PASSES && dead != null && !dead.isEmpty(); pass++) {
+            Map<ResourceLocation, ResourceLocation> auto = new TreeMap<>(current.autoSelections());
+            Set<ResourceLocation> imported = new TreeSet<>(current.autoImports());
+            if (!decideFixes(goal, current, dead.keySet(), auto, imported, allowPicks))
+                break;
+            Attempt next = attempt(level, goal, auto, imported);
+            PlanSolver.LoopSupply nextFound = PlanSolver.loopSupply(next.model());
+            Map<PlanSolver.BackEdge, Double> nextDead = nextFound == null ? null : nextFound.supply();
+            pivots += nextFound == null ? 0 : nextFound.pivots();
+            if (nextDead == null || nextDead.size() > dead.size()
+                    || (nextDead.size() == dead.size() && PlanSolver.loopCost(nextDead) >= PlanSolver.loopCost(dead) - 1e-9)) {
+                Map<ResourceLocation, ResourceLocation> before = current.autoSelections();
+                boolean picked = auto.keySet().stream().anyMatch(k -> !before.containsKey(k));
+                if (!allowPicks || !picked)
+                    break;
+                allowPicks = false;
+                continue;
+            }
+            current = next;
+            dead = nextDead;
+            allowPicks = true;
+        }
+
+        Map<ResourceLocation, ResourceLocation> kept = new TreeMap<>();
+        for (var entry : current.autoSelections().entrySet()) {
+            RecipeGraphNode node = current.built().nodes().get(entry.getKey());
+            if (node != null && node.getType() != NodeType.RAW)
+                kept.put(entry.getKey(), entry.getValue());
+        }
+        if (pivots == 0 && kept.equals(current.autoSelections()))
+            return current;
+        Attempt result = kept.equals(current.autoSelections()) ? current : attempt(level, goal, kept, current.autoImports());
+        return new Attempt(result.built(), result.model(), result.result(), result.autoSelections(), result.autoImports(), pivots);
+    }
+
+    public static int deadLoopFixPivots(Level level, ProductionGoal goal) {
+        return resolve(level, goal, SolveMode.PROPAGATION_ONLY).fixPivots();
+    }
+
+    private record DeadLoop(PlanSolver.BackEdge edge, ResourceLocation looped, ResourceLocation consumer,
+                            List<ResourceLocation> members) {
+    }
+
+    private static boolean decideFixes(ProductionGoal goal, Attempt attempt, Set<PlanSolver.BackEdge> dead,
+            Map<ResourceLocation, ResourceLocation> auto, Set<ResourceLocation> imported, boolean allowPicks) {
+        Built built = attempt.built();
+        Map<PlanSolver.BackEdge, ResourceLocation> consumerOf = new HashMap<>();
+        for (ResourceLocation[] pair : built.backEdges()) {
+            StructuralNode node = built.structNodes().get(pair[0]);
+            String key = built.keys().keyOf().get(pair[1]);
+            if (node != null && node.recipeId() != null && key != null)
+                consumerOf.putIfAbsent(new PlanSolver.BackEdge(node.recipeId().toString(), key), pair[0]);
+        }
+        List<PlanSolver.BackEdge> sorted = new ArrayList<>(dead);
+        sorted.sort(Comparator.comparing(PlanSolver.BackEdge::resource).thenComparing(PlanSolver.BackEdge::recipeId));
+        List<DeadLoop> loops = new ArrayList<>();
+        for (PlanSolver.BackEdge edge : sorted) {
+            ResourceLocation consumer = consumerOf.get(edge);
+            if (consumer == null)
+                continue;
+            ResourceLocation looped = idOfKey(edge.resource());
+            List<ResourceLocation> members = new ArrayList<>(loopMembers(built.structNodes(), looped, consumer));
+            members.sort(Comparator.comparingInt((ResourceLocation id) -> {
+                RecipeGraphNode node = built.nodes().get(id);
+                return node != null ? node.getDepth() : Integer.MAX_VALUE;
+            }).thenComparing(ResourceLocation::toString));
+            loops.add(new DeadLoop(edge, looped, consumer, members));
+        }
+
+        List<PlanSolver.BackEdge> healthy = new ArrayList<>(attempt.model().backEdges());
+        healthy.removeAll(dead);
+        CandidateCheck check = new CandidateCheck(goal, built, attempt.model());
+        Set<ResourceLocation> handled = new HashSet<>();
+        for (DeadLoop loop : loops) {
+            if (!allowPicks || loop.members().stream().anyMatch(handled::contains))
+                continue;
+            for (ResourceLocation member : loop.members()) {
+                if (goal.recipeSelections().containsKey(member) || auto.containsKey(member))
+                    continue;
+                ResourceLocation pick = check.firstWorking(member, healthy);
+                if (pick != null) {
+                    auto.put(member, pick);
+                    handled.addAll(loop.members());
+                    break;
+                }
+            }
+        }
+        if (!handled.isEmpty())
+            return true;
+
+        List<DeadLoop> waiting = new ArrayList<>();
+        boolean changed = false;
+        for (DeadLoop loop : loops) {
+            if (loop.members().stream().anyMatch(handled::contains))
+                continue;
+            List<PlanSolver.BackEdge> others = new ArrayList<>(healthy);
+            for (DeadLoop other : loops)
+                if (other.members().stream().noneMatch(loop.members()::contains))
+                    others.add(other.edge());
+            boolean fixable = false;
+            for (ResourceLocation member : allowPicks ? loop.members() : List.<ResourceLocation>of()) {
+                if (!goal.recipeSelections().containsKey(member) && !auto.containsKey(member)
+                        && check.firstWorking(member, others) != null) {
+                    fixable = true;
+                    break;
+                }
+            }
+            if (fixable) {
+                waiting.add(loop);
+            } else if (importLoop(goal, loop, auto, imported)) {
+                handled.addAll(loop.members());
+                changed = true;
+            }
+        }
+        for (int i = 0; !changed && i < waiting.size(); i++)
+            changed = importLoop(goal, waiting.get(i), auto, imported);
+        return changed;
+    }
+
+    private static boolean importLoop(ProductionGoal goal, DeadLoop loop, Map<ResourceLocation, ResourceLocation> auto,
+            Set<ResourceLocation> imported) {
+        ResourceLocation point = loop.looped().equals(goal.targetId()) ? loop.consumer() : loop.looped();
+        if (point.equals(goal.targetId()) || goal.recipeSelections().containsKey(point) || !imported.add(point))
+            return false;
+        auto.remove(point);
+        return true;
+    }
+
+    private static final class CandidateCheck {
+        private final ProductionGoal goal;
+        private final Built built;
+        private final PlanSolver.Model model;
+        private final Map<ResourceLocation, StructuralNode> memo;
+        private final Map<String, PlanSolver.Recipe> extra = new LinkedHashMap<>();
+        private final Set<String> raw;
+
+        CandidateCheck(ProductionGoal goal, Built built, PlanSolver.Model model) {
+            this.goal = goal;
+            this.built = built;
+            this.model = model;
+            this.memo = new HashMap<>(built.structNodes());
+            this.raw = new HashSet<>(model.raw());
+        }
+
+        @Nullable ResourceLocation firstWorking(ResourceLocation member, List<PlanSolver.BackEdge> free) {
+            StructuralNode node = built.structNodes().get(member);
+            String key = built.keys().keyOf().get(member);
+            if (node == null || node.recipeId() == null || key == null)
+                return null;
+            List<RecipeHolder<MachineRecipe>> holders = (key.startsWith("fluid:") ? built.index().fluidRecipes()
+                    : built.index().itemRecipes()).getOrDefault(member, List.of());
+            for (RecipeHolder<MachineRecipe> holder : holders) {
+                if (holder.id().equals(node.recipeId()))
+                    continue;
+                MachineRecipe recipe = holder.value();
+                PlanSolver.Recipe candidate = new PlanSolver.Recipe(holder.id().toString(), recipe.duration,
+                        inputsOf(recipe), outputsOf(recipe));
+                if (!PlanSolver.makesOnly(candidate, key))
+                    continue;
+                resolveInputs(candidate);
+                List<PlanSolver.Recipe> recipes = new ArrayList<>();
+                for (PlanSolver.Recipe r : model.recipes())
+                    if (!r.id().equals(node.recipeId().toString()))
+                        recipes.add(r);
+                recipes.addAll(extra.values());
+                recipes.add(candidate);
+                Set<String> made = PlanSolver.obtainable(recipes, raw, free);
+                if (candidate.inputs().entrySet().stream().allMatch(e -> e.getValue() <= 0 || made.contains(e.getKey())))
+                    return holder.id();
+            }
+            return null;
+        }
+
+        private void resolveInputs(PlanSolver.Recipe candidate) {
+            int before = memo.size();
+            for (String input : candidate.inputs().keySet()) {
+                resolveStructure(built.index().itemRecipes(), built.index().fluidRecipes(),
+                        input.startsWith("fluid:") ? TargetType.FLUID : TargetType.ITEM, idOfKey(input),
+                        built.selections(), new HashSet<>(), memo, goal.targetId(), built.imported());
+            }
+            if (memo.size() != before) {
+                for (var entry : memo.entrySet()) {
+                    StructuralNode node = entry.getValue();
+                    if (built.structNodes().containsKey(entry.getKey()) || node.recipeId() == null || node.recipe() == null)
+                        continue;
+                    extra.computeIfAbsent(node.recipeId().toString(), id -> new PlanSolver.Recipe(id,
+                            node.recipe().duration, inputsOf(node.recipe()), outputsOf(node.recipe())));
+                }
+            }
+            List<PlanSolver.Recipe> touched = new ArrayList<>(extra.values());
+            touched.add(candidate);
+            for (PlanSolver.Recipe recipe : touched) {
+                for (String input : recipe.inputs().keySet()) {
+                    StructuralNode node = memo.get(idOfKey(input));
+                    if (node != null && node.recipeId() == null)
+                        raw.add(input);
+                }
+            }
+        }
+    }
+
+    private static Set<ResourceLocation> loopMembers(Map<ResourceLocation, StructuralNode> structNodes,
+            ResourceLocation looped, ResourceLocation consumer) {
+        Map<ResourceLocation, List<ResourceLocation>> consumers = new HashMap<>();
+        structNodes.forEach((id, node) -> {
+            for (StructInputEdge in : node.itemInputs())
+                consumers.computeIfAbsent(in.childId(), k -> new ArrayList<>()).add(id);
+            for (StructInputEdge in : node.fluidInputs())
+                consumers.computeIfAbsent(in.childId(), k -> new ArrayList<>()).add(id);
+        });
+        Set<ResourceLocation> below = new HashSet<>(List.of(looped));
+        Deque<ResourceLocation> queue = new ArrayDeque<>(List.of(looped));
+        while (!queue.isEmpty()) {
+            StructuralNode node = structNodes.get(queue.poll());
+            if (node == null)
+                continue;
+            for (StructInputEdge in : node.itemInputs())
+                if (below.add(in.childId()))
+                    queue.add(in.childId());
+            for (StructInputEdge in : node.fluidInputs())
+                if (below.add(in.childId()))
+                    queue.add(in.childId());
+        }
+        Set<ResourceLocation> members = new TreeSet<>(Comparator.comparing(ResourceLocation::toString));
+        members.add(looped);
+        members.add(consumer);
+        Set<ResourceLocation> above = new HashSet<>(List.of(consumer));
+        queue.add(consumer);
+        while (!queue.isEmpty()) {
+            for (ResourceLocation next : consumers.getOrDefault(queue.poll(), List.of())) {
+                if (above.add(next)) {
+                    queue.add(next);
+                    if (below.contains(next))
+                        members.add(next);
+                }
+            }
+        }
+        return members;
     }
 
     public static RecipeGraph computeRecipeGraphUncached(Level level, ProductionGoal goal, SolveMode mode) {
-        Built built = build(level, goal);
+        Attempt resolved = resolve(level, goal, mode);
+        Built built = resolved.built();
         Map<ResourceLocation, RecipeGraphNode> nodes = built.nodes();
         Map<EdgeKey, GraphEdge> edges = built.edges();
         Set<ResourceLocation> cyclicResourceIds = built.cyclicResourceIds();
         PlanKeys keys = built.keys();
         Map<ResourceLocation, Double> surplusRates = propagationSurplus(nodes);
         Set<ResourceLocation> unsourced = Set.of();
-        PlanSolver.Model model = built.model(goal);
-        if (mode == SolveMode.FORCE_LP || mode == SolveMode.FAIL_LP || (mode == SolveMode.AUTO && built.coupled())) {
-            PlanSolver.Result solved = mode == SolveMode.FAIL_LP ? null : PlanSolver.solve(model);
+        PlanSolver.Model model = resolved.model();
+        boolean lpWanted = mode == SolveMode.FORCE_LP || mode == SolveMode.FAIL_LP || (mode == SolveMode.AUTO && built.coupled());
+        if (lpWanted) {
+            PlanSolver.Result solved = mode == SolveMode.FAIL_LP ? null : resolved.result();
             if (solved != null) {
                 applyPlanSolution(goal, keys, solved, nodes, edges);
                 surplusRates = keys.toIds(solved.surplus());
@@ -467,11 +688,9 @@ public final class RecipeGraphTraverser {
         }
 
         return new RecipeGraph(goal.targetId(), goal.rate(), nodes, new ArrayList<>(edges.values()), cyclicResourceIds,
-                surplusRates, unsourced, model);
+                surplusRates, unsourced, model, Map.copyOf(resolved.autoSelections()), Set.copyOf(resolved.autoImports()));
     }
 
-    /** Typed LP resource keys ({@code item:}/{@code fluid:}) for the graph's resources, read from how
-     *  recipes actually reference them, so a node is never keyed by a registry guess. */
     private record PlanKeys(Map<ResourceLocation, String> keyOf, Map<String, ResourceLocation> idOf) {
         static PlanKeys of(ProductionGoal goal, Map<ResourceLocation, RecipeGraphNode> nodes) {
             Map<ResourceLocation, String> keyOf = new HashMap<>();
@@ -497,8 +716,6 @@ public final class RecipeGraphTraverser {
             return id != null && nodes.containsKey(id) && nodes.get(id).getType() != NodeType.MACHINE;
         }
 
-        /** A chosen recipe putting out a resource the plan demands elsewhere, besides its own product:
-         *  a byproduct the old propagation ignored, or two resources sharing one recipe. */
         boolean hasDemandedByproduct(Map<ResourceLocation, RecipeGraphNode> nodes) {
             for (RecipeGraphNode node : nodes.values()) {
                 if (node.getType() != NodeType.MACHINE || node.getRecipe() == null)
@@ -558,7 +775,6 @@ public final class RecipeGraphTraverser {
         return ResourceLocation.parse(key.substring(key.indexOf(':') + 1));
     }
 
-    /** Per-run consumption by typed key, amount times probability, first listed item as resolveStructure does. */
     private static Map<String, Double> inputsOf(MachineRecipe recipe) {
         Map<String, Double> inputs = new TreeMap<>();
         for (var input : recipe.itemInputs) {
@@ -576,7 +792,6 @@ public final class RecipeGraphTraverser {
         return inputs;
     }
 
-    /** Every per-run output by typed key, byproducts included. */
     private static Map<String, Double> outputsOf(MachineRecipe recipe) {
         Map<String, Double> outputs = new TreeMap<>();
         for (var out : recipe.itemOutputs)
@@ -588,8 +803,6 @@ public final class RecipeGraphTraverser {
         return outputs;
     }
 
-    /** Outputs the propagated plan never uses: with no loops or shared outputs, every chosen recipe's
-     *  own product is fully consumed, so its other outputs are exactly the surplus. */
     private static Map<ResourceLocation, Double> propagationSurplus(Map<ResourceLocation, RecipeGraphNode> nodes) {
         Map<ResourceLocation, Double> surplus = new LinkedHashMap<>();
         for (RecipeGraphNode machine : nodes.values()) {
@@ -609,8 +822,6 @@ public final class RecipeGraphTraverser {
         return surplus;
     }
 
-    /** Overwrites rates with the LP's: machine counts from runs, every edge from its recipe's per-run
-     *  amount, and byproduct edges where a byproduct is actually used. Structure is untouched otherwise. */
     private static void applyPlanSolution(ProductionGoal goal, PlanKeys keys, PlanSolver.Result solved,
             Map<ResourceLocation, RecipeGraphNode> nodes, Map<EdgeKey, GraphEdge> edges) {
         Map<ResourceLocation, Double> consumption = new HashMap<>();
@@ -659,23 +870,12 @@ public final class RecipeGraphTraverser {
     private record EdgeKey(ResourceLocation from, ResourceLocation to) {
     }
 
-    /**
-     * One recipe input normalized per 1.0 unit/s of the owning
-     * {@link StructuralNode} resource ID.
-     */
     private record StructInputEdge(ResourceLocation childId, double ratePerUnit) {
     }
 
-    /**
-     * Rate-independent graph structure for a resource ID, including the chosen
-     * recipe and
-     * per-unit normalized inputs. Resolved and memoized in
-     * {@link #resolveStructure}, then
-     * reused across demand paths in {@link #propagateRates}.
-     */
     private record StructuralNode(
             ResourceLocation resourceId,
-            @Nullable ResourceLocation recipeId, // null => RAW (no candidate recipe, or an unproducible chosen recipe)
+            @Nullable ResourceLocation recipeId,
             @Nullable ResourceLocation machineTypeId,
             @Nullable MachineRecipe recipe,
             List<ResourceLocation> ambiguityOptions,
@@ -694,7 +894,8 @@ public final class RecipeGraphTraverser {
             Map<ResourceLocation, ResourceLocation> selections,
             Set<ResourceLocation> visited,
             Map<ResourceLocation, StructuralNode> structMemo,
-            ResourceLocation rootTargetId) {
+            ResourceLocation rootTargetId,
+            Set<ResourceLocation> imported) {
         StructuralNode cached = structMemo.get(resourceId);
         if (cached != null) {
             return cached;
@@ -708,14 +909,15 @@ public final class RecipeGraphTraverser {
                 ? itemRecipes.getOrDefault(resourceId, Collections.emptyList())
                 : fluidRecipes.getOrDefault(resourceId, Collections.emptyList());
 
-        boolean shouldExpand = type == TargetType.ITEM || resourceId.equals(rootTargetId) || selections.containsKey(resourceId);
+        boolean shouldExpand = (type == TargetType.ITEM || resourceId.equals(rootTargetId) || selections.containsKey(resourceId))
+                && (resourceId.equals(rootTargetId) || !imported.contains(resourceId));
 
         StructuralNode result;
         if (!shouldExpand || allCandidates.isEmpty()) {
             List<ResourceLocation> ambiguityOptions = allCandidates.size() > 1
                     ? allCandidates.stream().map(RecipeHolder::id).toList()
                     : (allCandidates.size() == 1 ? List.of(allCandidates.get(0).id()) : List.of());
-            ResourceLocation selectedAmbiguity = ambiguityOptions.isEmpty()
+            ResourceLocation selectedAmbiguity = ambiguityOptions.isEmpty() || imported.contains(resourceId)
                     ? null
                     : (selections.get(resourceId) != null ? selections.get(resourceId) : ambiguityOptions.get(0));
             result = new StructuralNode(resourceId, null, null, null, ambiguityOptions, selectedAmbiguity, 0.0, List.of(), List.of());
@@ -768,7 +970,6 @@ public final class RecipeGraphTraverser {
                         : (selections.get(resourceId) != null ? selections.get(resourceId) : ambiguityOptions.get(0));
                 result = new StructuralNode(resourceId, null, null, null, ambiguityOptions, selectedAmbiguity, 0.0, List.of(), List.of());
             } else {
-                // Rates are per minute; a machine finishes 1200 / duration runs a minute.
                 double runsPerUnit = 1.0 / (outputAmount * outputProbability);
                 double machineCountPerUnit = (runsPerUnit * chosenRecipe.duration) / 1200.0;
                 ResourceLocation machineTypeId = BuiltInRegistries.RECIPE_TYPE.getKey(chosenRecipe.getType());
@@ -801,11 +1002,11 @@ public final class RecipeGraphTraverser {
 
                 for (StructInputEdge edge : itemInputs) {
                     resolveStructure(itemRecipes, fluidRecipes, TargetType.ITEM, edge.childId(),
-                            selections, visited, structMemo, rootTargetId);
+                            selections, visited, structMemo, rootTargetId, imported);
                 }
                 for (StructInputEdge edge : fluidInputs) {
                     resolveStructure(itemRecipes, fluidRecipes, TargetType.FLUID, edge.childId(),
-                            selections, visited, structMemo, rootTargetId);
+                            selections, visited, structMemo, rootTargetId, imported);
                 }
 
                 result = new StructuralNode(resourceId, recipeId, machineTypeId, chosenRecipe,
@@ -914,10 +1115,7 @@ public final class RecipeGraphTraverser {
                 continue;
 
             if (onStack.contains(child)) {
-                // Back-edge: curr ... child forms a recycling loop. Not solved (rate propagation
-                // still treats this edge as absent, same as before), but its membership is
-                // recorded so passive-status checks can tell a starved loop member ("dead-loop")
-                // apart from ordinary starvation.
+                // Recycling loop back-edge.
                 cyclicResourceIds.add(curr);
                 cyclicResourceIds.add(child);
                 backEdges.add(new ResourceLocation[] { curr, child });

@@ -53,10 +53,11 @@ public class DetailCard extends AbstractWidget {
             @Nullable Consumer<ResourceLocation> onToggleVisibility,
             @Nullable Runnable onUnhideAll,
             @Nullable Predicate<ResourceLocation> isHiddenPredicate,
-            @Nullable Consumer<ResourceLocation> onExpandMaterial
+            @Nullable Consumer<ResourceLocation> onExpandMaterial,
+            @Nullable Predicate<ResourceLocation> hasManualSelection
     ) {
         public Callbacks(BiConsumer<ResourceLocation, ResourceLocation> onAmbiguity, Runnable onToggleNumbers) {
-            this(onAmbiguity, onToggleNumbers, null, null, null, null);
+            this(onAmbiguity, onToggleNumbers, null, null, null, null, null);
         }
     }
 
@@ -95,6 +96,11 @@ public class DetailCard extends AbstractWidget {
     private int cycleBoxW = 0;
     private int cycleBoxH = 0;
     private boolean isCycleBoxHovered = false;
+    private int autoBoxX = 0;
+    private int autoBoxY = 0;
+    private int autoBoxW = 0;
+    private int autoBoxH = 0;
+    private boolean isAutoBoxHovered = false;
 
     // Boundaries of the inline numbers toggle box
     private int numToggleBoxX = 0;
@@ -231,6 +237,9 @@ public class DetailCard extends AbstractWidget {
         isCycleBoxHovered = false;
         cycleBoxW = 0;
         cycleBoxH = 0;
+        isAutoBoxHovered = false;
+        autoBoxW = 0;
+        autoBoxH = 0;
         isNumToggleHovered = false;
         numToggleBoxW = 0;
         numToggleBoxH = 0;
@@ -490,16 +499,26 @@ public class DetailCard extends AbstractWidget {
                 guiGraphics.drawString(fontSource.font, "Pick a recipe that brings one in.", getX() + 10, currentY, COLOUR_MUTED, false);
                 currentY += 10;
             }
+            if (plan.graph() != null && plan.graph().autoImports().contains(node.getId())) {
+                currentY += 8;
+                guiGraphics.drawString(fontSource.font, "Imported: every recipe for it", getX() + 6, currentY, COLOUR_MUTED, false);
+                currentY += 10;
+                guiGraphics.drawString(fontSource.font, "loops back with no outside input.", getX() + 10, currentY, COLOUR_MUTED, false);
+                currentY += 10;
+            }
 
             // Recipe Ambiguity Cycle Button
             if (!node.getAmbiguityOptions().isEmpty()) {
+                ResourceLocation owner = node.getType() == NodeType.MACHINE ? node.getAmbiguityOwnerId() : node.getId();
+                boolean manual = owner != null && callbacks.hasManualSelection() != null
+                        && callbacks.hasManualSelection().test(owner);
                 currentY += 8;
                 guiGraphics.drawString(fontSource.font, "Alternative Recipes:", getX() + 6, currentY, COLOUR_AMBER, false);
                 currentY += 12;
 
                 cycleBoxX = getX() + 10;
                 cycleBoxY = currentY;
-                cycleBoxW = getWidth() - 20;
+                cycleBoxW = getWidth() - 20 - (manual ? 34 : 0);
                 cycleBoxH = 14;
 
                 isCycleBoxHovered = mouseX >= cycleBoxX && mouseX < cycleBoxX + cycleBoxW &&
@@ -509,12 +528,34 @@ public class DetailCard extends AbstractWidget {
                 guiGraphics.fill(cycleBoxX, cycleBoxY, cycleBoxX + cycleBoxW, cycleBoxY + cycleBoxH, boxColour);
                 guiGraphics.renderOutline(cycleBoxX, cycleBoxY, cycleBoxW, cycleBoxH, COLOUR_BORDER);
 
-                String cycleText = "Cycle Recipe (" + (node.getAmbiguityOptions().indexOf(node.getSelectedAmbiguity()) + 1)
-                        + "/" + node.getAmbiguityOptions().size() + ")";
+                String cycleText = node.getSelectedAmbiguity() == null
+                        ? "Pick Recipe (" + node.getAmbiguityOptions().size() + ")"
+                        : "Cycle Recipe (" + (node.getAmbiguityOptions().indexOf(node.getSelectedAmbiguity()) + 1)
+                                + "/" + node.getAmbiguityOptions().size() + ")";
                 int textWidth = fontSource.font.width(cycleText);
                 int textX = cycleBoxX + (cycleBoxW - textWidth) / 2;
                 guiGraphics.drawString(fontSource.font, cycleText, textX, cycleBoxY + 3, COLOUR_TEXT, false);
+
+                if (manual) {
+                    autoBoxX = cycleBoxX + cycleBoxW + 4;
+                    autoBoxY = cycleBoxY;
+                    autoBoxW = 30;
+                    autoBoxH = cycleBoxH;
+                    isAutoBoxHovered = mouseX >= autoBoxX && mouseX < autoBoxX + autoBoxW
+                            && mouseY >= autoBoxY && mouseY < autoBoxY + autoBoxH;
+                    guiGraphics.fill(autoBoxX, autoBoxY, autoBoxX + autoBoxW, autoBoxY + autoBoxH,
+                            isAutoBoxHovered ? COLOUR_CYCLE_HOVER : COLOUR_CYCLE_BOX);
+                    guiGraphics.renderOutline(autoBoxX, autoBoxY, autoBoxW, autoBoxH, COLOUR_BORDER);
+                    guiGraphics.drawString(fontSource.font, "Auto", autoBoxX + (autoBoxW - fontSource.font.width("Auto")) / 2,
+                            autoBoxY + 3, COLOUR_TEXT, false);
+                }
                 currentY += 18;
+                if (owner != null && plan.graph() != null && plan.graph().autoSelections().containsKey(owner)) {
+                    guiGraphics.drawString(fontSource.font, "Picked: the default loops", getX() + 10, currentY, COLOUR_MUTED, false);
+                    currentY += 10;
+                    guiGraphics.drawString(fontSource.font, "with no outside input.", getX() + 10, currentY, COLOUR_MUTED, false);
+                    currentY += 10;
+                }
             }
         }
 
@@ -567,6 +608,15 @@ public class DetailCard extends AbstractWidget {
             callbacks.onExpandMaterial().accept(node.getId());
             this.playDownSound(Minecraft.getInstance().getSoundManager());
             return true;
+        }
+
+        if (button == 0 && node != null && autoBoxW > 0 && GuiMath.contains(autoBoxX, autoBoxY, autoBoxW, autoBoxH, mouseX, mouseY)) {
+            ResourceLocation owner = node.getType() == NodeType.MACHINE ? node.getAmbiguityOwnerId() : node.getId();
+            if (owner != null) {
+                callbacks.onAmbiguity().accept(owner, null);
+                this.playDownSound(Minecraft.getInstance().getSoundManager());
+                return true;
+            }
         }
 
         if (node != null && !node.getAmbiguityOptions().isEmpty()) {
