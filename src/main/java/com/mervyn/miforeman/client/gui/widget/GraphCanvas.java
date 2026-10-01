@@ -113,6 +113,7 @@ public class GraphCanvas extends AbstractWidget {
     private boolean routesDirty = true;
     /** Port offsets per visible edge, from the last routing pass; reused by live drag elbows. */
     private List<com.mervyn.miforeman.goal.PortLayout.Ports> edgePorts = List.of();
+    private @Nullable com.mervyn.miforeman.goal.EdgeRouter.Routing lastRouting;
     private final Map<ResourceLocation, NodePosition> autoLayout = new HashMap<>();
     private Set<ResourceLocation> selectedNodeIds;
     private final Consumer<Set<ResourceLocation>> onSelect;
@@ -729,7 +730,9 @@ public class GraphCanvas extends AbstractWidget {
             }
             requests.add(edgeRequest(fromPos, toPos, i));
         }
-        routedEdges = com.mervyn.miforeman.goal.EdgeRouter.route(requests, obstacles, EDGE_GRID_SIZE, EDGE_LANE_GAP);
+        lastRouting = com.mervyn.miforeman.goal.EdgeRouter.route(requests, obstacles, EDGE_GRID_SIZE, EDGE_LANE_GAP,
+                lastRouting);
+        routedEdges = lastRouting.routes();
     }
 
     /**

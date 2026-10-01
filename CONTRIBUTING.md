@@ -141,6 +141,8 @@
 | `testEdgeRouterOnRealArrangedGraph` | A real arranged analog_circuit graph routes most wires with no clipping |
 | `testPortLayoutSpreadsSharedFaces` | Wires sharing a card face get separate ports ordered by their other end's height, machine ports stay clear of the cut corners, overflow shares slots in order, lone wires stay centred |
 | `testEdgeRouterOnRealGraphWithSpreadPorts` | analog_circuit routed with spread ports: no clipping, most wires route, and only over-capacity faces share a start point |
+| `testEdgeRouterIncrementalMatchesContract` | Re-routing with the previous pass keeps every unaffected wire identical, re-routes moved cards' wires at a fraction of a full pass's cost, refuses to reuse a wire whose stub or path a new card now covers, and retries a fallback once its blocker moves |
+| `testEdgeRouterIncrementalDoesNotDrift` | Five chained incremental re-routes on a real graph keep every wire ending at its ports, clear of every card, with most still routed |
 | `testEdgeRouterGivesUpWholeGraphWhenBudgetExhausted` | A pass that runs out of budget falls back wholesale, never partially |
 | `testEdgeRouterHandlesLargestRealGraph` | quantum_upgrade (588 cards, 864 wires) still routes, with no wire clipping a card |
 

@@ -3505,6 +3505,159 @@ public class ForemanGameTests {
         helper.succeed();
     }
 
+    private static Map<ResourceLocation, com.mervyn.miforeman.goal.NodePosition> routerMovedBelow(
+            Map<ResourceLocation, com.mervyn.miforeman.goal.NodePosition> positions, ResourceLocation node, int slot) {
+        int maxY = positions.values().stream().mapToInt(com.mervyn.miforeman.goal.NodePosition::y).max().orElse(0);
+        Map<ResourceLocation, com.mervyn.miforeman.goal.NodePosition> moved = new java.util.HashMap<>(positions);
+        moved.put(node, new com.mervyn.miforeman.goal.NodePosition(positions.get(node).x(), maxY + 120 * (slot + 1)));
+        return moved;
+    }
+
+    private static boolean routerTouches(com.mervyn.miforeman.goal.PortLayout.Wire wire, ResourceLocation node) {
+        return wire.from().equals(node) || wire.to().equals(node);
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID, timeoutTicks = 600)
+    public static void testEdgeRouterIncrementalMatchesContract(GameTestHelper helper) {
+        var level = helper.getLevel();
+        com.mervyn.miforeman.goal.RecipeGraph graph = RecipeGraphTraverser.computeRecipeGraph(level,
+                new ProductionGoal("router_incremental", ProductionGoal.TargetType.ITEM,
+                        ResourceLocation.parse("modern_industrialization:analog_circuit"), 60.0));
+        var positions = routerArrange(graph);
+        var wires = routerPortWiresFor(graph, positions);
+        var requests = routerRequestsWithPorts(wires);
+        var full = com.mervyn.miforeman.goal.EdgeRouter.route(requests, routerCardsFor(positions), 6, 3, null);
+
+        // Move one card far below everything, so it lands on no existing wire.
+        ResourceLocation moved = wires.get(0).from();
+        var movedPositions = routerMovedBelow(positions, moved, 0);
+        var movedWires = routerPortWiresFor(graph, movedPositions);
+        var movedRequests = routerRequestsWithPorts(movedWires);
+        var movedCards = routerCardsFor(movedPositions);
+        var incremental = com.mervyn.miforeman.goal.EdgeRouter.route(movedRequests, movedCards, 6, 3, full);
+        var fresh = com.mervyn.miforeman.goal.EdgeRouter.route(movedRequests, movedCards, 6, 3, null);
+
+        if (incremental.routes().size() != movedRequests.size()) {
+            helper.fail("Incremental routing returned " + incremental.routes().size() + " routes for " + movedRequests.size() + " wires.");
+            return;
+        }
+        boolean movedWireChanged = false;
+        for (int i = 0; i < movedRequests.size(); i++) {
+            boolean sameRequest = movedRequests.get(i).equals(requests.get(i));
+            if (routerTouches(movedWires.get(i), moved) && !sameRequest)
+                movedWireChanged = true;
+            if (sameRequest && !full.fallbacks().get(i) && !incremental.unpacked().get(i).equals(full.unpacked().get(i))) {
+                helper.fail("Wire " + i + " didn't move and nothing landed on it, but it was re-routed.");
+                return;
+            }
+            if (!incremental.fallbacks().get(i) && routeClipsAnyCard(incremental.routes().get(i), movedCards)) {
+                helper.fail("Wire " + i + " clips a card after an incremental re-route: " + incremental.routes().get(i).points());
+                return;
+            }
+        }
+        if (!movedWireChanged) {
+            helper.fail("Moving a card should have changed at least one of its wires' requests.");
+            return;
+        }
+        if (incremental.expansions() * 4 > fresh.expansions()) {
+            helper.fail("Incremental re-route spent " + incremental.expansions() + " expansions against "
+                    + fresh.expansions() + " for a full pass; it isn't saving work.");
+            return;
+        }
+
+        // A card dropped right beside a port covers that wire's stub: the wire must not be reused.
+        var cardA = routerCard(0, 0);
+        var cardB = routerCard(2, 0);
+        var wire = routerWire(0, 0, 2, 0);
+        var before = com.mervyn.miforeman.goal.EdgeRouter.route(List.of(wire), List.of(cardA, cardB), 6, 3, null);
+        var onStub = new com.mervyn.miforeman.goal.EdgeRouter.Obstacle(ROUTER_NODE_W + 2, 6, ROUTER_NODE_W + 14, 20);
+        if (!routeClipsAnyCard(before.routes().get(0), List.of(onStub))) {
+            helper.fail("Test setup: the original wire should run through the card dropped on its stub.");
+            return;
+        }
+        var after = com.mervyn.miforeman.goal.EdgeRouter.route(List.of(wire), List.of(cardA, cardB, onStub), 6, 3, before);
+        if (!after.fallbacks().get(0) && after.unpacked().get(0).equals(before.unpacked().get(0))) {
+            helper.fail("A wire whose stub a new card now covers was reused unchanged.");
+            return;
+        }
+
+        // Unhiding a card on a wire's path forces that wire around it.
+        var middle = routerCard(1, 0);
+        var hidden = com.mervyn.miforeman.goal.EdgeRouter.route(List.of(wire), List.of(cardA, cardB), 6, 3, null);
+        var shown = com.mervyn.miforeman.goal.EdgeRouter.route(List.of(wire), List.of(cardA, cardB, middle), 6, 3, hidden);
+        if (!shown.fallbacks().get(0) && routeClipsAnyCard(shown.routes().get(0), List.of(middle))) {
+            helper.fail("A wire kept running through a card that was unhidden on its path: " + shown.routes().get(0).points());
+            return;
+        }
+
+        // A wall too tall to route around forces a fallback; moving the card in its way frees it.
+        List<com.mervyn.miforeman.goal.EdgeRouter.Obstacle> walled = new java.util.ArrayList<>(List.of(cardA, cardB));
+        for (int row = -10; row <= 10; row++)
+            walled.add(routerCard(1, row));
+        var blocked = com.mervyn.miforeman.goal.EdgeRouter.route(List.of(wire), walled, 6, 3, null);
+        if (!blocked.fallbacks().get(0)) {
+            helper.fail("Test setup: the walled-in wire should have fallen back.");
+            return;
+        }
+        List<com.mervyn.miforeman.goal.EdgeRouter.Obstacle> opened = new java.util.ArrayList<>(walled);
+        opened.remove(routerCard(1, 0));
+        opened.add(routerCard(1, 40));
+        var unblocked = com.mervyn.miforeman.goal.EdgeRouter.route(List.of(wire), opened, 6, 3, blocked);
+        if (unblocked.fallbacks().get(0)) {
+            helper.fail("Moving the card out of a fallback's way should let it route.");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID, timeoutTicks = 600)
+    public static void testEdgeRouterIncrementalDoesNotDrift(GameTestHelper helper) {
+        var level = helper.getLevel();
+        com.mervyn.miforeman.goal.RecipeGraph graph = RecipeGraphTraverser.computeRecipeGraph(level,
+                new ProductionGoal("router_drift", ProductionGoal.TargetType.ITEM,
+                        ResourceLocation.parse("modern_industrialization:analog_circuit"), 60.0));
+        var positions = routerArrange(graph);
+        var wires = routerPortWiresFor(graph, positions);
+        var routing = com.mervyn.miforeman.goal.EdgeRouter.route(routerRequestsWithPorts(wires),
+                routerCardsFor(positions), 6, 3, null);
+
+        List<ResourceLocation> toMove = wires.stream().map(com.mervyn.miforeman.goal.PortLayout.Wire::from)
+                .distinct().limit(5).toList();
+        for (int step = 0; step < toMove.size(); step++) {
+            positions = routerMovedBelow(positions, toMove.get(step), step);
+            var requests = routerRequestsWithPorts(routerPortWiresFor(graph, positions));
+            var cards = routerCardsFor(positions);
+            routing = com.mervyn.miforeman.goal.EdgeRouter.route(requests, cards, 6, 3, routing);
+
+            if (routing.routes().size() != requests.size()) {
+                helper.fail("Move " + step + ": " + routing.routes().size() + " routes for " + requests.size() + " wires.");
+                return;
+            }
+            int routed = 0;
+            for (int i = 0; i < requests.size(); i++) {
+                var points = routing.routes().get(i).points();
+                var request = requests.get(i);
+                if (!points.get(0).equals(new com.mervyn.miforeman.goal.EdgeRouter.Point(request.fromX(), request.fromY()))
+                        || !points.get(points.size() - 1).equals(new com.mervyn.miforeman.goal.EdgeRouter.Point(request.toX(), request.toY()))) {
+                    helper.fail("Move " + step + ": wire " + i + " no longer ends at its ports: " + points);
+                    return;
+                }
+                if (routing.fallbacks().get(i))
+                    continue;
+                routed++;
+                if (routeClipsAnyCard(routing.routes().get(i), cards)) {
+                    helper.fail("Move " + step + ": wire " + i + " clips a card: " + points);
+                    return;
+                }
+            }
+            if (routed * 2 < requests.size()) {
+                helper.fail("Move " + step + ": only " + routed + " of " + requests.size() + " wires still route.");
+                return;
+            }
+        }
+        helper.succeed();
+    }
+
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID, timeoutTicks = 600)
     public static void testEdgeRouterOnRealGraphWithSpreadPorts(GameTestHelper helper) {
         var level = helper.getLevel();

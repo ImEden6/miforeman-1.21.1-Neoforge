@@ -4,9 +4,13 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
+import java.util.Set;
+
+import org.jetbrains.annotations.Nullable;
 
 /**
  * Grid-based A* wire router for GraphCanvas edges, adapted from gtnh-factory-flow's
@@ -98,6 +102,13 @@ public final class EdgeRouter {
     public record Route(List<Point> points, boolean fallback) {}
 
     /**
+     * One routing pass, kept so the next pass can reuse wires whose endpoints didn't move.
+     * {@code unpacked} is each wire before lane packing, since packing re-runs over every wire.
+     */
+    public record Routing(List<Request> requests, List<Obstacle> obstacles, List<List<Point>> unpacked,
+                          List<Boolean> fallbacks, List<Route> routes, int expansions, boolean exhausted) {}
+
+    /**
      * Routes every request around {@code obstacles}, in order, sharing one occupancy map so
      * later wires can bundle onto earlier ones. Returns one route per request, positionally.
      *
@@ -120,42 +131,134 @@ public final class EdgeRouter {
      */
     public static List<Route> route(List<Request> requests, List<Obstacle> obstacles, int gridSize, int laneGap,
             int maxTotalExpansions) {
+        return route(requests, obstacles, gridSize, laneGap, maxTotalExpansions, null).routes();
+    }
+
+    /**
+     * As {@link #route(List, List, int, int)}, reusing every wire from {@code previous} whose
+     * request is unchanged and that no newly placed card now sits on. Only the rest are searched,
+     * so moving one card re-routes its own wires instead of the whole graph.
+     */
+    public static Routing route(List<Request> requests, List<Obstacle> obstacles, int gridSize, int laneGap,
+            @Nullable Routing previous) {
+        return route(requests, obstacles, gridSize, laneGap, MAX_TOTAL_EXPANSIONS, previous);
+    }
+
+    public static Routing route(List<Request> requests, List<Obstacle> obstacles, int gridSize, int laneGap,
+            int maxTotalExpansions, @Nullable Routing previous) {
         if (gridSize <= 0)
             throw new IllegalArgumentException("gridSize must be positive, got " + gridSize);
         if (requests.isEmpty())
-            return List.of();
+            return new Routing(List.of(), List.copyOf(obstacles), List.of(), List.of(), List.of(), 0, false);
 
+        int n = requests.size();
+        int clearance = gridSize * CLEARANCE_CELLS;
         Grid grid = Grid.covering(requests, obstacles, gridSize);
         Map<Integer, Integer> usage = new HashMap<>();
         Search search = new Search(grid, maxTotalExpansions);
-        List<List<Point>> polylines = new ArrayList<>(requests.size());
-        List<Boolean> fallbacks = new ArrayList<>(requests.size());
-        for (Request request : requests) {
-            List<Point> routed = routeOne(request, grid, usage, search);
-            fallbacks.add(routed == null);
-            polylines.add(routed != null ? routed : elbowPoints(request));
+        List<List<Point>> polylines = new ArrayList<>(Collections.nCopies(n, null));
+        List<Boolean> fallbacks = new ArrayList<>(Collections.nCopies(n, false));
+
+        // An exhausted pass is all elbows; reusing it would pin the graph to elbows for good.
+        if (previous != null && !previous.exhausted() && previous.requests().size() == n) {
+            Set<Obstacle> before = new HashSet<>(previous.obstacles());
+            Set<Obstacle> now = new HashSet<>(obstacles);
+            List<Obstacle> added = obstacles.stream().filter(o -> !before.contains(o)).toList();
+            List<Obstacle> changed = new ArrayList<>(added);
+            previous.obstacles().stream().filter(o -> !now.contains(o)).forEach(changed::add);
+            for (int i = 0; i < n; i++) {
+                Request request = requests.get(i);
+                if (!request.equals(previous.requests().get(i)))
+                    continue;
+                List<Point> old = previous.unpacked().get(i);
+                if (previous.fallbacks().get(i)) {
+                    // Retry only when a card near it moved, since that may have opened a path.
+                    if (!overlapsAny(old, changed, clearance)) {
+                        polylines.set(i, new ArrayList<>(old));
+                        fallbacks.set(i, true);
+                    }
+                } else if (allClear(old, added, clearance)) {
+                    polylines.set(i, new ArrayList<>(old));
+                    markUsage(old, grid, usage);
+                }
+            }
+        }
+
+        for (int i = 0; i < n; i++) {
+            if (polylines.get(i) != null)
+                continue;
+            List<Point> routed = routeOne(requests.get(i), grid, usage, search);
+            fallbacks.set(i, routed == null);
+            polylines.set(i, routed != null ? routed : elbowPoints(requests.get(i)));
         }
 
         // Running out of budget mid-pass would leave the wires that happened to come first
-        // routed and the rest as elbows, which reads as a bug rather than a limit. Whether a
-        // given wire routes would depend on nothing more meaningful than its list position.
-        // Give up on the whole graph instead, which is exactly the old behavior and looks
-        // deliberate.
+        // routed and the rest as elbows, which reads as a bug rather than a limit. Give up on
+        // the whole graph instead, which is exactly the old behavior and looks deliberate.
         if (search.exhausted()) {
-            List<Route> allElbows = new ArrayList<>(requests.size());
-            for (Request request : requests)
+            List<List<Point>> elbows = new ArrayList<>(n);
+            List<Route> allElbows = new ArrayList<>(n);
+            for (Request request : requests) {
+                elbows.add(List.copyOf(elbowPoints(request)));
                 allElbows.add(elbow(request));
-            return allElbows;
+            }
+            return new Routing(List.copyOf(requests), List.copyOf(obstacles), elbows,
+                    List.copyOf(Collections.nCopies(n, true)), allElbows, search.totalExpansions, true);
         }
 
-
+        List<List<Point>> unpacked = new ArrayList<>(n);
+        List<List<Point>> packed = new ArrayList<>(n);
+        for (List<Point> polyline : polylines) {
+            unpacked.add(List.copyOf(polyline));
+            packed.add(new ArrayList<>(polyline));
+        }
         if (laneGap > 0)
-            packIntoLanes(polylines, fallbacks, laneGap, obstacles, gridSize * CLEARANCE_CELLS);
+            packIntoLanes(packed, fallbacks, laneGap, obstacles, clearance);
 
-        List<Route> routes = new ArrayList<>(requests.size());
-        for (int i = 0; i < polylines.size(); i++)
-            routes.add(new Route(List.copyOf(polylines.get(i)), fallbacks.get(i)));
-        return routes;
+        List<Route> routes = new ArrayList<>(n);
+        for (int i = 0; i < n; i++)
+            routes.add(new Route(List.copyOf(packed.get(i)), fallbacks.get(i)));
+        return new Routing(List.copyOf(requests), List.copyOf(obstacles), unpacked, List.copyOf(fallbacks), routes,
+                search.totalExpansions, false);
+    }
+
+    /** Every segment, port stubs included: a card dropped beside a port can cover a stub. */
+    private static boolean allClear(List<Point> points, List<Obstacle> obstacles, int clearance) {
+        if (obstacles.isEmpty())
+            return true;
+        for (int i = 0; i < points.size() - 1; i++)
+            if (!segmentClear(points.get(i), points.get(i + 1), obstacles, clearance))
+                return false;
+        return true;
+    }
+
+    private static boolean overlapsAny(List<Point> points, List<Obstacle> obstacles, int clearance) {
+        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE;
+        for (Point p : points) {
+            minX = Math.min(minX, p.x());
+            minY = Math.min(minY, p.y());
+            maxX = Math.max(maxX, p.x());
+            maxY = Math.max(maxY, p.y());
+        }
+        return !segmentClear(new Point(minX, minY), new Point(maxX, maxY), obstacles, clearance);
+    }
+
+    /** Counts a reused wire's cells as occupied, so new wires still bundle onto it. Cell
+     *  indices aren't kept between passes because the grid's origin can move. */
+    private static void markUsage(List<Point> points, Grid grid, Map<Integer, Integer> usage) {
+        for (int i = 0; i < points.size() - 1; i++) {
+            Point a = points.get(i);
+            Point b = points.get(i + 1);
+            int length = Math.max(Math.abs(b.x() - a.x()), Math.abs(b.y() - a.y()));
+            int steps = Math.max(1, length / grid.gridSize);
+            for (int step = 0; step <= steps; step++) {
+                int x = a.x() + (b.x() - a.x()) * step / steps;
+                int y = a.y() + (b.y() - a.y()) * step / steps;
+                int cell = grid.cellAt(grid.col(x), grid.row(y));
+                if (cell >= 0)
+                    usage.merge(cell, 1, Integer::sum);
+            }
+        }
     }
 
     /** Convenience overload using the grid size as the lane gap. */
@@ -247,7 +350,7 @@ public final class EdgeRouter {
                         .thenComparingInt(node -> node.state));
         private int currentStamp;
         /** Search work spent across every wire in this pass; see {@link #MAX_TOTAL_EXPANSIONS}. */
-        private int totalExpansions;
+        int totalExpansions;
         private final int maxTotalExpansions;
 
         /** Whether the pass has spent its whole budget, so remaining wires can skip straight

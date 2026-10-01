@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   straight through them, and wires sharing a corridor fan out side by side rather than
   overlapping into one line. A wire with nowhere sensible to go keeps its old straight
   connector.
+- Moving a card, undo and redo only re-route the wires that actually changed, removing the
+  brief hitch on very large graphs when a drag ends.
 - Wires sharing a side of a card now attach at separate points, ordered by where they're
   headed, so a machine feeding several others shows separate wires instead of one thick line.
 - Graph wires have a light outline, so where two cross the upper one visibly breaks the
