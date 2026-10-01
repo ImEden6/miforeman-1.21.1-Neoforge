@@ -178,7 +178,8 @@ public final class Simplex {
                 basis[r] = artificialOf[r];
             }
             tableau[r][columns + 1] = rhs[r];
-            tableau[r][columns] = rhs[r] + PERTURBATION * (1 + (r % 1000) / 1000.0);
+            tableau[r][columns] = rhs[r] + (absorbsNudge(rows[r], slackOf[r] >= 0)
+                    ? PERTURBATION * (1 + (r % 1000) / 1000.0) : 0);
         }
 
         State state = new State();
@@ -255,6 +256,17 @@ public final class Simplex {
             duals[r - eqCount] = tableauDual * rowFactor[r];
         }
         return new Solution(Status.OPTIMAL, x, value, perturbedValue, duals, state.pivots);
+    }
+
+    /** A row can take a +delta nudge only through a slack or a positive coefficient; one only
+     *  satisfiable at zero (all coefficients <= 0, rhs 0) would turn infeasible, so it stays exact. */
+    private static boolean absorbsNudge(double[] row, boolean hasSlack) {
+        if (hasSlack)
+            return true;
+        for (double v : row)
+            if (v > EPS)
+                return true;
+        return false;
     }
 
     private static Solution failed(Status status, State state) {

@@ -744,6 +744,13 @@ public class ForemanGameTests {
             return;
         }
 
+        // A row only satisfiable at zero (-x - y = 0) can't take the perturbation; the program is still feasible.
+        var zeroRow = lpSolve(new double[] { 0, 0, 1 }, List.of(lpRow(1, 1, 0, 1), lpRow(0, -1, -1, 0)), List.of());
+        if (zeroRow.status() != optimal || !lpNear(zeroRow.objective(), 1)) {
+            helper.fail("x + z = 1, -x - y = 0 is feasible (x = y = 0, z = 1), got " + zeroRow.status());
+            return;
+        }
+
         // Beale's example cycles forever under the plain Dantzig rule; the Bland fallback must end it at 1.25.
         var beale = lpSolve(new double[] { 0.75, -20, 0.5, -6 }, List.of(), List.of(
                 lpRow(0, 0.25, -8, -1, 9), lpRow(0, 0.5, -12, -0.5, 3), lpRow(1, 0, 0, 1, 0)));

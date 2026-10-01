@@ -38,7 +38,7 @@ public final class RecipeGraphTraverser {
         for (RecipeGraphNode node : graph.nodes().values()) {
             if (node.getType() == NodeType.MACHINE) {
                 ResourceLocation typeId = node.getMachineType();
-                if (typeId != null) {
+                if (typeId != null && node.getMachineCount() > 1e-9) {
                     machineMap.computeIfAbsent(typeId, MachineRequirementAccumulator::new)
                             .add(node.getMachineCount(), node.getBaseEuPerTick(), node.getTotalEuPerTick());
                 }

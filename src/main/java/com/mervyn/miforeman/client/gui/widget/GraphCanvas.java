@@ -144,6 +144,7 @@ public class GraphCanvas extends AbstractWidget {
     private Set<ResourceLocation> placeTargets = Set.of();
     private @Nullable com.mervyn.miforeman.goal.CapacitySolver.Result capacity;
     private Map<String, Integer> capacityCounts = Map.of();
+    private @Nullable Map<String, Integer> pendingCounts;
 
     public GraphCanvas(int x, int y, int width, int height, RecipeGraph graph,
             GraphLayoutState layoutState, double panX, double panY, float zoom,
@@ -239,12 +240,21 @@ public class GraphCanvas extends AbstractWidget {
         updateCapacity();
     }
 
-    /** Re-solved only when the per-node machine counts change, never on an unchanged poll. */
+    /** Re-solved only once changed machine counts hold still for a poll: counts shift as linked
+     *  machines' chunks load and unload, and solving on every shift stalled the screen while moving. */
     private void updateCapacity() {
         Map<String, Integer> counts = new java.util.TreeMap<>();
         liveStatusByRecipeId.forEach((id, summary) -> counts.put(id.toString(), summary.total()));
-        if (counts.equals(capacityCounts))
+        if (counts.equals(capacityCounts)) {
+            pendingCounts = null;
             return;
+        }
+        boolean firstReading = capacity == null && capacityCounts.isEmpty();
+        if (!firstReading && !counts.equals(pendingCounts)) {
+            pendingCounts = counts;
+            return;
+        }
+        pendingCounts = null;
         capacityCounts = counts;
         if (counts.isEmpty() || graph.planModel() == null) {
             capacity = null;
