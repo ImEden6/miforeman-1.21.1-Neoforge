@@ -456,6 +456,14 @@ public class DetailCard extends AbstractWidget {
                 }
             }
 
+            if (plan.graph() != null && plan.graph().unsourcedResourceIds().contains(node.getId())) {
+                currentY += 8;
+                guiGraphics.drawString(fontSource.font, "⚠ This loop has no outside input.", getX() + 6, currentY, COLOUR_AMBER, false);
+                currentY += 10;
+                guiGraphics.drawString(fontSource.font, "Pick a recipe that brings one in.", getX() + 10, currentY, COLOUR_MUTED, false);
+                currentY += 10;
+            }
+
             // Recipe Ambiguity Cycle Button
             if (!node.getAmbiguityOptions().isEmpty()) {
                 currentY += 8;

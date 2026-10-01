@@ -531,9 +531,31 @@ public class ForemanGameTests {
             }
         }
 
-        if (graph.edges().size() != 864) {
-            helper.fail("Expected 864 edges in the quantum_upgrade graph, but got: " + graph.edges().size()
+        // 864 demand edges, plus 15 byproduct edges where the plan LP routes a byproduct to a
+        // resource the plan already needs. The LP never adds nodes, only those machine -> resource edges.
+        var propagated = RecipeGraphTraverser.computeRecipeGraphUncached(level, goal, RecipeGraphTraverser.SolveMode.PROPAGATION_ONLY);
+        if (propagated.edges().size() != 864) {
+            helper.fail("Expected 864 demand edges in the propagated quantum_upgrade graph, but got: " + propagated.edges().size()
                     + ". If this changed intentionally, e.g. an MI recipe update, update this snapshot.");
+            return;
+        }
+        java.util.Set<List<ResourceLocation>> demandPairs = new java.util.HashSet<>();
+        for (var edge : propagated.edges())
+            demandPairs.add(List.of(edge.from(), edge.to()));
+        for (var edge : graph.edges()) {
+            if (demandPairs.contains(List.of(edge.from(), edge.to())))
+                continue;
+            var from = graph.node(edge.from());
+            var to = graph.node(edge.to());
+            if (from == null || to == null || from.getType() != com.mervyn.miforeman.goal.NodeType.MACHINE
+                    || to.getType() == com.mervyn.miforeman.goal.NodeType.MACHINE) {
+                helper.fail("The plan LP added an edge that isn't machine -> resource: " + edge);
+                return;
+            }
+        }
+        if (graph.edges().size() != 879) {
+            helper.fail("Expected 879 edges (864 demand + 15 byproduct) in the quantum_upgrade graph, but got: "
+                    + graph.edges().size() + ". If this changed intentionally, update this snapshot.");
             return;
         }
         if (graph.nodes().size() != 588) {
@@ -661,9 +683,319 @@ public class ForemanGameTests {
     }
 
     /** Verifies {@code RecipeGraphTraverser.collectByproductRates}, which powers the DetailCard
-     *  byproducts panel. Every returned rate must be positive, no returned resource ID may already
-     *  be tracked as a demanded resource elsewhere in the graph, and complex recipe chains must
+     *  byproducts panel. It reports real surplus, so a resource the plan uses only part of shows up
+     *  too: every rate must be positive and match the graph's stored surplus, and complex chains must
      *  produce at least one genuine byproduct. */
+    private static com.mervyn.miforeman.goal.lp.Simplex.Row lpRow(double rhs, double... coefficients) {
+        return new com.mervyn.miforeman.goal.lp.Simplex.Row(coefficients, rhs);
+    }
+
+    private static com.mervyn.miforeman.goal.lp.Simplex.Solution lpSolve(double[] maximize,
+            List<com.mervyn.miforeman.goal.lp.Simplex.Row> equalities, List<com.mervyn.miforeman.goal.lp.Simplex.Row> upperBounds) {
+        return com.mervyn.miforeman.goal.lp.Simplex.solve(
+                new com.mervyn.miforeman.goal.lp.Simplex.Program(maximize, equalities, upperBounds));
+    }
+
+    private static boolean lpNear(double a, double b) {
+        return Math.abs(a - b) <= 1e-7 * (1 + Math.abs(b));
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testSimplexKnownOptimaAndDuals(GameTestHelper helper) {
+        var optimal = com.mervyn.miforeman.goal.lp.Simplex.Status.OPTIMAL;
+        // Textbook: max 3x + 5y, x <= 4, 2y <= 12, 3x + 2y <= 18 -> 36 at (2, 6), duals (0, 1.5, 1).
+        var textbook = lpSolve(new double[] { 3, 5 }, List.of(),
+                List.of(lpRow(4, 1, 0), lpRow(12, 0, 2), lpRow(18, 3, 2)));
+        if (textbook.status() != optimal || !lpNear(textbook.objective(), 36) || !lpNear(textbook.x()[0], 2)
+                || !lpNear(textbook.x()[1], 6)) {
+            helper.fail("Textbook LP should reach 36 at (2, 6), got " + textbook.status() + " " + textbook.objective()
+                    + " " + java.util.Arrays.toString(textbook.x()));
+            return;
+        }
+        double[] duals = textbook.upperBoundDuals();
+        if (!lpNear(duals[0], 0) || !lpNear(duals[1], 1.5) || !lpNear(duals[2], 1)) {
+            helper.fail("Textbook duals should be (0, 1.5, 1), got " + java.util.Arrays.toString(duals));
+            return;
+        }
+
+        // Equality rows: max x + y with x + 2y = 4, x <= 3 -> 3.5 at (3, 0.5).
+        var withEquality = lpSolve(new double[] { 1, 1 }, List.of(lpRow(4, 1, 2)), List.of(lpRow(3, 1, 0)));
+        if (withEquality.status() != optimal || !lpNear(withEquality.objective(), 3.5)) {
+            helper.fail("Equality LP should reach 3.5, got " + withEquality.status() + " " + withEquality.objective());
+            return;
+        }
+
+        // A <= row with negative rhs is a >= row: max -x with x >= 2 -> x = 2.
+        var flipped = lpSolve(new double[] { -1 }, List.of(), List.of(lpRow(-2, -1)));
+        if (flipped.status() != optimal || !lpNear(flipped.x()[0], 2)) {
+            helper.fail("x >= 2 minimising x should give x = 2, got " + flipped.status() + " "
+                    + java.util.Arrays.toString(flipped.x()));
+            return;
+        }
+
+        var infeasible = lpSolve(new double[] { 1, 1 }, List.of(lpRow(5, 1, 1)), List.of(lpRow(1, 1, 0), lpRow(1, 0, 1)));
+        if (infeasible.status() != com.mervyn.miforeman.goal.lp.Simplex.Status.INFEASIBLE) {
+            helper.fail("x + y = 5 with x, y <= 1 should be infeasible, got " + infeasible.status());
+            return;
+        }
+        var unbounded = lpSolve(new double[] { 1, 0 }, List.of(), List.of(lpRow(1, 1, -1)));
+        if (unbounded.status() != com.mervyn.miforeman.goal.lp.Simplex.Status.UNBOUNDED) {
+            helper.fail("max x with x - y <= 1 should be unbounded, got " + unbounded.status());
+            return;
+        }
+
+        // Beale's example cycles forever under the plain Dantzig rule; the Bland fallback must end it at 1.25.
+        var beale = lpSolve(new double[] { 0.75, -20, 0.5, -6 }, List.of(), List.of(
+                lpRow(0, 0.25, -8, -1, 9), lpRow(0, 0.5, -12, -0.5, 3), lpRow(1, 0, 0, 1, 0)));
+        if (beale.status() != optimal || !lpNear(beale.objective(), 1.25)) {
+            helper.fail("Beale's cycling LP should finish at 1.25, got " + beale.status() + " " + beale.objective());
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testStagedLpLocksEarlierStages(GameTestHelper helper) {
+        // Stage 1: max x + y with x + y <= 4, x <= 3. Stage 2 then prefers x, but must keep x + y = 4.
+        var result = com.mervyn.miforeman.goal.lp.StagedLp.solve(List.of(), List.of(lpRow(4, 1, 1), lpRow(3, 1, 0)), List.of(
+                com.mervyn.miforeman.goal.lp.StagedLp.Stage.maximize(new double[] { 1, 1 }),
+                com.mervyn.miforeman.goal.lp.StagedLp.Stage.minimize(new double[] { 0, 1 })));
+        if (!result.ok() || result.stagesSolved() != 2) {
+            helper.fail("Both stages should solve, got " + result.stagesSolved());
+            return;
+        }
+        double[] x = result.solution().x();
+        // The lock is a 1e-7 relative band, so stage 2 may shave that much off stage 1's total.
+        if (x[0] + x[1] < 4 - 1e-6 || Math.abs(x[0] - 3) > 1e-6 || Math.abs(x[1] - 1) > 1e-6) {
+            helper.fail("Stage 2 must not give up stage 1's total of 4: got " + java.util.Arrays.toString(x));
+            return;
+        }
+        helper.succeed();
+    }
+
+    private static com.mervyn.miforeman.goal.PlanSolver.Recipe planRecipe(String id, double duration,
+            Map<String, Double> inputs, Map<String, Double> outputs) {
+        return new com.mervyn.miforeman.goal.PlanSolver.Recipe(id, duration, inputs, outputs);
+    }
+
+    /** Null when every resource balances: produced + imported + free loop supply - consumed - surplus = demand. */
+    private static String planImbalance(com.mervyn.miforeman.goal.PlanSolver.Model model,
+            com.mervyn.miforeman.goal.PlanSolver.Result result) {
+        Map<String, Double> net = new java.util.TreeMap<>();
+        Map<String, Double> scale = new java.util.TreeMap<>();
+        for (var recipe : model.recipes()) {
+            double runs = result.runs().getOrDefault(recipe.id(), 0.0);
+            recipe.outputs().forEach((k, v) -> { net.merge(k, runs * v, Double::sum); scale.merge(k, Math.abs(runs * v), Double::sum); });
+            recipe.inputs().forEach((k, v) -> { net.merge(k, -runs * v, Double::sum); scale.merge(k, Math.abs(runs * v), Double::sum); });
+        }
+        result.imports().forEach((k, v) -> net.merge(k, v, Double::sum));
+        result.loopSupply().forEach((k, v) -> net.merge(k, v, Double::sum));
+        result.surplus().forEach((k, v) -> net.merge(k, -v, Double::sum));
+        for (var e : net.entrySet()) {
+            double demand = e.getKey().equals(model.target()) ? model.targetRate() : 0.0;
+            if (Math.abs(e.getValue() - demand) > 1e-6 * (1 + scale.getOrDefault(e.getKey(), 0.0) + demand))
+                return e.getKey() + " nets " + e.getValue() + " against a demand of " + demand;
+        }
+        for (var v : result.runs().values())
+            if (v < 0)
+                return "a negative run rate " + v;
+        return null;
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testPlanSolverSyntheticCases(GameTestHelper helper) {
+        // Byproduct netting: making A also gives off H, which the target recipe needs.
+        var netting = new com.mervyn.miforeman.goal.PlanSolver.Model(List.of(
+                planRecipe("t", 100, Map.of("item:a", 1.0, "item:h", 1.0), Map.of("item:t", 1.0)),
+                planRecipe("a", 100, Map.of("item:x", 1.0), Map.of("item:a", 1.0, "item:h", 1.0))),
+                Set.of("item:x", "item:h"), "item:t", 10.0, List.of());
+        var nettingResult = com.mervyn.miforeman.goal.PlanSolver.solve(netting);
+        if (nettingResult == null || nettingResult.imports().get("item:h") > 1e-9 || planImbalance(netting, nettingResult) != null) {
+            helper.fail("A byproduct the plan needs should be used before importing it: "
+                    + (nettingResult == null ? "no solution" : nettingResult.imports() + " / " + planImbalance(netting, nettingResult)));
+            return;
+        }
+
+        // Co-production: one electrolyser run gives both H and O, so it runs once per target, not twice.
+        var coProduct = new com.mervyn.miforeman.goal.PlanSolver.Model(List.of(
+                planRecipe("t", 100, Map.of("item:h", 2.0, "item:o", 1.0), Map.of("item:t", 1.0)),
+                planRecipe("e", 100, Map.of("fluid:w", 2.0), Map.of("item:h", 2.0, "item:o", 1.0))),
+                Set.of("fluid:w"), "item:t", 5.0, List.of());
+        var coResult = com.mervyn.miforeman.goal.PlanSolver.solve(coProduct);
+        if (coResult == null || Math.abs(coResult.runs().get("e") - 5.0) > 1e-9) {
+            helper.fail("Co-produced H and O should share one electrolyser run per target: "
+                    + (coResult == null ? "no solution" : coResult.runs()));
+            return;
+        }
+
+        // A loop with an outside source: ingots packed from nuggets, nuggets unpacked from ingots, but
+        // nuggets can also be bought. The loop must not run; nuggets get bought.
+        var packer = planRecipe("pack", 100, Map.of("item:nugget", 9.0), Map.of("item:ingot", 1.0));
+        var unpacker = planRecipe("unpack", 100, Map.of("item:ingot", 1.0), Map.of("item:nugget", 9.0));
+        var backEdge = new com.mervyn.miforeman.goal.PlanSolver.BackEdge("unpack", "item:ingot");
+        var sourced = new com.mervyn.miforeman.goal.PlanSolver.Model(List.of(packer, unpacker), Set.of("item:nugget"),
+                "item:ingot", 4.0, List.of(backEdge));
+        var sourcedResult = com.mervyn.miforeman.goal.PlanSolver.solve(sourced);
+        if (sourcedResult == null || sourcedResult.runs().get("unpack") > 1e-9 || !sourcedResult.unsourced().isEmpty()
+                || planImbalance(sourced, sourcedResult) != null) {
+            helper.fail("A loop with an outside source should not run or be flagged: "
+                    + (sourcedResult == null ? "no solution" : sourcedResult.runs() + " " + sourcedResult.unsourced()));
+            return;
+        }
+
+        // The same loop with no way in plans as the old propagation did, and is flagged.
+        var unsourced = new com.mervyn.miforeman.goal.PlanSolver.Model(List.of(packer, unpacker), Set.of(),
+                "item:ingot", 4.0, List.of(backEdge));
+        var unsourcedResult = com.mervyn.miforeman.goal.PlanSolver.solve(unsourced);
+        if (unsourcedResult == null || !unsourcedResult.unsourced().contains("item:ingot")
+                || Math.abs(unsourcedResult.runs().get("pack") - 4.0) > 1e-9 || planImbalance(unsourced, unsourcedResult) != null) {
+            helper.fail("A loop with no way in should be flagged and still plan its machines: "
+                    + (unsourcedResult == null ? "no solution" : unsourcedResult.runs() + " " + unsourcedResult.unsourced()));
+            return;
+        }
+
+        // A recipe returning more of its input than it eats needs none of that input from outside,
+        // and the excess is surplus, never a negative import.
+        var selfFeeding = new com.mervyn.miforeman.goal.PlanSolver.Model(List.of(
+                planRecipe("dup", 100, Map.of("item:y", 1.0), Map.of("item:y", 2.0, "item:t", 1.0))),
+                Set.of("item:y"), "item:t", 3.0, List.of());
+        var selfResult = com.mervyn.miforeman.goal.PlanSolver.solve(selfFeeding);
+        if (selfResult == null || selfResult.imports().get("item:y") > 1e-9
+                || Math.abs(selfResult.surplus().get("item:y") - 3.0) > 1e-9) {
+            helper.fail("A self-feeding recipe should import nothing and leave its excess as surplus: "
+                    + (selfResult == null ? "no solution" : selfResult.imports() + " " + selfResult.surplus()));
+            return;
+        }
+
+        // An item byproduct never covers a same-named fluid demand.
+        var collision = new com.mervyn.miforeman.goal.PlanSolver.Model(List.of(
+                planRecipe("t", 100, Map.of("fluid:h", 1000.0, "item:a", 1.0), Map.of("item:t", 1.0)),
+                planRecipe("a", 100, Map.of("item:x", 1.0), Map.of("item:a", 1.0, "item:h", 1.0))),
+                Set.of("item:x", "fluid:h"), "item:t", 2.0, List.of());
+        var collisionResult = com.mervyn.miforeman.goal.PlanSolver.solve(collision);
+        if (collisionResult == null || Math.abs(collisionResult.imports().get("fluid:h") - 2000.0) > 1e-6) {
+            helper.fail("An item byproduct reduced a same-named fluid import: "
+                    + (collisionResult == null ? "no solution" : collisionResult.imports()));
+            return;
+        }
+
+        // Model order never changes the answer or the pivots taken.
+        var reordered = new com.mervyn.miforeman.goal.PlanSolver.Model(List.of(unpacker, packer), Set.of("item:nugget"),
+                "item:ingot", 4.0, List.of(backEdge));
+        var reorderedResult = com.mervyn.miforeman.goal.PlanSolver.solve(reordered);
+        if (reorderedResult == null || !reorderedResult.runs().equals(sourcedResult.runs())
+                || reorderedResult.pivots() != sourcedResult.pivots()) {
+            helper.fail("Reordering the model changed the plan: " + sourcedResult.runs() + " vs "
+                    + (reorderedResult == null ? "no solution" : reorderedResult.runs()));
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID, timeoutTicks = 600)
+    public static void testPlanLpMatchesPropagationWhereItWasExact(GameTestHelper helper) {
+        var level = helper.getLevel();
+        // A scan of all 721 MI items with a recipe (2026-10-01) found only these two plans of 7+ nodes
+        // with no loop or shared output; every other plan runs the LP. If an MI update couples them,
+        // rescan for replacements rather than dropping the check.
+        List<String> candidates = List.of("modern_industrialization:cadmium_rod", "modern_industrialization:cadmium_tiny_dust");
+        int compared = 0;
+        for (String id : candidates) {
+            var goal = new ProductionGoal("lp_regression", ProductionGoal.TargetType.ITEM, ResourceLocation.parse(id), 30.0);
+            if (RecipeGraphTraverser.planIsCoupled(level, goal))
+                continue;
+            compared++;
+            var propagated = RecipeGraphTraverser.computeRecipeGraphUncached(level, goal, RecipeGraphTraverser.SolveMode.PROPAGATION_ONLY);
+            var solved = RecipeGraphTraverser.computeRecipeGraphUncached(level, goal, RecipeGraphTraverser.SolveMode.FORCE_LP);
+            for (var node : propagated.nodes().values()) {
+                var other = solved.node(node.getId());
+                if (other == null || Math.abs(other.getRequiredRate() - node.getRequiredRate()) > 1e-6 * (1 + node.getRequiredRate())
+                        || Math.abs(other.getMachineCount() - node.getMachineCount()) > 1e-6 * (1 + node.getMachineCount())) {
+                    helper.fail(id + ": the LP disagrees with the exact propagation at " + node.getId() + ": "
+                            + node.getRequiredRate() + "/" + node.getMachineCount() + " vs "
+                            + (other == null ? "missing" : other.getRequiredRate() + "/" + other.getMachineCount()));
+                    return;
+                }
+            }
+            if (propagated.edges().size() != solved.edges().size()) {
+                helper.fail(id + ": the LP changed the structure of a graph with no loops or shared outputs.");
+                return;
+            }
+        }
+        if (compared < candidates.size()) {
+            helper.fail("Only " + compared + " of the pinned uncoupled targets are still uncoupled; rescan for replacements.");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID, timeoutTicks = 600)
+    public static void testPlanLpConservesEveryResource(GameTestHelper helper) {
+        var level = helper.getLevel();
+        for (String id : List.of("modern_industrialization:iron_plate", "modern_industrialization:quantum_upgrade")) {
+            var goal = new ProductionGoal("lp_conservation", ProductionGoal.TargetType.ITEM, ResourceLocation.parse(id), 60.0);
+            var model = RecipeGraphTraverser.planModel(level, goal);
+            long start = System.nanoTime();
+            var result = com.mervyn.miforeman.goal.PlanSolver.solve(model);
+            long micros = (System.nanoTime() - start) / 1000;
+            if (result == null) {
+                helper.fail(id + ": the plan LP found no solution.");
+                return;
+            }
+            MIForeman.LOGGER.info("Plan LP for {}: {} recipes, {} pivots, {} us", id, model.recipes().size(), result.pivots(), micros);
+            String imbalance = planImbalance(model, result);
+            if (imbalance != null) {
+                helper.fail(id + ": " + imbalance);
+                return;
+            }
+            // About 1,700 pivots on quantum_upgrade today; the ceiling catches a solver that stops converging.
+            if (result.pivots() > 5000) {
+                helper.fail(id + ": the plan LP took " + result.pivots() + " pivots, past the 5000 ceiling.");
+                return;
+            }
+            // Client and server build the model separately, so its order must never matter.
+            List<com.mervyn.miforeman.goal.PlanSolver.Recipe> shuffled = new java.util.ArrayList<>(model.recipes());
+            java.util.Collections.shuffle(shuffled, new java.util.Random(42));
+            var reordered = com.mervyn.miforeman.goal.PlanSolver.solve(new com.mervyn.miforeman.goal.PlanSolver.Model(
+                    shuffled, model.raw(), model.target(), model.targetRate(), model.backEdges()));
+            if (reordered == null || !reordered.runs().equals(result.runs()) || reordered.pivots() != result.pivots()) {
+                helper.fail(id + ": shuffling the model's recipe order changed the plan or the pivots taken.");
+                return;
+            }
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testPlanFallsBackWhenTheLpFails(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var goal = new ProductionGoal("lp_fallback", ProductionGoal.TargetType.ITEM,
+                ResourceLocation.parse("modern_industrialization:iron_plate"), 60.0);
+        var propagated = RecipeGraphTraverser.computeRecipeGraphUncached(level, goal, RecipeGraphTraverser.SolveMode.PROPAGATION_ONLY);
+        var failed = RecipeGraphTraverser.computeRecipeGraphUncached(level, goal, RecipeGraphTraverser.SolveMode.FAIL_LP);
+        if (failed.nodes().size() != propagated.nodes().size() || failed.edges().size() != propagated.edges().size()) {
+            helper.fail("A failed LP must leave the propagated graph intact.");
+            return;
+        }
+        for (var node : propagated.nodes().values()) {
+            if (failed.node(node.getId()).getMachineCount() != node.getMachineCount()
+                    || failed.node(node.getId()).getRequiredRate() != node.getRequiredRate()) {
+                helper.fail("A failed LP changed " + node.getId() + "'s rates instead of keeping the propagated ones.");
+                return;
+            }
+        }
+        // Zero-rate flows never reach the plan lists, so nothing shows as "0/min".
+        var acid = RecipeGraphTraverser.computePlan(level, new ProductionGoal("lp_zero_flows", ProductionGoal.TargetType.FLUID,
+                ResourceLocation.parse("modern_industrialization:sulfuric_acid"), 10.0));
+        for (var flow : acid.rawInputs()) {
+            if (flow.rate() <= 0) {
+                helper.fail("A zero-rate raw input reached the plan: " + flow);
+                return;
+            }
+        }
+        helper.succeed();
+    }
+
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testMachineCountUsesPerMinuteRates(GameTestHelper helper) {
         var level = helper.getLevel();
@@ -711,9 +1043,9 @@ public class ForemanGameTests {
                         + " has: " + rate);
                 return;
             }
-            if (graph.nodes().containsKey(id)) {
-                helper.fail("Expected collectByproductRates to exclude " + id
-                        + ": it is already tracked as a demanded resource elsewhere in the graph.");
+            if (Math.abs(graph.surplusRates().getOrDefault(id, 0.0) - rate) > 1e-9) {
+                helper.fail("collectByproductRates reported " + rate + " for " + id + " but the graph's surplus is "
+                        + graph.surplusRates().get(id));
                 return;
             }
         }
@@ -943,19 +1275,21 @@ public class ForemanGameTests {
             helper.fail("Expected non-empty machine requirements for FLUID target " + targetId);
             return;
         }
-        if (plan.rawInputs().isEmpty()) {
-            helper.fail("Expected non-empty raw inputs for FLUID target " + targetId);
-            return;
-        }
-
-        boolean anyNonZeroRawInput = plan.rawInputs().stream()
-                .anyMatch(flow -> flow.rate() > 0);
-        if (!anyNonZeroRawInput) {
-            helper.fail("Expected at least one raw input with a non-zero rate for FLUID target " + targetId);
-            return;
-        }
-
         com.mervyn.miforeman.goal.RecipeGraph graph = RecipeGraphTraverser.computeRecipeGraph(level, goal);
+
+        // With MI's default recipes sulfuric acid is a closed loop: the chemical reactor takes water,
+        // oxygen and sulfur dust, and the default sulfur dust recipe electrolyses acid back into
+        // exactly those. A plan must either import something or say the loop has no way in.
+        boolean anyNonZeroRawInput = plan.rawInputs().stream().anyMatch(flow -> flow.rate() > 0);
+        if (!anyNonZeroRawInput && graph.unsourcedResourceIds().isEmpty()) {
+            helper.fail("The FLUID target " + targetId + " neither imports anything nor flags a loop with no outside input.");
+            return;
+        }
+        if (!graph.unsourcedResourceIds().contains(targetId)) {
+            helper.fail("Expected the default sulfuric acid loop to be flagged as having no outside input, got "
+                    + graph.unsourcedResourceIds());
+            return;
+        }
         if (graph.nodes().isEmpty()) {
             helper.fail("Expected non-empty node set in the recipe graph for FLUID target " + targetId);
             return;
@@ -2241,8 +2575,8 @@ public class ForemanGameTests {
         // Confirm the flag going back off restores the pinned snapshot, ensuring the
         // toggle has no lingering side effects on GRAPH_CACHE or recipe indexing.
         var graphRestored = RecipeGraphTraverser.computeRecipeGraph(level, goal);
-        if (graphRestored.nodes().size() != 588 || graphRestored.edges().size() != 864) {
-            helper.fail("Expected graph to return to the pinned 588 nodes/864 edges after disabling "
+        if (graphRestored.nodes().size() != 588 || graphRestored.edges().size() != 879) {
+            helper.fail("Expected graph to return to the pinned 588 nodes/879 edges after disabling "
                     + "includeProxiedRecipeTypes again, but got: " + graphRestored.nodes().size()
                     + " nodes / " + graphRestored.edges().size() + " edges.");
             return;

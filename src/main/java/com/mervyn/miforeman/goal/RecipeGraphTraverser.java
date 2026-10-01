@@ -42,6 +42,8 @@ public final class RecipeGraphTraverser {
                     machineMap.computeIfAbsent(typeId, MachineRequirementAccumulator::new)
                             .add(node.getMachineCount(), node.getBaseEuPerTick(), node.getTotalEuPerTick());
                 }
+            } else if (node.getRequiredRate() <= 1e-9) {
+                // Fully covered by byproducts, or a loop member the plan doesn't run: nothing to list.
             } else if (node.getType() == NodeType.RAW) {
                 rawInputs.add(new MaterialFlow(getItemOrFluidType(node.getId()), node.getId(), node.getRequiredRate()));
             } else {
@@ -337,28 +339,12 @@ public final class RecipeGraphTraverser {
      *  probability per craft, scaled by duration). Resources already tracked elsewhere in the graph
      *  are excluded because the plan already relies on them. */
     public static Map<ResourceLocation, Double> collectByproductRates(RecipeGraph graph) {
-        Map<ResourceLocation, Double> byproductRates = new LinkedHashMap<>();
-        for (RecipeGraphNode machineNode : graph.nodes().values()) {
-            if (machineNode.getType() != NodeType.MACHINE) continue;
-            MachineRecipe recipe = machineNode.getRecipe();
-            double machineCount = machineNode.getMachineCount();
-            if (recipe == null || machineCount <= 0 || recipe.duration <= 0) continue;
-
-            // 1200 ticks/minute, matching ServerMonitoringManager.getActualRates.
-            double runsPerMinute = machineCount * 1200.0 / recipe.duration;
-
-            for (var out : recipe.itemOutputs) {
-                ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(out.variant().getItem());
-                if (graph.nodes().containsKey(itemId)) continue;
-                byproductRates.merge(itemId, runsPerMinute * out.amount() * out.probability(), Double::sum);
-            }
-            for (var out : recipe.fluidOutputs) {
-                ResourceLocation fluidId = BuiltInRegistries.FLUID.getKey(out.fluid());
-                if (graph.nodes().containsKey(fluidId)) continue;
-                byproductRates.merge(fluidId, runsPerMinute * out.amount() * out.probability(), Double::sum);
-            }
-        }
-        return byproductRates;
+        Map<ResourceLocation, Double> rates = new LinkedHashMap<>();
+        graph.surplusRates().forEach((id, rate) -> {
+            if (rate > 1e-9)
+                rates.put(id, rate);
+        });
+        return rates;
     }
 
     /** Every item/fluid resource id a recipe touches, inputs and outputs combined. Ignores rates
@@ -384,6 +370,10 @@ public final class RecipeGraphTraverser {
         return ids;
     }
 
+    /** How rates get solved. AUTO runs the LP only when the plan's recipes form loops or share
+     *  outputs; the rest exist so tests can pin each path. */
+    public enum SolveMode { AUTO, FORCE_LP, PROPAGATION_ONLY, FAIL_LP }
+
     public static RecipeGraph computeRecipeGraph(Level level, ProductionGoal goal) {
         GraphCacheKey key = new GraphCacheKey(goal.type(), goal.targetId(), goal.rate(),
                 new HashMap<>(goal.recipeSelections()));
@@ -394,7 +384,27 @@ public final class RecipeGraphTraverser {
                 return cached.copy();
             }
         }
+        RecipeGraph result = computeRecipeGraphUncached(level, goal, SolveMode.AUTO);
+        synchronized (GRAPH_CACHE) {
+            GRAPH_CACHE.put(key, result);
+        }
+        return result.copy();
+    }
 
+    /** The propagated graph before any LP, with what the LP needs to model it. */
+    private record Built(Map<ResourceLocation, StructuralNode> structNodes, Map<ResourceLocation, RecipeGraphNode> nodes,
+                         Map<EdgeKey, GraphEdge> edges, Set<ResourceLocation> cyclicResourceIds,
+                         List<ResourceLocation[]> backEdges, PlanKeys keys) {
+        boolean coupled() {
+            return !cyclicResourceIds.isEmpty() || keys.hasDemandedByproduct(nodes);
+        }
+
+        PlanSolver.Model model(ProductionGoal goal) {
+            return keys.model(goal, nodes, backEdges, structNodes);
+        }
+    }
+
+    private static Built build(Level level, ProductionGoal goal) {
         RecipeManager recipeManager = level.getRecipeManager();
 
         RecipeIndex index = ensureRecipeIndex(level, recipeManager);
@@ -410,7 +420,41 @@ public final class RecipeGraphTraverser {
         Map<ResourceLocation, RecipeGraphNode> nodes = new HashMap<>();
         Map<EdgeKey, GraphEdge> edges = new LinkedHashMap<>();
         Set<ResourceLocation> cyclicResourceIds = new HashSet<>();
-        propagateRates(goal.targetId(), goal.rate(), 0, structNodes, nodes, edges, cyclicResourceIds);
+        List<ResourceLocation[]> backEdges = new ArrayList<>();
+        propagateRates(goal.targetId(), goal.rate(), 0, structNodes, nodes, edges, cyclicResourceIds, backEdges);
+        return new Built(structNodes, nodes, edges, cyclicResourceIds, backEdges, PlanKeys.of(goal, nodes));
+    }
+
+    /** The LP model a goal's plan is solved with, for tests that check the solution against it. */
+    public static PlanSolver.Model planModel(Level level, ProductionGoal goal) {
+        return build(level, goal).model(goal);
+    }
+
+    /** Whether a goal's plan needs the LP: its recipes form a loop, or a chosen recipe puts out
+     *  something the plan demands elsewhere. */
+    public static boolean planIsCoupled(Level level, ProductionGoal goal) {
+        return build(level, goal).coupled();
+    }
+
+    public static RecipeGraph computeRecipeGraphUncached(Level level, ProductionGoal goal, SolveMode mode) {
+        Built built = build(level, goal);
+        Map<ResourceLocation, RecipeGraphNode> nodes = built.nodes();
+        Map<EdgeKey, GraphEdge> edges = built.edges();
+        Set<ResourceLocation> cyclicResourceIds = built.cyclicResourceIds();
+        PlanKeys keys = built.keys();
+        Map<ResourceLocation, Double> surplusRates = propagationSurplus(nodes);
+        Set<ResourceLocation> unsourced = Set.of();
+        if (mode == SolveMode.FORCE_LP || mode == SolveMode.FAIL_LP || (mode == SolveMode.AUTO && built.coupled())) {
+            PlanSolver.Result solved = mode == SolveMode.FAIL_LP ? null : PlanSolver.solve(built.model(goal));
+            if (solved != null) {
+                applyPlanSolution(goal, keys, solved, nodes, edges);
+                surplusRates = keys.toIds(solved.surplus());
+                unsourced = keys.toIds(solved.unsourced());
+            } else if (mode != SolveMode.FAIL_LP) {
+                com.mervyn.miforeman.MIForeman.LOGGER.warn(
+                        "Plan LP for {} found no solution; keeping the propagated rates.", goal.targetId());
+            }
+        }
 
         for (GraphEdge edge : edges.values()) {
             RecipeGraphNode fromNode = nodes.get(edge.from());
@@ -421,11 +465,194 @@ public final class RecipeGraphTraverser {
                 toNode.putInput(edge);
         }
 
-        RecipeGraph result = new RecipeGraph(goal.targetId(), goal.rate(), nodes, new ArrayList<>(edges.values()), cyclicResourceIds);
-        synchronized (GRAPH_CACHE) {
-            GRAPH_CACHE.put(key, result);
+        return new RecipeGraph(goal.targetId(), goal.rate(), nodes, new ArrayList<>(edges.values()), cyclicResourceIds,
+                surplusRates, unsourced);
+    }
+
+    /** Typed LP resource keys ({@code item:}/{@code fluid:}) for the graph's resources, read from how
+     *  recipes actually reference them, so a node is never keyed by a registry guess. */
+    private record PlanKeys(Map<ResourceLocation, String> keyOf, Map<String, ResourceLocation> idOf) {
+        static PlanKeys of(ProductionGoal goal, Map<ResourceLocation, RecipeGraphNode> nodes) {
+            Map<ResourceLocation, String> keyOf = new HashMap<>();
+            Map<String, ResourceLocation> idOf = new HashMap<>();
+            keyOf.put(goal.targetId(), typed(goal.type(), goal.targetId()));
+            for (RecipeGraphNode node : nodes.values()) {
+                if (node.getType() != NodeType.MACHINE || node.getRecipe() == null)
+                    continue;
+                for (var e : inputsOf(node.getRecipe()).keySet())
+                    keyOf.putIfAbsent(idOfKey(e), e);
+                for (var e : outputsOf(node.getRecipe()).keySet()) {
+                    ResourceLocation id = idOfKey(e);
+                    if (nodes.containsKey(id) && nodes.get(id).getType() != NodeType.MACHINE && id.equals(node.getAmbiguityOwnerId()))
+                        keyOf.putIfAbsent(id, e);
+                }
+            }
+            keyOf.forEach((id, key) -> idOf.put(key, id));
+            return new PlanKeys(keyOf, idOf);
         }
-        return result.copy();
+
+        boolean isGraphResource(String key, Map<ResourceLocation, RecipeGraphNode> nodes) {
+            ResourceLocation id = idOf.get(key);
+            return id != null && nodes.containsKey(id) && nodes.get(id).getType() != NodeType.MACHINE;
+        }
+
+        /** A chosen recipe putting out a resource the plan demands elsewhere, besides its own product:
+         *  a byproduct the old propagation ignored, or two resources sharing one recipe. */
+        boolean hasDemandedByproduct(Map<ResourceLocation, RecipeGraphNode> nodes) {
+            for (RecipeGraphNode node : nodes.values()) {
+                if (node.getType() != NodeType.MACHINE || node.getRecipe() == null)
+                    continue;
+                for (String out : outputsOf(node.getRecipe()).keySet()) {
+                    if (isGraphResource(out, nodes) && !idOfKey(out).equals(node.getAmbiguityOwnerId()))
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        PlanSolver.Model model(ProductionGoal goal, Map<ResourceLocation, RecipeGraphNode> nodes,
+                List<ResourceLocation[]> backEdges, Map<ResourceLocation, StructuralNode> structNodes) {
+            List<PlanSolver.Recipe> recipes = new ArrayList<>();
+            Set<String> raw = new HashSet<>();
+            for (RecipeGraphNode node : nodes.values()) {
+                if (node.getType() == NodeType.MACHINE && node.getRecipe() != null) {
+                    MachineRecipe recipe = node.getRecipe();
+                    recipes.add(new PlanSolver.Recipe(node.getId().toString(), recipe.duration,
+                            inputsOf(recipe), outputsOf(recipe)));
+                } else if (node.getType() == NodeType.RAW && keyOf.containsKey(node.getId())) {
+                    raw.add(keyOf.get(node.getId()));
+                }
+            }
+            List<PlanSolver.BackEdge> loops = new ArrayList<>();
+            for (ResourceLocation[] edge : backEdges) {
+                StructuralNode consumer = structNodes.get(edge[0]);
+                if (consumer != null && consumer.recipeId() != null && keyOf.containsKey(edge[1]))
+                    loops.add(new PlanSolver.BackEdge(consumer.recipeId().toString(), keyOf.get(edge[1])));
+            }
+            return new PlanSolver.Model(recipes, raw, keyOf.get(goal.targetId()), goal.rate(), loops);
+        }
+
+        Map<ResourceLocation, Double> toIds(Map<String, Double> byKey) {
+            Map<ResourceLocation, Double> result = new LinkedHashMap<>();
+            byKey.forEach((key, value) -> {
+                if (value > 0)
+                    result.merge(idOfKey(key), value, Double::sum);
+            });
+            return result;
+        }
+
+        Set<ResourceLocation> toIds(Set<String> keys) {
+            Set<ResourceLocation> result = new HashSet<>();
+            for (String key : keys)
+                result.add(idOfKey(key));
+            return result;
+        }
+    }
+
+    private static String typed(TargetType type, ResourceLocation id) {
+        return (type == TargetType.FLUID ? "fluid:" : "item:") + id;
+    }
+
+    private static ResourceLocation idOfKey(String key) {
+        return ResourceLocation.parse(key.substring(key.indexOf(':') + 1));
+    }
+
+    /** Per-run consumption by typed key, amount times probability, first listed item as resolveStructure does. */
+    private static Map<String, Double> inputsOf(MachineRecipe recipe) {
+        Map<String, Double> inputs = new TreeMap<>();
+        for (var input : recipe.itemInputs) {
+            List<Item> items = input.getInputItems();
+            if (!items.isEmpty())
+                inputs.merge(typed(TargetType.ITEM, BuiltInRegistries.ITEM.getKey(items.get(0))),
+                        (double) input.amount() * input.probability(), Double::sum);
+        }
+        for (var input : recipe.fluidInputs) {
+            List<Fluid> fluids = input.getInputFluids();
+            if (!fluids.isEmpty())
+                inputs.merge(typed(TargetType.FLUID, BuiltInRegistries.FLUID.getKey(fluids.get(0))),
+                        (double) input.amount() * input.probability(), Double::sum);
+        }
+        return inputs;
+    }
+
+    /** Every per-run output by typed key, byproducts included. */
+    private static Map<String, Double> outputsOf(MachineRecipe recipe) {
+        Map<String, Double> outputs = new TreeMap<>();
+        for (var out : recipe.itemOutputs)
+            outputs.merge(typed(TargetType.ITEM, BuiltInRegistries.ITEM.getKey(out.variant().getItem())),
+                    (double) out.amount() * out.probability(), Double::sum);
+        for (var out : recipe.fluidOutputs)
+            outputs.merge(typed(TargetType.FLUID, BuiltInRegistries.FLUID.getKey(out.fluid())),
+                    (double) out.amount() * out.probability(), Double::sum);
+        return outputs;
+    }
+
+    /** Outputs the propagated plan never uses: with no loops or shared outputs, every chosen recipe's
+     *  own product is fully consumed, so its other outputs are exactly the surplus. */
+    private static Map<ResourceLocation, Double> propagationSurplus(Map<ResourceLocation, RecipeGraphNode> nodes) {
+        Map<ResourceLocation, Double> surplus = new LinkedHashMap<>();
+        for (RecipeGraphNode machine : nodes.values()) {
+            if (machine.getType() != NodeType.MACHINE)
+                continue;
+            MachineRecipe recipe = machine.getRecipe();
+            double machineCount = machine.getMachineCount();
+            if (recipe == null || machineCount <= 0 || recipe.duration <= 0)
+                continue;
+            double runsPerMinute = machineCount * 1200.0 / recipe.duration;
+            outputsOf(recipe).forEach((key, perRun) -> {
+                ResourceLocation id = idOfKey(key);
+                if (!nodes.containsKey(id))
+                    surplus.merge(id, runsPerMinute * perRun, Double::sum);
+            });
+        }
+        return surplus;
+    }
+
+    /** Overwrites rates with the LP's: machine counts from runs, every edge from its recipe's per-run
+     *  amount, and byproduct edges where a byproduct is actually used. Structure is untouched otherwise. */
+    private static void applyPlanSolution(ProductionGoal goal, PlanKeys keys, PlanSolver.Result solved,
+            Map<ResourceLocation, RecipeGraphNode> nodes, Map<EdgeKey, GraphEdge> edges) {
+        Map<ResourceLocation, Double> consumption = new HashMap<>();
+        for (RecipeGraphNode machine : nodes.values()) {
+            if (machine.getType() != NodeType.MACHINE || machine.getRecipe() == null)
+                continue;
+            MachineRecipe recipe = machine.getRecipe();
+            double runs = solved.runs().getOrDefault(machine.getId().toString(), 0.0);
+            double machineCount = runs * recipe.duration / 1200.0;
+            machine.setMachineCount(machineCount);
+            machine.setTotalEuPerTick((long) Math.ceil(machineCount * machine.getBaseEuPerTick()));
+            Map<String, Double> outputs = outputsOf(recipe);
+            String owner = keys.keyOf().get(machine.getAmbiguityOwnerId());
+            machine.setRequiredRate(owner != null ? runs * outputs.getOrDefault(owner, 0.0) : 0.0);
+
+            inputsOf(recipe).forEach((key, perRun) -> {
+                ResourceLocation id = idOfKey(key);
+                EdgeKey edgeKey = new EdgeKey(id, machine.getId());
+                if (edges.containsKey(edgeKey))
+                    edges.put(edgeKey, new GraphEdge(id, machine.getId(), runs * perRun));
+                consumption.merge(id, runs * perRun, Double::sum);
+            });
+            outputs.forEach((key, perRun) -> {
+                ResourceLocation id = idOfKey(key);
+                EdgeKey edgeKey = new EdgeKey(machine.getId(), id);
+                double flow = runs * perRun;
+                if (edges.containsKey(edgeKey))
+                    edges.put(edgeKey, new GraphEdge(machine.getId(), id, flow));
+                else if (flow > 1e-9 && keys.isGraphResource(key, nodes))
+                    edges.put(edgeKey, new GraphEdge(machine.getId(), id, flow));
+            });
+        }
+        for (RecipeGraphNode node : nodes.values()) {
+            if (node.getType() == NodeType.MACHINE)
+                continue;
+            if (node.getType() == NodeType.RAW) {
+                String key = keys.keyOf().get(node.getId());
+                node.setRequiredRate(key != null ? solved.imports().getOrDefault(key, 0.0) : 0.0);
+            } else {
+                double demand = node.getId().equals(goal.targetId()) ? goal.rate() : 0.0;
+                node.setRequiredRate(consumption.getOrDefault(node.getId(), 0.0) + demand);
+            }
+        }
     }
 
     private record EdgeKey(ResourceLocation from, ResourceLocation to) {
@@ -605,13 +832,14 @@ public final class RecipeGraphTraverser {
             Map<ResourceLocation, StructuralNode> structNodes,
             Map<ResourceLocation, RecipeGraphNode> nodes,
             Map<EdgeKey, GraphEdge> edges,
-            Set<ResourceLocation> cyclicResourceIds) {
+            Set<ResourceLocation> cyclicResourceIds,
+            List<ResourceLocation[]> backEdges) {
 
         Map<ResourceLocation, Set<ResourceLocation>> forwardEdges = new HashMap<>();
         Map<ResourceLocation, Integer> inDegree = new HashMap<>();
         Set<ResourceLocation> onStack = new HashSet<>();
         Set<ResourceLocation> done = new HashSet<>();
-        collectDag(rootId, structNodes, forwardEdges, inDegree, onStack, done, cyclicResourceIds);
+        collectDag(rootId, structNodes, forwardEdges, inDegree, onStack, done, cyclicResourceIds, backEdges);
 
         Map<ResourceLocation, Double> totalRate = new HashMap<>();
         Map<ResourceLocation, Integer> minDepth = new HashMap<>();
@@ -664,7 +892,8 @@ public final class RecipeGraphTraverser {
             Map<ResourceLocation, Integer> inDegree,
             Set<ResourceLocation> onStack,
             Set<ResourceLocation> done,
-            Set<ResourceLocation> cyclicResourceIds) {
+            Set<ResourceLocation> cyclicResourceIds,
+            List<ResourceLocation[]> backEdges) {
 
         if (done.contains(curr))
             return;
@@ -690,6 +919,7 @@ public final class RecipeGraphTraverser {
                 // apart from ordinary starvation.
                 cyclicResourceIds.add(curr);
                 cyclicResourceIds.add(child);
+                backEdges.add(new ResourceLocation[] { curr, child });
                 continue;
             }
 
@@ -697,7 +927,7 @@ public final class RecipeGraphTraverser {
                 inDegree.merge(child, 1, Integer::sum);
             }
 
-            collectDag(child, structNodes, forwardEdges, inDegree, onStack, done, cyclicResourceIds);
+            collectDag(child, structNodes, forwardEdges, inDegree, onStack, done, cyclicResourceIds, backEdges);
         }
         onStack.remove(curr);
         done.add(curr);

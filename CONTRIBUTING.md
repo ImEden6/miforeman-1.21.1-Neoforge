@@ -114,6 +114,12 @@
 | `testUnionCyclicResourceIdsAcrossGoals` | A machine shared by two goals is cyclic if either goal's graph says so, order-independently |
 | `testRecipeResourceIdsCollectsInputsAndOutputs` | The shared recipe walk behind `recipeTouchesCycle`, cross-checked against real graph edges |
 | `testCollectUpstreamResourceIds` | "Search by end product" collects resources between machine and target, excluding MACHINE ids |
+| `testSimplexKnownOptimaAndDuals` | The LP engine reaches known optima (with equality and >= rows), reports infeasible and unbounded programs, finishes Beale's cycling example, and gives textbook duals |
+| `testStagedLpLocksEarlierStages` | A later LP stage never gives up an earlier stage's optimum beyond the lock band |
+| `testPlanSolverSyntheticCases` | Byproducts are used before importing, co-products share runs, a sourced loop doesn't run, a loop with no way in is flagged and planned as before, a self-feeding recipe imports nothing, item and fluid ids never net, and model order is irrelevant |
+| `testPlanLpMatchesPropagationWhereItWasExact` | On the only real plans without loops or shared outputs (cadmium_rod, cadmium_tiny_dust), the forced LP reproduces the propagation exactly |
+| `testPlanLpConservesEveryResource` | On iron_plate and quantum_upgrade every resource balances, the solve stays under a pivot ceiling, and shuffling the model changes nothing |
+| `testPlanFallsBackWhenTheLpFails` | A failed LP keeps the propagated graph untouched, and zero-rate flows never reach the plan lists |
 | `testMachineCountUsesPerMinuteRates` | A plan's machine count matches the real recipe at per-minute rates (60 iron plates/min on a 200-tick, 2-plate recipe is 5 machines, not 300) |
 | `testCollectByproductRates` | Byproduct rates are positive, never already-demanded resources, and non-empty for complex chains |
 | `testClassifyLiveStatusDeadLoopReason` | `classifyLiveStatus` separates DEAD_LOOP from NONE and DISPOSAL_THROTTLED shortfalls |

@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Machine nodes on the graph show how many of their linked machines are running (e.g. 3/4).
 
 ### Fixed
+- Plans now solve recycling loops and byproducts exactly. A byproduct one machine gives off is
+  used by another branch that needs it before anything is imported, and two products from one
+  recipe share its machines instead of each building their own.
+- A loop with no way in (like ingots made from nuggets made from ingots) is now marked with a
+  warning on the graph, pointing you to pick a recipe that brings something in.
 - Plans asked for 60 times too many machines, and too much power and too many byproducts with
   them: the per-minute goal rate was being treated as per second. Iron plates at 60 a minute
   now need 5 compressors, not 300.

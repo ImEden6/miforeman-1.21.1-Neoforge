@@ -936,7 +936,8 @@ public class GraphCanvas extends AbstractWidget {
             int rateColour = !isMatch ? COLOUR_MUTED_DIM : COLOUR_MUTED;
 
             String name = DisplayFormat.formatId(node.getId());
-            boolean hasAmbiguity = !node.getAmbiguityOptions().isEmpty();
+            boolean hasAmbiguity = !node.getAmbiguityOptions().isEmpty()
+                    || graph.unsourcedResourceIds().contains(node.getId());
             if (hasAmbiguity) {
                 name = "⚠ " + name;
             }

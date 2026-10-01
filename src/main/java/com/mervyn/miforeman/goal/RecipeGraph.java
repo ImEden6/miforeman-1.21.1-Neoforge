@@ -15,8 +15,17 @@ public record RecipeGraph(
     /** Resource IDs that sit on a recycling loop (a back-edge was cut when this graph's DAG was
      *  collected). See {@link RecipeGraphTraverser#computeRecipeGraph}. Used to tell a starved
      *  loop member ("dead-loop") apart from ordinary starvation in passive status checks. */
-    Set<ResourceLocation> cyclicResourceIds
+    Set<ResourceLocation> cyclicResourceIds,
+    /** Output nothing in the plan consumes, per minute, by resource. See {@link RecipeGraphTraverser#collectByproductRates}. */
+    Map<ResourceLocation, Double> surplusRates,
+    /** Loop resources the plan has to import because the loop has no outside input. */
+    Set<ResourceLocation> unsourcedResourceIds
 ) {
+    public RecipeGraph(ResourceLocation target, double targetRate, Map<ResourceLocation, RecipeGraphNode> nodes,
+            List<GraphEdge> edges, Set<ResourceLocation> cyclicResourceIds) {
+        this(target, targetRate, nodes, edges, cyclicResourceIds, Map.of(), Set.of());
+    }
+
     public RecipeGraphNode root() {
         return nodes.get(target);
     }
@@ -61,6 +70,7 @@ public record RecipeGraph(
         for (var entry : nodes.entrySet()) {
             copiedNodes.put(entry.getKey(), entry.getValue().copy());
         }
-        return new RecipeGraph(target, targetRate, copiedNodes, new ArrayList<>(edges), cyclicResourceIds);
+        return new RecipeGraph(target, targetRate, copiedNodes, new ArrayList<>(edges), cyclicResourceIds, surplusRates,
+                unsourcedResourceIds);
     }
 }
