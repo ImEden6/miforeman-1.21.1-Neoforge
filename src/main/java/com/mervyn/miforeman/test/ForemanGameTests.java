@@ -997,6 +997,78 @@ public class ForemanGameTests {
     }
 
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testCapacitySolverFindsTheLimit(GameTestHelper helper) {
+        // 100-tick recipes: one machine is 12 runs a minute. T takes one A per run.
+        var chain = new com.mervyn.miforeman.goal.PlanSolver.Model(List.of(
+                planRecipe("t", 100, Map.of("item:a", 1.0), Map.of("item:t", 1.0)),
+                planRecipe("a", 100, Map.of("item:x", 1.0), Map.of("item:a", 1.0))),
+                Set.of("item:x"), "item:t", 60.0, List.of());
+        Set<String> needed = Set.of("t", "a");
+        var limited = com.mervyn.miforeman.goal.CapacitySolver.solve(chain, Map.of("t", 2, "a", 1), needed);
+        if (limited == null || Math.abs(limited.maxRate() - 12) > 1e-6 || !limited.bottlenecks().equals(Set.of("a"))
+                || Math.abs(limited.utilisation().get("t") - 0.5) > 1e-6) {
+            helper.fail("2 T machines and 1 A machine should make 12/min, limited by A: " + limited);
+            return;
+        }
+        var moreA = com.mervyn.miforeman.goal.CapacitySolver.solve(chain, Map.of("t", 2, "a", 2), needed);
+        var moreT = com.mervyn.miforeman.goal.CapacitySolver.solve(chain, Map.of("t", 3, "a", 1), needed);
+        if (moreA == null || Math.abs(moreA.maxRate() - 24) > 1e-6 || moreT == null || Math.abs(moreT.maxRate() - 12) > 1e-6) {
+            helper.fail("A machine at the bottleneck should raise output and one elsewhere shouldn't: " + moreA + " / " + moreT);
+            return;
+        }
+
+        var blocked = com.mervyn.miforeman.goal.CapacitySolver.solve(chain, Map.of("t", 2), needed);
+        if (blocked == null || blocked.maxRate() > 1e-9 || !blocked.blockers().equals(Set.of("a"))) {
+            helper.fail("With no A machine the output should be 0 and A a blocker: " + blocked);
+            return;
+        }
+
+        // Making B costs half an X, buying it a whole one, so B's recipe runs flat out; but B can
+        // always be bought, so it isn't the limit. A is.
+        var importable = new com.mervyn.miforeman.goal.PlanSolver.Model(List.of(
+                planRecipe("t", 100, Map.of("item:a", 1.0, "item:b", 1.0), Map.of("item:t", 1.0)),
+                planRecipe("a", 100, Map.of("item:x", 1.0), Map.of("item:a", 1.0)),
+                planRecipe("b", 100, Map.of("item:x", 0.5), Map.of("item:b", 1.0))),
+                Set.of("item:x", "item:b"), "item:t", 60.0, List.of());
+        var probed = com.mervyn.miforeman.goal.CapacitySolver.solve(importable, Map.of("t", 3, "a", 1, "b", 1), Set.of("t", "a", "b"));
+        if (probed == null || probed.utilisation().getOrDefault("b", 0.0) < 1 - 1e-6 || !probed.bottlenecks().equals(Set.of("a"))) {
+            helper.fail("A full recipe whose product can also be bought isn't a bottleneck: " + probed);
+            return;
+        }
+
+        // Two caps that only bind together: no single machine helps, so both are the limit.
+        var joint = new com.mervyn.miforeman.goal.PlanSolver.Model(List.of(
+                planRecipe("t", 100, Map.of("item:a", 1.0, "item:b", 1.0), Map.of("item:t", 1.0)),
+                planRecipe("a", 100, Map.of("item:x", 1.0), Map.of("item:a", 1.0)),
+                planRecipe("b", 100, Map.of("item:x", 1.0), Map.of("item:b", 1.0))),
+                Set.of("item:x"), "item:t", 60.0, List.of());
+        var jointResult = com.mervyn.miforeman.goal.CapacitySolver.solve(joint, Map.of("t", 3, "a", 1, "b", 1), Set.of("t", "a", "b"));
+        if (jointResult == null || !jointResult.bottlenecks().equals(Set.of("a", "b"))) {
+            helper.fail("Caps that only bind together should all be reported: " + jointResult);
+            return;
+        }
+
+        // On a real plan, one machine per needed recipe solves and names a limit.
+        var level = helper.getLevel();
+        var graph = RecipeGraphTraverser.computeRecipeGraph(level, new ProductionGoal("capacity", ProductionGoal.TargetType.ITEM,
+                ResourceLocation.parse("modern_industrialization:iron_plate"), 60.0));
+        Map<String, Integer> oneEach = new java.util.TreeMap<>();
+        Set<String> realNeeded = new java.util.TreeSet<>();
+        for (var node : graph.nodes().values()) {
+            if (node.getType() == com.mervyn.miforeman.goal.NodeType.MACHINE && node.getMachineCount() > 1e-9) {
+                oneEach.put(node.getId().toString(), 1);
+                realNeeded.add(node.getId().toString());
+            }
+        }
+        var real = com.mervyn.miforeman.goal.CapacitySolver.solve(graph.planModel(), oneEach, realNeeded);
+        if (real == null || real.maxRate() <= 0 || (real.bottlenecks().isEmpty() && real.blockers().isEmpty())) {
+            helper.fail("iron_plate with one machine per recipe should make something and name a limit: " + real);
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testMachineCountUsesPerMinuteRates(GameTestHelper helper) {
         var level = helper.getLevel();
         RecipeGraphTraverser.clearGraphCache();

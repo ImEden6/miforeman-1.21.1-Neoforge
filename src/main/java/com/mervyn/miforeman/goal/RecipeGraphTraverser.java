@@ -444,8 +444,9 @@ public final class RecipeGraphTraverser {
         PlanKeys keys = built.keys();
         Map<ResourceLocation, Double> surplusRates = propagationSurplus(nodes);
         Set<ResourceLocation> unsourced = Set.of();
+        PlanSolver.Model model = built.model(goal);
         if (mode == SolveMode.FORCE_LP || mode == SolveMode.FAIL_LP || (mode == SolveMode.AUTO && built.coupled())) {
-            PlanSolver.Result solved = mode == SolveMode.FAIL_LP ? null : PlanSolver.solve(built.model(goal));
+            PlanSolver.Result solved = mode == SolveMode.FAIL_LP ? null : PlanSolver.solve(model);
             if (solved != null) {
                 applyPlanSolution(goal, keys, solved, nodes, edges);
                 surplusRates = keys.toIds(solved.surplus());
@@ -466,7 +467,7 @@ public final class RecipeGraphTraverser {
         }
 
         return new RecipeGraph(goal.targetId(), goal.rate(), nodes, new ArrayList<>(edges.values()), cyclicResourceIds,
-                surplusRates, unsourced);
+                surplusRates, unsourced, model);
     }
 
     /** Typed LP resource keys ({@code item:}/{@code fluid:}) for the graph's resources, read from how

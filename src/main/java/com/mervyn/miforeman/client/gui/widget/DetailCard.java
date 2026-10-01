@@ -138,6 +138,12 @@ public class DetailCard extends AbstractWidget {
         this.onScrollChange = onScrollChange;
     }
 
+    private @Nullable com.mervyn.miforeman.goal.CapacitySolver.Result capacity;
+
+    public void setCapacity(@Nullable com.mervyn.miforeman.goal.CapacitySolver.Result capacity) {
+        this.capacity = capacity;
+    }
+
     public void setNode(@Nullable RecipeGraphNode node) {
         this.node = node;
         this.scrollOffset = 0;
@@ -255,6 +261,27 @@ public class DetailCard extends AbstractWidget {
                         + " " + DisplayFormat.formatId(graph.target());
                 guiGraphics.drawString(fontSource.font, targetLine, getX() + 6, currentY, COLOUR_LABEL, false);
                 currentY += 12;
+                if (capacity != null) {
+                    boolean enough = capacity.maxRate() >= graph.targetRate() * (1 - 1e-6);
+                    guiGraphics.drawString(fontSource.font, "Can make " + DisplayFormat.formatRate(capacity.maxRate(), perHour)
+                            + " of " + DisplayFormat.formatRate(graph.targetRate(), perHour),
+                            getX() + 6, currentY, enough ? COLOUR_GREEN : COLOUR_AMBER, false);
+                    currentY += 10;
+                    var limits = !capacity.blockers().isEmpty() ? capacity.blockers() : capacity.bottlenecks();
+                    if (!enough && !limits.isEmpty()) {
+                        List<String> names = limits.stream().limit(2)
+                                .map(id -> DisplayFormat.formatId(ResourceLocation.parse(id))).toList();
+                        String more = limits.size() > 2 ? " and " + (limits.size() - 2) + " more" : "";
+                        String label = (!capacity.blockers().isEmpty() ? "No machines: " : "Limited by: ")
+                                + String.join(", ", names) + more;
+                        if (fontSource.font.width(label) > getWidth() - 16)
+                            label = fontSource.font.plainSubstrByWidth(label, getWidth() - 24) + "..";
+                        guiGraphics.drawString(fontSource.font, label, getX() + 10, currentY, COLOUR_MUTED, false);
+                        currentY += 10;
+                    }
+                    guiGraphics.drawString(fontSource.font, "(base speed, loaded machines)", getX() + 10, currentY, COLOUR_MUTED, false);
+                    currentY += 12;
+                }
             }
 
             // Side-by-side panels when expanded, vertically stacked when sidebar.

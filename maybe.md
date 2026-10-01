@@ -102,7 +102,9 @@ legibility comes up again:
 
 ## Solver / MachineTracker
 
-- **Staged LP instead of iterative descent for "what's actually running"**
+- *Built 2026-10-01 (`1e34baa1`, plus the capacity readout): plans solve as a staged LP over
+  `goal/lp/Simplex`, and a capacity LP reports what linked machines can make and what limits
+  them.* **Staged LP instead of iterative descent for "what's actually running"**
   — their throughput solver used to be pure iterative equilibrium descent;
   now the real numbers come from a direct linear program solved as a
   lexicographic stage chain (maximize total activity → fairness → recycle

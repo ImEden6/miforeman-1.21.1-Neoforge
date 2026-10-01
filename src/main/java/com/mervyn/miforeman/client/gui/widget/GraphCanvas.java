@@ -142,6 +142,8 @@ public class GraphCanvas extends AbstractWidget {
     private @Nullable GlobalPos placingPos;
     private String placingName = "";
     private Set<ResourceLocation> placeTargets = Set.of();
+    private @Nullable com.mervyn.miforeman.goal.CapacitySolver.Result capacity;
+    private Map<String, Integer> capacityCounts = Map.of();
 
     public GraphCanvas(int x, int y, int width, int height, RecipeGraph graph,
             GraphLayoutState layoutState, double panX, double panY, float zoom,
@@ -234,6 +236,30 @@ public class GraphCanvas extends AbstractWidget {
                 machineNodeIds.add(id);
         });
         placementPanel.update(data, machineNodeIds);
+        updateCapacity();
+    }
+
+    /** Re-solved only when the per-node machine counts change, never on an unchanged poll. */
+    private void updateCapacity() {
+        Map<String, Integer> counts = new java.util.TreeMap<>();
+        liveStatusByRecipeId.forEach((id, summary) -> counts.put(id.toString(), summary.total()));
+        if (counts.equals(capacityCounts))
+            return;
+        capacityCounts = counts;
+        if (counts.isEmpty() || graph.planModel() == null) {
+            capacity = null;
+            return;
+        }
+        Set<String> needed = new java.util.TreeSet<>();
+        for (RecipeGraphNode node : graph.nodes().values())
+            if (node.getType() == NodeType.MACHINE && node.getMachineCount() > 1e-9)
+                needed.add(node.getId().toString());
+        capacity = com.mervyn.miforeman.goal.CapacitySolver.solve(graph.planModel(), counts, needed);
+    }
+
+    /** What the linked machines can make and what limits them; null before any live data. */
+    public @Nullable com.mervyn.miforeman.goal.CapacitySolver.Result capacity() {
+        return capacity;
     }
 
     /** Called with a machine's new placement (null recipe = unplaced) so the screen can save it. */
@@ -942,6 +968,15 @@ public class GraphCanvas extends AbstractWidget {
                 name = "⚠ " + name;
             }
             int maxTextWidth = NODE_WIDTH - textInset - 3;
+            boolean limiting = capacity != null && node.getType() == NodeType.MACHINE
+                    && (capacity.bottlenecks().contains(node.getId().toString())
+                            || capacity.blockers().contains(node.getId().toString()));
+            if (limiting) {
+                int markWidth = mc.font.width("\u25B2");
+                guiGraphics.drawString(mc.font, "\u25B2", pos.x() + NODE_WIDTH - textInset - markWidth, pos.y() + 3,
+                        COLOUR_SEARCH_CURRENT_MATCH, false);
+                maxTextWidth -= markWidth + 3;
+            }
             if (mc.font.width(name) > maxTextWidth) {
                 name = mc.font.plainSubstrByWidth(name, maxTextWidth - 8) + "..";
             }

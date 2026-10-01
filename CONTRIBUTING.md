@@ -120,6 +120,7 @@
 | `testPlanLpMatchesPropagationWhereItWasExact` | On the only real plans without loops or shared outputs (cadmium_rod, cadmium_tiny_dust), the forced LP reproduces the propagation exactly |
 | `testPlanLpConservesEveryResource` | On iron_plate and quantum_upgrade every resource balances, the solve stays under a pivot ceiling, and shuffling the model changes nothing |
 | `testPlanFallsBackWhenTheLpFails` | A failed LP keeps the propagated graph untouched, and zero-rate flows never reach the plan lists |
+| `testCapacitySolverFindsTheLimit` | Linked machines give the right maximum output; a machine at the bottleneck raises it and one elsewhere doesn't; a missing machine blocks; a full recipe whose product can be bought isn't a bottleneck; caps that only bind together are all reported; it runs on a real plan |
 | `testMachineCountUsesPerMinuteRates` | A plan's machine count matches the real recipe at per-minute rates (60 iron plates/min on a 200-tick, 2-plate recipe is 5 machines, not 300) |
 | `testCollectByproductRates` | Byproduct rates are positive, never already-demanded resources, and non-empty for complex chains |
 | `testClassifyLiveStatusDeadLoopReason` | `classifyLiveStatus` separates DEAD_LOOP from NONE and DISPOSAL_THROTTLED shortfalls |

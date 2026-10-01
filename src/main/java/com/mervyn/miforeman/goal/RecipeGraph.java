@@ -19,11 +19,13 @@ public record RecipeGraph(
     /** Output nothing in the plan consumes, per minute, by resource. See {@link RecipeGraphTraverser#collectByproductRates}. */
     Map<ResourceLocation, Double> surplusRates,
     /** Loop resources the plan has to import because the loop has no outside input. */
-    Set<ResourceLocation> unsourcedResourceIds
+    Set<ResourceLocation> unsourcedResourceIds,
+    /** The LP model this plan was solved with, kept so the capacity readout can reuse it. */
+    @org.jetbrains.annotations.Nullable PlanSolver.Model planModel
 ) {
     public RecipeGraph(ResourceLocation target, double targetRate, Map<ResourceLocation, RecipeGraphNode> nodes,
             List<GraphEdge> edges, Set<ResourceLocation> cyclicResourceIds) {
-        this(target, targetRate, nodes, edges, cyclicResourceIds, Map.of(), Set.of());
+        this(target, targetRate, nodes, edges, cyclicResourceIds, Map.of(), Set.of(), null);
     }
 
     public RecipeGraphNode root() {
@@ -71,6 +73,6 @@ public record RecipeGraph(
             copiedNodes.put(entry.getKey(), entry.getValue().copy());
         }
         return new RecipeGraph(target, targetRate, copiedNodes, new ArrayList<>(edges), cyclicResourceIds, surplusRates,
-                unsourcedResourceIds);
+                unsourcedResourceIds, planModel);
     }
 }

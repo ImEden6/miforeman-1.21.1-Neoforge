@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The plan summary shows how much your linked machines can actually make (at base speed, from
+  loaded machines) and what limits it, and limiting machines get a ▲ on the graph.
 - Pick the auto-detect scan radius for a single scan with the -/+ buttons beside Scan Nearby,
   instead of always using the configured default. Server admins can cap it with the new
   `autolinkScanMaxRadiusChunks` option.

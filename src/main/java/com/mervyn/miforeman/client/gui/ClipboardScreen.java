@@ -492,6 +492,7 @@ public class ClipboardScreen extends Screen {
                         this.goalDraft.currentPlan,
                         new DetailCard.DisplayOptions(this.goalDraft.perHour, showMachineNumbers, detailCardExpanded),
                         detailCardCallbacks, detailScrollOffset, v -> this.detailScrollOffset = v);
+                detailCard.setCapacity(graphCanvas.capacity());
                 this.addRenderableWidget(detailCard);
             } else {
                 detailCard = null;
@@ -788,6 +789,8 @@ public class ClipboardScreen extends Screen {
         }
         if (currentStep == STEP_REVIEW_PLAN && graphCanvas != null) {
             graphCanvas.updateLiveStatus(data);
+            if (detailCard != null)
+                detailCard.setCapacity(graphCanvas.capacity());
         }
     }
 
