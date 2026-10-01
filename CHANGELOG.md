@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Machine nodes on the graph show how many of their linked machines are running (e.g. 3/4).
 
 ### Fixed
+- Plans asked for 60 times too many machines, and too much power and too many byproducts with
+  them: the per-minute goal rate was being treated as per second. Iron plates at 60 a minute
+  now need 5 compressors, not 300.
 - A graph node with several machines on its recipe showed whichever machine happened to be
   linked last, so a starved machine could hide behind a working one. It now shows the worst.
 - Idle machines no longer drop off the recipe graph after the clipboard is put away for a few

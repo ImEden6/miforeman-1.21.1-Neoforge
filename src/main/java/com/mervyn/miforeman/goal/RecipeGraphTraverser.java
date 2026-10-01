@@ -540,8 +540,9 @@ public final class RecipeGraphTraverser {
                         : (selections.get(resourceId) != null ? selections.get(resourceId) : ambiguityOptions.get(0));
                 result = new StructuralNode(resourceId, null, null, null, ambiguityOptions, selectedAmbiguity, 0.0, List.of(), List.of());
             } else {
-                double runsPerSecond = 1.0 / (outputAmount * outputProbability);
-                double machineCountPerUnit = (runsPerSecond * chosenRecipe.duration) / 20.0;
+                // Rates are per minute; a machine finishes 1200 / duration runs a minute.
+                double runsPerUnit = 1.0 / (outputAmount * outputProbability);
+                double machineCountPerUnit = (runsPerUnit * chosenRecipe.duration) / 1200.0;
                 ResourceLocation machineTypeId = BuiltInRegistries.RECIPE_TYPE.getKey(chosenRecipe.getType());
                 ResourceLocation selectedAmbiguity = candidates.size() > 1
                         ? (selections.get(resourceId) != null ? selections.get(resourceId) : chosenHolder.id())
@@ -552,7 +553,7 @@ public final class RecipeGraphTraverser {
                     List<Item> inputItems = input.getInputItems();
                     if (!inputItems.isEmpty()) {
                         ResourceLocation inputItemId = BuiltInRegistries.ITEM.getKey(inputItems.get(0));
-                        itemRates.merge(inputItemId, runsPerSecond * input.amount() * input.probability(), Double::sum);
+                        itemRates.merge(inputItemId, runsPerUnit * input.amount() * input.probability(), Double::sum);
                     }
                 }
                 Map<ResourceLocation, Double> fluidRates = new LinkedHashMap<>();
@@ -560,7 +561,7 @@ public final class RecipeGraphTraverser {
                     List<Fluid> inputFluids = input.getInputFluids();
                     if (!inputFluids.isEmpty()) {
                         ResourceLocation inputFluidId = BuiltInRegistries.FLUID.getKey(inputFluids.get(0));
-                        fluidRates.merge(inputFluidId, runsPerSecond * input.amount() * input.probability(),
+                        fluidRates.merge(inputFluidId, runsPerUnit * input.amount() * input.probability(),
                                 Double::sum);
                     }
                 }

@@ -114,6 +114,7 @@
 | `testUnionCyclicResourceIdsAcrossGoals` | A machine shared by two goals is cyclic if either goal's graph says so, order-independently |
 | `testRecipeResourceIdsCollectsInputsAndOutputs` | The shared recipe walk behind `recipeTouchesCycle`, cross-checked against real graph edges |
 | `testCollectUpstreamResourceIds` | "Search by end product" collects resources between machine and target, excluding MACHINE ids |
+| `testMachineCountUsesPerMinuteRates` | A plan's machine count matches the real recipe at per-minute rates (60 iron plates/min on a 200-tick, 2-plate recipe is 5 machines, not 300) |
 | `testCollectByproductRates` | Byproduct rates are positive, never already-demanded resources, and non-empty for complex chains |
 | `testClassifyLiveStatusDeadLoopReason` | `classifyLiveStatus` separates DEAD_LOOP from NONE and DISPOSAL_THROTTLED shortfalls |
 | `testComputeDisposalRatioUsesRealCapacityNotAdjustedCapacity` | Disposal ratio uses real stack-size-clamped capacity, so a full non-stackable output flags correctly |

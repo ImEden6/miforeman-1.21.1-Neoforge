@@ -665,6 +665,36 @@ public class ForemanGameTests {
      *  be tracked as a demanded resource elsewhere in the graph, and complex recipe chains must
      *  produce at least one genuine byproduct. */
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testMachineCountUsesPerMinuteRates(GameTestHelper helper) {
+        var level = helper.getLevel();
+        RecipeGraphTraverser.clearGraphCache();
+        ResourceLocation plate = ResourceLocation.parse("modern_industrialization:iron_plate");
+        var graph = RecipeGraphTraverser.computeRecipeGraph(level,
+                new ProductionGoal("per_minute_units", ProductionGoal.TargetType.ITEM, plate, 60.0));
+        var machine = graph.nodes().values().stream()
+                .filter(n -> n.getType() == com.mervyn.miforeman.goal.NodeType.MACHINE && plate.equals(n.getAmbiguityOwnerId()))
+                .findFirst().orElse(null);
+        if (machine == null || machine.getRecipe() == null) {
+            helper.fail("Expected a machine node making iron plates.");
+            return;
+        }
+        var recipe = machine.getRecipe();
+        double perRun = 0;
+        for (var out : recipe.itemOutputs) {
+            if (net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(out.variant().getItem()).equals(plate))
+                perRun = out.amount() * out.probability();
+        }
+        // 60 plates a minute is 60 / perRun runs a minute; one machine does 1200 / duration of them.
+        double expected = (60.0 / perRun) * recipe.duration / 1200.0;
+        if (Math.abs(machine.getMachineCount() - expected) > 1e-9) {
+            helper.fail("Iron plates at 60/min need " + expected + " machines (" + recipe.duration + "-tick recipe), plan says "
+                    + machine.getMachineCount() + ". Rates are per minute, not per second.");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testCollectByproductRates(GameTestHelper helper) {
         var level = helper.getLevel();
         ResourceLocation targetId = ResourceLocation.parse("modern_industrialization:quantum_upgrade");
