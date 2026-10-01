@@ -273,6 +273,9 @@ public final class EdgeRouter {
 
     private record Seg(int owner, int index, boolean vertical, int fixed, int min, int max) {}
 
+    /** How far from a port a crossing must be to bump: the port stub itself never does. */
+    private static final int HOP_PORT_MARGIN = 12;
+
     /**
      * Where each wire bumps over the wires beneath it. Only a wire drawn later bumps, so each
      * crossing gets exactly one bump, on the wire painted on top. Port stubs never bump or get
@@ -287,18 +290,26 @@ public final class EdgeRouter {
         for (int owner = 0; owner < polylinesInDrawOrder.size(); owner++) {
             List<Point> points = polylinesInDrawOrder.get(owner);
             List<Seg> own = new ArrayList<>();
-            for (int i = 1; i < points.size() - 2; i++) {
+            int last = points.size() - 2;
+            for (int i = 0; i <= last; i++) {
                 Point a = points.get(i);
                 Point b = points.get(i + 1);
-                if (a.x() == b.x() && a.y() != b.y()) {
-                    Seg seg = new Seg(owner, i, true, a.x(), Math.min(a.y(), b.y()), Math.max(a.y(), b.y()));
-                    verticals.computeIfAbsent(seg.fixed(), k -> new ArrayList<>()).add(seg);
-                    own.add(seg);
-                } else if (a.y() == b.y() && a.x() != b.x()) {
-                    Seg seg = new Seg(owner, i, false, a.y(), Math.min(a.x(), b.x()), Math.max(a.x(), b.x()));
-                    horizontals.computeIfAbsent(seg.fixed(), k -> new ArrayList<>()).add(seg);
-                    own.add(seg);
-                }
+                boolean vertical = a.x() == b.x() && a.y() != b.y();
+                if (!vertical && !(a.y() == b.y() && a.x() != b.x()))
+                    continue;
+                int from = vertical ? a.y() : a.x();
+                int to = vertical ? b.y() : b.x();
+                // The stub merges into the first and last runs, so trim only the stretch by the port.
+                if (i == 0)
+                    from += Integer.signum(to - from) * HOP_PORT_MARGIN;
+                if (i == last)
+                    to -= Integer.signum(to - from) * HOP_PORT_MARGIN;
+                int min = Math.min(from, to), max = Math.max(from, to);
+                if ((to - from) * ((vertical ? b.y() - a.y() : b.x() - a.x())) <= 0)
+                    continue;
+                Seg seg = new Seg(owner, i, vertical, vertical ? a.x() : a.y(), min, max);
+                (vertical ? verticals : horizontals).computeIfAbsent(seg.fixed(), k -> new ArrayList<>()).add(seg);
+                own.add(seg);
             }
             byOwner.add(own);
         }

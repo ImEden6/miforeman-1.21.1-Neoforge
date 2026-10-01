@@ -3697,6 +3697,19 @@ public class ForemanGameTests {
             return;
         }
 
+        // The port stub merges into a wire's first run: a crossing along that run still bumps,
+        // only one right by the port doesn't.
+        var firstRun = List.of(new com.mervyn.miforeman.goal.EdgeRouter.Point(0, 50),
+                new com.mervyn.miforeman.goal.EdgeRouter.Point(200, 50),
+                new com.mervyn.miforeman.goal.EdgeRouter.Point(200, 120),
+                new com.mervyn.miforeman.goal.EdgeRouter.Point(210, 120));
+        var runHops = com.mervyn.miforeman.goal.EdgeRouter.hops(
+                List.of(hopWire(100, 10, 100, 150), hopWire(8, 10, 8, 150), firstRun), 5, 3);
+        if (!runHops.get(2).equals(List.of(new com.mervyn.miforeman.goal.EdgeRouter.Hop(0, 97, 103)))) {
+            helper.fail("A crossing along a wire's first run should bump, one by its port shouldn't, got " + runHops.get(2));
+            return;
+        }
+
         // Crossings closer than one bump merge into a single span.
         var bundle = com.mervyn.miforeman.goal.EdgeRouter.hops(
                 List.of(hopWire(100, 10, 100, 150), hopWire(104, 10, 104, 150), across), 5, 3);
@@ -3725,14 +3738,25 @@ public class ForemanGameTests {
             var points = polylines.get(w);
             for (var hop : hops.get(w)) {
                 total++;
-                if (hop.segment() < 1 || hop.segment() > points.size() - 3) {
-                    helper.fail("Wire " + w + " bumps on a port stub: " + hop);
+                if (hop.segment() < 0 || hop.segment() > points.size() - 2) {
+                    helper.fail("Wire " + w + " has a bump on a segment it doesn't have: " + hop);
                     return;
                 }
                 var a = points.get(hop.segment());
                 var b = points.get(hop.segment() + 1);
                 int min = a.y() == b.y() ? Math.min(a.x(), b.x()) : Math.min(a.y(), b.y());
                 int max = a.y() == b.y() ? Math.max(a.x(), b.x()) : Math.max(a.y(), b.y());
+                var first = points.get(0);
+                var end = points.get(points.size() - 1);
+                for (var port : List.of(first, end)) {
+                    int along = a.y() == b.y() ? port.x() : port.y();
+                    boolean onLine = a.y() == b.y() ? port.y() == a.y() : port.x() == a.x();
+                    if (onLine && along >= min && along <= max
+                            && (Math.abs(hop.from() - along) < 9 || Math.abs(hop.to() - along) < 9)) {
+                        helper.fail("Wire " + w + "'s bump " + hop + " sits on the port stub at " + port + ".");
+                        return;
+                    }
+                }
                 if (hop.from() <= min || hop.to() >= max || hop.from() >= hop.to()) {
                     helper.fail("Wire " + w + "'s bump " + hop + " runs past its segment [" + min + ", " + max + "].");
                     return;

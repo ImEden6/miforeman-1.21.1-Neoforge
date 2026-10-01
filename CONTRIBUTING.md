@@ -143,8 +143,8 @@
 | `testEdgeRouterOnRealGraphWithSpreadPorts` | analog_circuit routed with spread ports: no clipping, most wires route, and only over-capacity faces share a start point |
 | `testEdgeRouterIncrementalMatchesContract` | Re-routing with the previous pass keeps every unaffected wire identical, re-routes moved cards' wires at a fraction of a full pass's cost, refuses to reuse a wire whose stub or path a new card now covers, and retries a fallback once its blocker moves |
 | `testEdgeRouterIncrementalDoesNotDrift` | Five chained incremental re-routes on a real graph keep every wire ending at its ports, clear of every card, with most still routed |
-| `testEdgeRouterHopsOncePerCrossing` | Only the wire drawn later bumps at a crossing; no bumps near corners, on stubs or on parallel overlaps; crossings closer than one bump merge |
-| `testEdgeRouterHopsStayInsideSegments` | On a real routed graph every bump sits on an interior segment and inside its ends (caught a crash on segments shorter than two margins) |
+| `testEdgeRouterHopsOncePerCrossing` | Only the wire drawn later bumps at a crossing; no bumps near corners, by a port or on parallel overlaps, but crossings along a first or last run do bump; crossings closer than one bump merge |
+| `testEdgeRouterHopsStayInsideSegments` | On a real routed graph every bump sits inside its segment and clear of the port stubs (caught a crash on segments shorter than two margins) |
 | `testEdgeRouterGivesUpWholeGraphWhenBudgetExhausted` | A pass that runs out of budget falls back wholesale, never partially |
 | `testEdgeRouterHandlesLargestRealGraph` | quantum_upgrade (588 cards, 864 wires) still routes, with no wire clipping a card |
 
