@@ -43,7 +43,8 @@ quantum_upgrade included, routes on the render thread.
   (272/379) 100ms, advanced_motor (312/444) 182ms, quantum_upgrade (588/864) 402ms with
   711 of 864 wires routed. Paid once per layout change, never per frame.
 
-- **Async solve with stale-while-revalidate rendering** — still open, but no longer
+- *Superseded 2026-10-01 (`7aa5d635`): drag commits, undo and redo now re-route only the wires
+  whose endpoints moved, which removed the hitch this was for.* **Async solve with stale-while-revalidate rendering** — still open, but no longer
   urgent: it was only ever "load-bearing" while the port bug made routing 30x dearer than
   it needed to be. What it would buy now is removing the ~400ms hitch on the very largest
   graphs when a drag commits, which is the one place the cost is still felt. The
@@ -74,7 +75,8 @@ legibility comes up again:
   hops over which at a crossing" must agree (both by thinner-line-on-top), or a fat pipe
   with a later index visually buries a thin line drawn nominally above it.
   (`compareEdgeDepth`, `edge-geometry.ts`.)
-- **Lane assignment by shared endpoint, not shared drawn line.** `assignEdgeLanes`
+- *Built 2026-10-01 (`d3256336`) as per-face port spreading (`goal/PortLayout`) rather than
+  lane colouring.* **Lane assignment by shared endpoint, not shared drawn line.** `assignEdgeLanes`
   (`edge-geometry.ts`) is greedy graph colouring over the real conflict relation — two
   edges conflict if they share a source or share a target — so a fan-out from one
   machine's outputs or a fan-in to another's inputs never lands on the same offset by
@@ -90,7 +92,8 @@ legibility comes up again:
   kind today — nothing to fix, but if one is ever added, driving it off the same
   `EdgeRouter.Route.points()` list (not a lerp between the two endpoints) is what keeps
   it glued to the path through corners for free.
-- Also present but lower priority: **hop bumps** where two routed wires visually cross
+- *Hop bumps built 2026-10-01 as squared bumps on the wire drawn on top; highlight via opacity
+  is still open.* Also present but lower priority: **hop bumps** where two routed wires visually cross
   (`hop-map.ts` — a small arc "jumps over" the other line) and **highlight via opacity**
   rather than a colour swap (`isHighlighted` sets `strokeOpacity: 1` + a glow filter on
   the same colour, dimming everything else to ~0.72, instead of swapping to a separate

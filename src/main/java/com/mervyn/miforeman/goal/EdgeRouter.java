@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Set;
+import java.util.TreeMap;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -264,6 +265,80 @@ public final class EdgeRouter {
     /** Convenience overload using the grid size as the lane gap. */
     public static List<Route> route(List<Request> requests, List<Obstacle> obstacles, int gridSize) {
         return route(requests, obstacles, gridSize, gridSize);
+    }
+
+    /** A bump on segment {@code segment} (points[segment] to points[segment+1]) spanning
+     *  {@code from}..{@code to} along the segment's axis. */
+    public record Hop(int segment, int from, int to) {}
+
+    private record Seg(int owner, int index, boolean vertical, int fixed, int min, int max) {}
+
+    /**
+     * Where each wire bumps over the wires beneath it. Only a wire drawn later bumps, so each
+     * crossing gets exactly one bump, on the wire painted on top. Port stubs never bump or get
+     * bumped, crossings within {@code cornerMargin} of either segment's end are skipped, and
+     * crossings closer than one bump merge into a single wider one. Returns one list per wire,
+     * in the order given.
+     */
+    public static List<List<Hop>> hops(List<List<Point>> polylinesInDrawOrder, int cornerMargin, int halfWidth) {
+        TreeMap<Integer, List<Seg>> verticals = new TreeMap<>();
+        TreeMap<Integer, List<Seg>> horizontals = new TreeMap<>();
+        List<List<Seg>> byOwner = new ArrayList<>(polylinesInDrawOrder.size());
+        for (int owner = 0; owner < polylinesInDrawOrder.size(); owner++) {
+            List<Point> points = polylinesInDrawOrder.get(owner);
+            List<Seg> own = new ArrayList<>();
+            for (int i = 1; i < points.size() - 2; i++) {
+                Point a = points.get(i);
+                Point b = points.get(i + 1);
+                if (a.x() == b.x() && a.y() != b.y()) {
+                    Seg seg = new Seg(owner, i, true, a.x(), Math.min(a.y(), b.y()), Math.max(a.y(), b.y()));
+                    verticals.computeIfAbsent(seg.fixed(), k -> new ArrayList<>()).add(seg);
+                    own.add(seg);
+                } else if (a.y() == b.y() && a.x() != b.x()) {
+                    Seg seg = new Seg(owner, i, false, a.y(), Math.min(a.x(), b.x()), Math.max(a.x(), b.x()));
+                    horizontals.computeIfAbsent(seg.fixed(), k -> new ArrayList<>()).add(seg);
+                    own.add(seg);
+                }
+            }
+            byOwner.add(own);
+        }
+
+        List<List<Hop>> result = new ArrayList<>(polylinesInDrawOrder.size());
+        for (int owner = 0; owner < polylinesInDrawOrder.size(); owner++) {
+            List<Hop> hops = new ArrayList<>();
+            for (Seg seg : byOwner.get(owner)) {
+                if (seg.max() - seg.min() <= 2 * cornerMargin)
+                    continue;
+                TreeMap<Integer, List<Seg>> across = seg.vertical() ? horizontals : verticals;
+                List<Integer> crossings = new ArrayList<>();
+                for (List<Seg> candidates : across.subMap(seg.min() + cornerMargin, false,
+                        seg.max() - cornerMargin, false).values()) {
+                    for (Seg other : candidates) {
+                        if (other.owner() < owner && other.min() + cornerMargin < seg.fixed()
+                                && seg.fixed() < other.max() - cornerMargin)
+                            crossings.add(other.fixed());
+                    }
+                }
+                Collections.sort(crossings);
+                int spanFrom = 0, spanTo = 0;
+                boolean open = false;
+                for (int at : crossings) {
+                    if (open && at - halfWidth <= spanTo) {
+                        spanTo = at + halfWidth;
+                        continue;
+                    }
+                    if (open)
+                        hops.add(new Hop(seg.index(), spanFrom, spanTo));
+                    spanFrom = at - halfWidth;
+                    spanTo = at + halfWidth;
+                    open = true;
+                }
+                if (open)
+                    hops.add(new Hop(seg.index(), spanFrom, spanTo));
+            }
+            result.add(hops);
+        }
+        return result;
     }
 
     /** The old fixed horizontal-vertical-horizontal elbow, kept as the fallback path. */

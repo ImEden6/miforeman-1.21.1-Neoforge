@@ -3658,6 +3658,94 @@ public class ForemanGameTests {
         helper.succeed();
     }
 
+    /** A wire with 10px port stubs at both ends around one interior segment from (x1,y1) to (x2,y2). */
+    private static List<com.mervyn.miforeman.goal.EdgeRouter.Point> hopWire(int x1, int y1, int x2, int y2) {
+        boolean horizontal = y1 == y2;
+        int sx = horizontal ? Integer.signum(x2 - x1) * 10 : 0;
+        int sy = horizontal ? 0 : Integer.signum(y2 - y1) * 10;
+        return List.of(new com.mervyn.miforeman.goal.EdgeRouter.Point(x1 - sx, y1 - sy),
+                new com.mervyn.miforeman.goal.EdgeRouter.Point(x1, y1),
+                new com.mervyn.miforeman.goal.EdgeRouter.Point(x2, y2),
+                new com.mervyn.miforeman.goal.EdgeRouter.Point(x2 + sx, y2 + sy));
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testEdgeRouterHopsOncePerCrossing(GameTestHelper helper) {
+        var across = hopWire(10, 50, 200, 50);
+        var down = hopWire(100, 10, 100, 150);
+
+        // Only the wire drawn later bumps.
+        var downOnTop = com.mervyn.miforeman.goal.EdgeRouter.hops(List.of(across, down), 5, 3);
+        if (!downOnTop.get(0).isEmpty() || !downOnTop.get(1).equals(List.of(new com.mervyn.miforeman.goal.EdgeRouter.Hop(1, 47, 53)))) {
+            helper.fail("Expected only the later (vertical) wire to bump at y=50, got " + downOnTop);
+            return;
+        }
+        var acrossOnTop = com.mervyn.miforeman.goal.EdgeRouter.hops(List.of(down, across), 5, 3);
+        if (!acrossOnTop.get(0).isEmpty() || !acrossOnTop.get(1).equals(List.of(new com.mervyn.miforeman.goal.EdgeRouter.Hop(1, 97, 103)))) {
+            helper.fail("Expected only the later (horizontal) wire to bump at x=100, got " + acrossOnTop);
+            return;
+        }
+
+        // No bump near either segment's end, on a stub, or on a parallel overlap.
+        var nearCorner = hopWire(12, 0, 12, 120);
+        var endsAtCrossing = hopWire(150, 0, 150, 52);
+        var acrossStub = hopWire(5, 0, 5, 120);
+        var parallel = hopWire(40, 50, 160, 50);
+        var none = com.mervyn.miforeman.goal.EdgeRouter.hops(List.of(nearCorner, endsAtCrossing, acrossStub, parallel, across), 5, 3);
+        if (!none.get(4).isEmpty()) {
+            helper.fail("Bumps near corners, on stubs or on parallel overlaps: " + none.get(4));
+            return;
+        }
+
+        // Crossings closer than one bump merge into a single span.
+        var bundle = com.mervyn.miforeman.goal.EdgeRouter.hops(
+                List.of(hopWire(100, 10, 100, 150), hopWire(104, 10, 104, 150), across), 5, 3);
+        if (!bundle.get(2).equals(List.of(new com.mervyn.miforeman.goal.EdgeRouter.Hop(1, 97, 107)))) {
+            helper.fail("Two crossings 4px apart should merge into one bump, got " + bundle.get(2));
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID, timeoutTicks = 600)
+    public static void testEdgeRouterHopsStayInsideSegments(GameTestHelper helper) {
+        var level = helper.getLevel();
+        com.mervyn.miforeman.goal.RecipeGraph graph = RecipeGraphTraverser.computeRecipeGraph(level,
+                new ProductionGoal("router_hops", ProductionGoal.TargetType.ITEM,
+                        ResourceLocation.parse("modern_industrialization:analog_circuit"), 60.0));
+        var positions = routerArrange(graph);
+        var routes = com.mervyn.miforeman.goal.EdgeRouter.route(
+                routerRequestsWithPorts(routerPortWiresFor(graph, positions)), routerCardsFor(positions), 6, 3);
+        List<List<com.mervyn.miforeman.goal.EdgeRouter.Point>> polylines = routes.stream()
+                .map(com.mervyn.miforeman.goal.EdgeRouter.Route::points).toList();
+        var hops = com.mervyn.miforeman.goal.EdgeRouter.hops(polylines, 5, 3);
+
+        int total = 0;
+        for (int w = 0; w < polylines.size(); w++) {
+            var points = polylines.get(w);
+            for (var hop : hops.get(w)) {
+                total++;
+                if (hop.segment() < 1 || hop.segment() > points.size() - 3) {
+                    helper.fail("Wire " + w + " bumps on a port stub: " + hop);
+                    return;
+                }
+                var a = points.get(hop.segment());
+                var b = points.get(hop.segment() + 1);
+                int min = a.y() == b.y() ? Math.min(a.x(), b.x()) : Math.min(a.y(), b.y());
+                int max = a.y() == b.y() ? Math.max(a.x(), b.x()) : Math.max(a.y(), b.y());
+                if (hop.from() <= min || hop.to() >= max || hop.from() >= hop.to()) {
+                    helper.fail("Wire " + w + "'s bump " + hop + " runs past its segment [" + min + ", " + max + "].");
+                    return;
+                }
+            }
+        }
+        if (total == 0) {
+            helper.fail("A real routed graph should have at least one crossing to bump.");
+            return;
+        }
+        helper.succeed();
+    }
+
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID, timeoutTicks = 600)
     public static void testEdgeRouterOnRealGraphWithSpreadPorts(GameTestHelper helper) {
         var level = helper.getLevel();

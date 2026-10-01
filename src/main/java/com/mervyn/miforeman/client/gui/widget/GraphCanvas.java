@@ -83,6 +83,8 @@ public class GraphCanvas extends AbstractWidget {
     // Finer buys little and costs a lot: the search space grows with the square of it.
     private static final int EDGE_GRID_SIZE = 6;
     private static final int EDGE_LANE_GAP = 3;
+    private static final int HOP_HALF_WIDTH = 3;
+    private static final int HOP_HEIGHT = 3;
     // Above this many wires, routing costs more than the redraw is worth and every wire
     // stays an elbow. Routing is cached, but it still has to finish on the render thread.
     private static final int MAX_ROUTED_EDGES = 1200;
@@ -114,6 +116,10 @@ public class GraphCanvas extends AbstractWidget {
     /** Port offsets per visible edge, from the last routing pass; reused by live drag elbows. */
     private List<com.mervyn.miforeman.goal.PortLayout.Ports> edgePorts = List.of();
     private @Nullable com.mervyn.miforeman.goal.EdgeRouter.Routing lastRouting;
+    private List<List<com.mervyn.miforeman.goal.EdgeRouter.Hop>> cachedHops = List.of();
+    private @Nullable List<com.mervyn.miforeman.goal.EdgeRouter.Route> hopRoutes;
+    private List<Integer> hopOrder = List.of();
+    private @Nullable ResourceLocation hopDragging;
     private final Map<ResourceLocation, NodePosition> autoLayout = new HashMap<>();
     private Set<ResourceLocation> selectedNodeIds;
     private final Consumer<Set<ResourceLocation>> onSelect;
@@ -822,45 +828,48 @@ public class GraphCanvas extends AbstractWidget {
         if (routesDirty && !dragging)
             computeRoutes();
 
-        // Two passes so highlighted wires paint last: each wire's casing cuts a gap in
-        // whatever it crosses, and a dimmed wire must never cut through a highlighted one.
-        for (int pass = 0; pass < 2; pass++) {
-            boolean highlightPass = pass == 1;
-            for (int edgeIndex = 0; edgeIndex < visibleEdges.size(); edgeIndex++) {
-                GraphEdge edge = visibleEdges.get(edgeIndex);
-                RecipeGraphNode from = visibleNodes.get(edge.from());
-                RecipeGraphNode to = visibleNodes.get(edge.to());
-                if (from == null || to == null)
-                    continue;
-                NodePosition fromPos = positionOf(from);
-                NodePosition toPos = positionOf(to);
-                if (fromPos == null || toPos == null)
-                    continue;
-                int colour = bottleneckEdgeColour(edge);
-                if (isSearching) {
-                    boolean bothMatch = searchState.isMatch(edge.from()) && searchState.isMatch(edge.to());
-                    boolean touchesSelected = selectedNodeIds.contains(edge.from())
-                            || selectedNodeIds.contains(edge.to());
-                    colour = (bothMatch || touchesSelected) ? COLOUR_EDGE_HIGHLIGHT : COLOUR_EDGE_DIM;
-                } else if (!selectedNodeIds.isEmpty()) {
-                    boolean touchesSelected = selectedNodeIds.contains(edge.from())
-                            || selectedNodeIds.contains(edge.to());
-                    colour = touchesSelected ? COLOUR_EDGE_HIGHLIGHT : COLOUR_EDGE_DIM;
-                }
-                if ((colour == COLOUR_EDGE_HIGHLIGHT) != highlightPass)
-                    continue;
-                boolean touchesDragged = dragging
-                        && (draggingId.equals(edge.from()) || draggingId.equals(edge.to()));
-                com.mervyn.miforeman.goal.EdgeRouter.Route route = !touchesDragged && edgeIndex < routedEdges.size()
-                        ? routedEdges.get(edgeIndex)
-                        : null;
-                if (route != null) {
-                    drawPolyline(guiGraphics, route.points(), colour);
-                } else {
-                    com.mervyn.miforeman.goal.EdgeRouter.Request request = edgeRequest(fromPos, toPos, edgeIndex);
-                    drawElbowConnector(guiGraphics,
-                            request.fromX(), request.fromY(), request.toX(), request.toY(), colour);
-                }
+        // Highlighted wires paint last: each wire's casing cuts a gap in whatever it crosses,
+        // and a dimmed wire must never cut through a highlighted one.
+        int[] edgeColours = new int[visibleEdges.size()];
+        List<Integer> plain = new ArrayList<>();
+        List<Integer> highlighted = new ArrayList<>();
+        for (int edgeIndex = 0; edgeIndex < visibleEdges.size(); edgeIndex++) {
+            GraphEdge edge = visibleEdges.get(edgeIndex);
+            RecipeGraphNode from = visibleNodes.get(edge.from());
+            RecipeGraphNode to = visibleNodes.get(edge.to());
+            if (from == null || to == null || positionOf(from) == null || positionOf(to) == null)
+                continue;
+            int colour = bottleneckEdgeColour(edge);
+            if (isSearching) {
+                boolean bothMatch = searchState.isMatch(edge.from()) && searchState.isMatch(edge.to());
+                boolean touchesSelected = selectedNodeIds.contains(edge.from())
+                        || selectedNodeIds.contains(edge.to());
+                colour = (bothMatch || touchesSelected) ? COLOUR_EDGE_HIGHLIGHT : COLOUR_EDGE_DIM;
+            } else if (!selectedNodeIds.isEmpty()) {
+                boolean touchesSelected = selectedNodeIds.contains(edge.from())
+                        || selectedNodeIds.contains(edge.to());
+                colour = touchesSelected ? COLOUR_EDGE_HIGHLIGHT : COLOUR_EDGE_DIM;
+            }
+            edgeColours[edgeIndex] = colour;
+            (colour == COLOUR_EDGE_HIGHLIGHT ? highlighted : plain).add(edgeIndex);
+        }
+        List<Integer> drawOrder = new ArrayList<>(plain);
+        drawOrder.addAll(highlighted);
+        List<List<com.mervyn.miforeman.goal.EdgeRouter.Hop>> hops = hopsFor(drawOrder, dragging ? draggingId : null);
+
+        for (int k = 0; k < drawOrder.size(); k++) {
+            int edgeIndex = drawOrder.get(k);
+            GraphEdge edge = visibleEdges.get(edgeIndex);
+            int colour = edgeColours[edgeIndex];
+            com.mervyn.miforeman.goal.EdgeRouter.Route route = routeFor(edgeIndex, dragging ? draggingId : null);
+            if (route != null) {
+                drawPolyline(guiGraphics, route.points(), colour, hops.get(k));
+            } else {
+                NodePosition fromPos = positionOf(visibleNodes.get(edge.from()));
+                NodePosition toPos = positionOf(visibleNodes.get(edge.to()));
+                com.mervyn.miforeman.goal.EdgeRouter.Request request = edgeRequest(fromPos, toPos, edgeIndex);
+                drawElbowConnector(guiGraphics,
+                        request.fromX(), request.fromY(), request.toX(), request.toY(), colour);
             }
         }
 
@@ -1049,18 +1058,89 @@ public class GraphCanvas extends AbstractWidget {
      * casing notch the previous segment's core at the corner.
      */
     private void drawPolyline(GuiGraphics guiGraphics, List<com.mervyn.miforeman.goal.EdgeRouter.Point> points,
-            int colour) {
+            int colour, List<com.mervyn.miforeman.goal.EdgeRouter.Hop> hops) {
         int casing = (colour & 0xFF000000) | COLOUR_EDGE_CASING;
-        for (int i = 0; i < points.size() - 1; i++) {
-            com.mervyn.miforeman.goal.EdgeRouter.Point a = points.get(i);
-            com.mervyn.miforeman.goal.EdgeRouter.Point b = points.get(i + 1);
-            drawLine(guiGraphics, a.x(), a.y(), b.x(), b.y(), EDGE_CORE_HALF_WIDTH + EDGE_CASING_PAD, casing);
+        for (int i = 0; i < points.size() - 1; i++)
+            drawSegment(guiGraphics, points.get(i), points.get(i + 1), i, hops,
+                    EDGE_CORE_HALF_WIDTH + EDGE_CASING_PAD, casing);
+        for (int i = 0; i < points.size() - 1; i++)
+            drawSegment(guiGraphics, points.get(i), points.get(i + 1), i, hops, EDGE_CORE_HALF_WIDTH, colour);
+    }
+
+    /** A segment drawn in pieces around its hops; horizontal segments bump up, vertical ones
+     *  left, so a parallel bundle crossing the same wire bumps in step and stays apart. */
+    private void drawSegment(GuiGraphics guiGraphics, com.mervyn.miforeman.goal.EdgeRouter.Point a,
+            com.mervyn.miforeman.goal.EdgeRouter.Point b, int segment,
+            List<com.mervyn.miforeman.goal.EdgeRouter.Hop> hops, int halfWidth, int colour) {
+        List<com.mervyn.miforeman.goal.EdgeRouter.Hop> here = new ArrayList<>();
+        for (com.mervyn.miforeman.goal.EdgeRouter.Hop hop : hops)
+            if (hop.segment() == segment)
+                here.add(hop);
+        if (here.isEmpty()) {
+            drawLine(guiGraphics, a.x(), a.y(), b.x(), b.y(), halfWidth, colour);
+            return;
         }
-        for (int i = 0; i < points.size() - 1; i++) {
-            com.mervyn.miforeman.goal.EdgeRouter.Point a = points.get(i);
-            com.mervyn.miforeman.goal.EdgeRouter.Point b = points.get(i + 1);
-            drawLine(guiGraphics, a.x(), a.y(), b.x(), b.y(), EDGE_CORE_HALF_WIDTH, colour);
+        boolean horizontal = a.y() == b.y();
+        int start = horizontal ? a.x() : a.y();
+        int end = horizontal ? b.x() : b.y();
+        int fixed = horizontal ? a.y() : a.x();
+        int lifted = fixed - HOP_HEIGHT;
+        int dir = end >= start ? 1 : -1;
+        here.sort(java.util.Comparator.comparingInt(hop -> dir * hop.from()));
+        int cursor = start;
+        for (com.mervyn.miforeman.goal.EdgeRouter.Hop hop : here) {
+            int near = dir > 0 ? hop.from() : hop.to();
+            int far = dir > 0 ? hop.to() : hop.from();
+            drawAxis(guiGraphics, horizontal, fixed, cursor, near, halfWidth, colour);
+            drawCross(guiGraphics, horizontal, near, fixed, lifted, halfWidth, colour);
+            drawAxis(guiGraphics, horizontal, lifted, near, far, halfWidth, colour);
+            drawCross(guiGraphics, horizontal, far, lifted, fixed, halfWidth, colour);
+            cursor = far;
         }
+        drawAxis(guiGraphics, horizontal, fixed, cursor, end, halfWidth, colour);
+    }
+
+    private void drawAxis(GuiGraphics guiGraphics, boolean horizontal, int fixed, int from, int to, int halfWidth,
+            int colour) {
+        if (horizontal)
+            drawLine(guiGraphics, from, fixed, to, fixed, halfWidth, colour);
+        else
+            drawLine(guiGraphics, fixed, from, fixed, to, halfWidth, colour);
+    }
+
+    private void drawCross(GuiGraphics guiGraphics, boolean horizontal, int at, int from, int to, int halfWidth,
+            int colour) {
+        if (horizontal)
+            drawLine(guiGraphics, at, from, at, to, halfWidth, colour);
+        else
+            drawLine(guiGraphics, from, at, to, at, halfWidth, colour);
+    }
+
+    private @Nullable com.mervyn.miforeman.goal.EdgeRouter.Route routeFor(int edgeIndex,
+            @Nullable ResourceLocation draggingId) {
+        if (edgeIndex >= routedEdges.size())
+            return null;
+        GraphEdge edge = visibleEdges.get(edgeIndex);
+        if (draggingId != null && (draggingId.equals(edge.from()) || draggingId.equals(edge.to())))
+            return null;
+        return routedEdges.get(edgeIndex);
+    }
+
+    /** Recomputed only when the routes, the draw order or the dragged node change. */
+    private List<List<com.mervyn.miforeman.goal.EdgeRouter.Hop>> hopsFor(List<Integer> drawOrder,
+            @Nullable ResourceLocation draggingId) {
+        if (hopRoutes == routedEdges && drawOrder.equals(hopOrder) && java.util.Objects.equals(draggingId, hopDragging))
+            return cachedHops;
+        List<List<com.mervyn.miforeman.goal.EdgeRouter.Point>> polylines = new ArrayList<>(drawOrder.size());
+        for (int edgeIndex : drawOrder) {
+            com.mervyn.miforeman.goal.EdgeRouter.Route route = routeFor(edgeIndex, draggingId);
+            polylines.add(route != null ? route.points() : List.of());
+        }
+        cachedHops = com.mervyn.miforeman.goal.EdgeRouter.hops(polylines, HOP_HALF_WIDTH + 2, HOP_HALF_WIDTH);
+        hopRoutes = routedEdges;
+        hopOrder = List.copyOf(drawOrder);
+        hopDragging = draggingId;
+        return cachedHops;
     }
 
     private void drawElbowConnector(GuiGraphics guiGraphics, int fromX, int fromY, int toX, int toY, int colour) {
@@ -1069,7 +1149,7 @@ public class GraphCanvas extends AbstractWidget {
                 new com.mervyn.miforeman.goal.EdgeRouter.Point(fromX, fromY),
                 new com.mervyn.miforeman.goal.EdgeRouter.Point(midX, fromY),
                 new com.mervyn.miforeman.goal.EdgeRouter.Point(midX, toY),
-                new com.mervyn.miforeman.goal.EdgeRouter.Point(toX, toY)), colour);
+                new com.mervyn.miforeman.goal.EdgeRouter.Point(toX, toY)), colour, List.of());
     }
 
     /**
