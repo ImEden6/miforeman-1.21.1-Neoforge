@@ -48,6 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recalculated; linked machines that ran the old loop recipes then show as off the graph. If
   cycling recipes earlier left a goal with a looping recipe picked, press Auto to let the plan fix
   it. `/miforeman goal plan` lists these picks as `auto: <recipe>`.
+- Changing an existing goal's target could open its recipe graph off-screen, because the
+  previous graph's camera and card positions were kept. A new target now opens centred.
 - Plans asked for 60 times too many machines, and too much power and too many byproducts with
   them: the per-minute goal rate was being treated as per second. Iron plates at 60 a minute
   now need 5 compressors, not 300.
