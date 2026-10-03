@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.0] - 2026-10-03
 
 ### Added
 - The plan summary shows how much your linked machines can actually make (at base speed, from
@@ -57,6 +57,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   linked last, so a starved machine could hide behind a working one. It now shows the worst.
 - Idle machines no longer drop off the recipe graph after the clipboard is put away for a few
   seconds, or after a server restart. Each machine's last recipe is now saved with the world.
+
+### Known limitations
+- The capacity readout assumes machines run at base speed, so overclocked or upgraded machines
+  can make more than it says. Machines in unloaded chunks count as zero.
+- When a plan swaps out a looping recipe on its own, it only uses recipes that make just that
+  one item. Routes through recipes with byproducts (centrifuges, electrolyzers) are left for you
+  to pick by hand.
+- Batch multiblocks from addons, like MI Tweaks' Bulk Compactor, are linked and tracked, but a
+  scan only offers them when the recipe they're running is the one the plan uses. If it isn't,
+  cycle that item's recipe to match.
 
 ## [1.2.0] - 2026-09-08
 
