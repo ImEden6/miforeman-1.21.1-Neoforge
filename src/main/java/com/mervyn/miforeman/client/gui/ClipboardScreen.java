@@ -322,10 +322,19 @@ public class ClipboardScreen extends Screen {
 
         defineNextButton = new ClipboardButton(contentX + contentW - 80, btnY, 80, 16, Component.translatable("miforeman.button.next"),
                 b -> {
+                    String previousTarget = this.goalDraft.currentPlan != null && this.goalDraft.currentPlan.graph() != null
+                            ? this.goalDraft.currentPlan.graph().target().toString() : null;
                     GoalFormResult result = new GoalFormResult(
                             this.goalDraft.goalName, this.goalDraft.targetType, this.goalDraft.targetIdStr,
                             this.goalDraft.rate, this.goalDraft.perHour, this.goalDraft.threshold);
                     this.goalDraft.applyFormResult(result);
+                    // The camera and node positions belong to the old graph; a new target gets a fresh, centred view.
+                    if (previousTarget != null && !previousTarget.equals(String.valueOf(ResourceLocation.tryParse(this.goalDraft.targetIdStr)))) {
+                        this.cameraX = 0;
+                        this.cameraY = 0;
+                        this.cameraZoom = 1.0f;
+                        this.goalDraft.graphLayout = com.mervyn.miforeman.goal.GraphLayoutState.EMPTY;
+                    }
                     computePlan();
                     if (this.goalDraft.errorMessage == null && this.goalDraft.currentPlan != null) {
                         this.selectedNodeId = null;
