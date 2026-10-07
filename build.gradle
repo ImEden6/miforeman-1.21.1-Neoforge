@@ -2,6 +2,7 @@ plugins {
     id 'java-library'
     id 'maven-publish'
     id 'net.neoforged.moddev' version '2.0.141'
+    id 'me.modmuss50.mod-publish-plugin' version '2.2.1'
     id 'idea'
 }
 
@@ -225,6 +226,53 @@ publishing {
     repositories {
         maven {
             url "file://${project.projectDir}/repo"
+        }
+    }
+}
+
+// Release notes are this version's section of CHANGELOG.md, so a release can't go out without one.
+def releaseVersion = mod_version
+def releaseNotes = providers.fileContents(layout.projectDirectory.file('CHANGELOG.md')).asText.map { text ->
+    def section = text =~ /(?ms)^## \[${java.util.regex.Pattern.quote(releaseVersion)}\][^\n]*\n(.*?)(?=^## \[|\z)/
+    if (!section.find())
+        throw new GradleException("CHANGELOG.md has no section for ${releaseVersion}")
+    section.group(1).trim()
+}
+
+// Run by .github/workflows/publish.yml on a version tag. A site with an empty project ID is skipped.
+// Without a token for every site it's a dry run that only writes what it would upload to
+// build/publishMods.
+def toModrinth = !modrinth_project_id.isBlank()
+def toCurseforge = !curseforge_project_id.isBlank()
+publishMods {
+    file = jar.archiveFile
+    changelog = releaseNotes
+    type = STABLE
+    displayName = "${mod_name} ${mod_version}"
+    modLoaders.add('neoforge')
+    dryRun = (toModrinth && providers.environmentVariable('MODRINTH_TOKEN').getOrNull() == null)
+            || (toCurseforge && providers.environmentVariable('CURSEFORGE_TOKEN').getOrNull() == null)
+
+    if (toModrinth) {
+        modrinth {
+            projectId = modrinth_project_id
+            accessToken = providers.environmentVariable('MODRINTH_TOKEN')
+            minecraftVersions.add(minecraft_version)
+            requires('modern-industrialization')
+            optional('emi')
+        }
+    }
+
+    if (toCurseforge) {
+        curseforge {
+            projectId = curseforge_project_id
+            accessToken = providers.environmentVariable('CURSEFORGE_TOKEN')
+            minecraftVersions.add(minecraft_version)
+            javaVersions.add(JavaVersion.VERSION_21)
+            client = true
+            server = true
+            requires('modern-industrialization')
+            optional('emi')
         }
     }
 }

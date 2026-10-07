@@ -1,0 +1,66 @@
+name: Publish
+
+# Only a pushed version tag publishes: git tag v1.3.1 && git push origin v1.3.1
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # Waits for approval in the Actions tab; the reviewer is set on the "release" environment.
+    environment: release
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      - name: Check the tag, project IDs and tokens
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+          CURSEFORGE_TOKEN: ${{ secrets.CURSEFORGE }}
+        run: |
+          version=$(grep '^mod_version=' gradle.properties | cut -d= -f2 | tr -d '\r')
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} doesn't match mod_version ${version} in gradle.properties"
+            exit 1
+          fi
+          modrinth=$(grep '^modrinth_project_id=' gradle.properties | cut -d= -f2 | tr -d '\r')
+          curseforge=$(grep '^curseforge_project_id=' gradle.properties | cut -d= -f2 | tr -d '\r')
+          if [ -z "${modrinth}" ] && [ -z "${curseforge}" ]; then
+            echo "::error::Set modrinth_project_id or curseforge_project_id in gradle.properties"
+            exit 1
+          fi
+          # A missing token makes publishMods silently do a dry run, which would look like a release.
+          if [ -n "${modrinth}" ] && [ -z "${MODRINTH_TOKEN}" ]; then
+            echo "::error::Add a MODRINTH_TOKEN secret to the release environment"
+            exit 1
+          fi
+          if [ -n "${curseforge}" ] && [ -z "${CURSEFORGE_TOKEN}" ]; then
+            echo "::error::Add a CURSEFORGE secret to the release environment"
+            exit 1
+          fi
+
+      - name: Build
+        run: ./gradlew build
+
+      # Gametests are a separate NeoForge task; `build` does not run them.
+      - name: Run game tests
+        run: ./gradlew runGameTestServer
+
+      - name: Publish to Modrinth and CurseForge
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+          CURSEFORGE_TOKEN: ${{ secrets.CURSEFORGE }}
+        run: ./gradlew publishMods
