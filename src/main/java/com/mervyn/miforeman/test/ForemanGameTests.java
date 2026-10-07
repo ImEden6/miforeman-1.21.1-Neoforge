@@ -3267,6 +3267,40 @@ public class ForemanGameTests {
     }
 
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testGraphCameraViewportCulling(GameTestHelper helper) {
+        // Pan (-100, 50) at zoom 2 on a 400x300 widget shows canvas x 50..250, y -25..125.
+        var camera = new com.mervyn.miforeman.client.gui.widget.GraphCamera(-100, 50, 2.0f);
+        var view = camera.viewport(400, 300, 0);
+        if (Math.abs(view.minX() - 50) > 1e-9 || Math.abs(view.minY() - (-25)) > 1e-9
+                || Math.abs(view.maxX() - 250) > 1e-9 || Math.abs(view.maxY() - 125) > 1e-9) {
+            helper.fail("Expected viewport (50, -25)-(250, 125), got " + view);
+            return;
+        }
+        if (!view.intersects(100, 0, 196, 26)) {
+            helper.fail("A card fully inside the view must be drawn");
+            return;
+        }
+        if (!view.intersects(240, 120, 336, 146)) {
+            helper.fail("A card hanging over the bottom-right corner must be drawn");
+            return;
+        }
+        if (view.intersects(250, 0, 346, 26) || view.intersects(-46, 0, 50, 26)) {
+            helper.fail("A card touching the left or right edge from outside must be skipped");
+            return;
+        }
+        if (view.intersects(100, 125, 196, 151) || view.intersects(100, -51, 196, -25)) {
+            helper.fail("A card touching the top or bottom edge from outside must be skipped");
+            return;
+        }
+        var padded = camera.viewport(400, 300, 8);
+        if (!padded.intersects(255, 0, 351, 26)) {
+            helper.fail("The margin must keep something just past the edge, like a wire's casing");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testGraphLayoutStateHiddenNodes(GameTestHelper helper) {
         ResourceLocation nodeA = ResourceLocation.parse("minecraft:iron_ingot");
         ResourceLocation nodeB = ResourceLocation.parse("minecraft:iron_ore");

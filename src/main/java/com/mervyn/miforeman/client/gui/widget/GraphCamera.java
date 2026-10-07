@@ -33,6 +33,13 @@ public class GraphCamera {
         public static final DragEnd NONE = new DragEnd(null, null, null, null, false, false, null);
     }
 
+    /** A canvas-space rectangle; anything outside it is off screen. */
+    public record Viewport(double minX, double minY, double maxX, double maxY) {
+        public boolean intersects(double x0, double y0, double x1, double y1) {
+            return x0 < maxX && x1 > minX && y0 < maxY && y1 > minY;
+        }
+    }
+
     public GraphCamera(double panX, double panY, float zoom) {
         this.panX = panX;
         this.panY = panY;
@@ -65,6 +72,12 @@ public class GraphCamera {
         return new MarqueeRect(
                 Math.min(marqueeStartX, marqueeCurrentX), Math.min(marqueeStartY, marqueeCurrentY),
                 Math.max(marqueeStartX, marqueeCurrentX), Math.max(marqueeStartY, marqueeCurrentY));
+    }
+
+    /** What a {@code width} x {@code height} widget shows, grown by {@code margin} canvas units each side. */
+    public Viewport viewport(int width, int height, double margin) {
+        return new Viewport(-panX / zoom - margin, -panY / zoom - margin,
+                (width - panX) / zoom + margin, (height - panY) / zoom + margin);
     }
 
     double toCanvasX(int originX, double screenMouseX) {

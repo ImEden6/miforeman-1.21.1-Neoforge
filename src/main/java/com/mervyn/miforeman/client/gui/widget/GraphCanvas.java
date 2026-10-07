@@ -85,6 +85,8 @@ public class GraphCanvas extends AbstractWidget {
     private static final int EDGE_LANE_GAP = 3;
     private static final int HOP_HALF_WIDTH = 3;
     private static final int HOP_HEIGHT = 3;
+    // Covers a wire's casing and hop bumps, which reach past its centreline bounds.
+    private static final int CULL_MARGIN = 8;
     // Above this many wires, routing costs more than the redraw is worth and every wire
     // stays an elbow. Routing is cached, but it still has to finish on the render thread.
     private static final int MAX_ROUTED_EDGES = 1200;
@@ -134,6 +136,8 @@ public class GraphCanvas extends AbstractWidget {
     /** Live status of every machine on each recipe, keyed by recipe ID. Empty until
      *  {@link #updateLiveStatus} is called. */
     private Map<ResourceLocation, RecipeLiveSummary> liveStatusByRecipeId = Map.of();
+    /** Card text, built on first draw; only a live status update can change it. */
+    private final Map<ResourceLocation, NodeLabel> nodeLabels = new HashMap<>();
     /** Last live data received, kept so a placement can update the view before the next poll. */
     private List<LiveMonitoringPayload.MachineStatusData> liveMachines = List.of();
     private final MachinePlacementPanel placementPanel;
@@ -238,6 +242,7 @@ public class GraphCanvas extends AbstractWidget {
         });
         placementPanel.update(data, machineNodeIds);
         updateCapacity();
+        nodeLabels.clear();
     }
 
     /** Re-solved only once changed machine counts hold still for a poll: counts shift as linked
@@ -824,6 +829,32 @@ public class GraphCanvas extends AbstractWidget {
     protected void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         guiGraphics.enableScissor(getX() + 1, getY() + 1, getX() + getWidth() - 1, getY() + getHeight() - 1);
 
+        // Outside drawManaged every fill is its own draw call, thousands per frame on a big plan.
+        guiGraphics.drawManaged(() -> drawGraph(guiGraphics, mouseX, mouseY));
+
+        Minecraft mc = Minecraft.getInstance();
+        placementPanel.setBounds(getX(), getY(), getX() + getWidth(), getY() + getHeight());
+        placementPanel.render(guiGraphics, mouseX, mouseY);
+        if (placingPos != null) {
+            Component hint = Component.translatable("miforeman.graph.picking_hint", placingName);
+            int hintW = mc.font.width(hint) + 8;
+            int hintX = getX() + (getWidth() - hintW) / 2;
+            int hintY = getY() + 6;
+            guiGraphics.fill(hintX, hintY, hintX + hintW, hintY + 14, COLOUR_CHIP_FILL);
+            guiGraphics.renderOutline(hintX, hintY, hintW, 14, COLOUR_BORDER_DARK);
+            guiGraphics.drawString(mc.font, hint, hintX + 4, hintY + 3, COLOUR_TEXT, false);
+        }
+
+        guiGraphics.disableScissor();
+
+        // Render search bar overlay on top of canvas
+        searchBar.render(guiGraphics, mouseX, mouseY, partialTick);
+
+        // Render hidden nodes left drawer on top of canvas
+        hiddenNodesDrawer.render(guiGraphics, mouseX, mouseY, partialTick);
+    }
+
+    private void drawGraph(GuiGraphics guiGraphics, int mouseX, int mouseY) {
         guiGraphics.pose().pushPose();
         guiGraphics.pose().translate(getX() + camera.panX(), getY() + camera.panY(), 0);
         guiGraphics.pose().scale(camera.zoom(), camera.zoom(), 1);
@@ -831,6 +862,7 @@ public class GraphCanvas extends AbstractWidget {
         RecipeGraphNode hovered = isMouseOver(mouseX, mouseY) ? nodeAt(mouseX, mouseY) : null;
         ResourceLocation hoveredNodeId = hovered != null ? hovered.getId() : null;
         boolean isSearching = searchState.isSearching();
+        GraphCamera.Viewport view = camera.viewport(getWidth(), getHeight(), CULL_MARGIN);
 
         // Group frames render first so nodes and edges draw on top of them.
         if (!layoutState.groups().isEmpty()) {
@@ -842,6 +874,8 @@ public class GraphCanvas extends AbstractWidget {
                     continue;
                 int minX = bounds.minX() - GROUP_PAD, minY = bounds.minY() - GROUP_PAD;
                 int maxX = bounds.maxX() + GROUP_PAD, maxY = bounds.maxY() + GROUP_PAD;
+                if (!view.intersects(minX, minY - 10, maxX, maxY))
+                    continue;
                 guiGraphics.fill(minX, minY, maxX, maxY, COLOUR_GROUP_FILL);
                 guiGraphics.fill(minX, minY, maxX, minY + 1, COLOUR_GROUP_BORDER);
                 guiGraphics.fill(minX, maxY - 1, maxX, maxY, COLOUR_GROUP_BORDER);
@@ -899,11 +933,15 @@ public class GraphCanvas extends AbstractWidget {
             int colour = edgeColours[edgeIndex];
             com.mervyn.miforeman.goal.EdgeRouter.Route route = routeFor(edgeIndex, dragging ? draggingId : null);
             if (route != null) {
-                drawPolyline(guiGraphics, route.points(), colour, hops.get(k));
+                if (polylineVisible(route.points(), view))
+                    drawPolyline(guiGraphics, route.points(), colour, hops.get(k));
             } else {
                 NodePosition fromPos = positionOf(visibleNodes.get(edge.from()));
                 NodePosition toPos = positionOf(visibleNodes.get(edge.to()));
                 com.mervyn.miforeman.goal.EdgeRouter.Request request = edgeRequest(fromPos, toPos, edgeIndex);
+                if (!view.intersects(Math.min(request.fromX(), request.toX()), Math.min(request.fromY(), request.toY()),
+                        Math.max(request.fromX(), request.toX()), Math.max(request.fromY(), request.toY())))
+                    continue;
                 drawElbowConnector(guiGraphics,
                         request.fromX(), request.fromY(), request.toX(), request.toY(), colour);
             }
@@ -912,7 +950,7 @@ public class GraphCanvas extends AbstractWidget {
         Minecraft mc = Minecraft.getInstance();
         for (RecipeGraphNode node : visibleNodes.values()) {
             NodePosition pos = positionOf(node);
-            if (pos == null)
+            if (pos == null || !view.intersects(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT))
                 continue;
             boolean selected = selectedNodeIds.contains(node.getId());
             boolean hoveredNode = node.getId().equals(hoveredNodeId);
@@ -971,42 +1009,21 @@ public class GraphCanvas extends AbstractWidget {
             int textColour = !isMatch ? COLOUR_TEXT_DIM : COLOUR_TEXT;
             int rateColour = !isMatch ? COLOUR_MUTED_DIM : COLOUR_MUTED;
 
-            String name = DisplayFormat.formatId(node.getId());
-            boolean hasAmbiguity = !node.getAmbiguityOptions().isEmpty()
-                    || graph.unsourcedResourceIds().contains(node.getId());
-            if (hasAmbiguity) {
-                name = "⚠ " + name;
+            NodeLabel label = nodeLabels.computeIfAbsent(node.getId(), id -> buildLabel(node, textInset, liveStatus));
+            if (label.limiting()) {
+                guiGraphics.drawString(mc.font, "\u25B2", pos.x() + NODE_WIDTH - textInset - label.markWidth(),
+                        pos.y() + 3, COLOUR_SEARCH_CURRENT_MATCH, false);
             }
-            int maxTextWidth = NODE_WIDTH - textInset - 3;
-            boolean limiting = capacity != null && node.getType() == NodeType.MACHINE
-                    && (capacity.bottlenecks().contains(node.getId().toString())
-                            || capacity.blockers().contains(node.getId().toString()));
-            if (limiting) {
-                int markWidth = mc.font.width("\u25B2");
-                guiGraphics.drawString(mc.font, "\u25B2", pos.x() + NODE_WIDTH - textInset - markWidth, pos.y() + 3,
-                        COLOUR_SEARCH_CURRENT_MATCH, false);
-                maxTextWidth -= markWidth + 3;
-            }
-            if (mc.font.width(name) > maxTextWidth) {
-                name = mc.font.plainSubstrByWidth(name, maxTextWidth - 8) + "..";
-            }
-            guiGraphics.drawString(mc.font, name, pos.x() + textInset, pos.y() + 3, textColour, false);
+            guiGraphics.drawString(mc.font, label.name(), pos.x() + textInset, pos.y() + 3, textColour, false);
 
             // Running count, right-aligned on the rate line. It's what explains a red node
             // whose output looks fine: the colour is the worst machine, the count the rest.
-            int rateWidth = maxTextWidth;
-            if (liveStatus != null) {
-                String countText = liveStatus.running() + "/" + liveStatus.total();
-                int countWidth = mc.font.width(countText);
-                guiGraphics.drawString(mc.font, countText, pos.x() + NODE_WIDTH - textInset - countWidth, pos.y() + 14,
+            if (label.countText() != null) {
+                guiGraphics.drawString(mc.font, label.countText(),
+                        pos.x() + NODE_WIDTH - textInset - label.countWidth(), pos.y() + 14,
                         !isMatch ? COLOUR_MUTED_DIM : liveStatus.worst().colour(), false);
-                rateWidth -= countWidth + 4;
             }
-            String rateText = DisplayFormat.formatRate(node.getRequiredRate(), this.perHour);
-            if (mc.font.width(rateText) > rateWidth) {
-                rateText = mc.font.plainSubstrByWidth(rateText, rateWidth - 8) + "..";
-            }
-            guiGraphics.drawString(mc.font, rateText, pos.x() + textInset, pos.y() + 14, rateColour, false);
+            guiGraphics.drawString(mc.font, label.rateText(), pos.x() + textInset, pos.y() + 14, rateColour, false);
         }
 
         GraphCamera.MarqueeRect marquee = camera.liveMarqueeRect();
@@ -1024,26 +1041,6 @@ public class GraphCanvas extends AbstractWidget {
         }
 
         guiGraphics.pose().popPose();
-
-        placementPanel.setBounds(getX(), getY(), getX() + getWidth(), getY() + getHeight());
-        placementPanel.render(guiGraphics, mouseX, mouseY);
-        if (placingPos != null) {
-            Component hint = Component.translatable("miforeman.graph.picking_hint", placingName);
-            int hintW = mc.font.width(hint) + 8;
-            int hintX = getX() + (getWidth() - hintW) / 2;
-            int hintY = getY() + 6;
-            guiGraphics.fill(hintX, hintY, hintX + hintW, hintY + 14, COLOUR_CHIP_FILL);
-            guiGraphics.renderOutline(hintX, hintY, hintW, 14, COLOUR_BORDER_DARK);
-            guiGraphics.drawString(mc.font, hint, hintX + 4, hintY + 3, COLOUR_TEXT, false);
-        }
-
-        guiGraphics.disableScissor();
-
-        // Render search bar overlay on top of canvas
-        searchBar.render(guiGraphics, mouseX, mouseY, partialTick);
-
-        // Render hidden nodes left drawer on top of canvas
-        hiddenNodesDrawer.render(guiGraphics, mouseX, mouseY, partialTick);
     }
 
     /** Renders a flat-color chamfered rectangle. */
@@ -1160,6 +1157,56 @@ public class GraphCanvas extends AbstractWidget {
             drawLine(guiGraphics, at, from, at, to, halfWidth, colour);
         else
             drawLine(guiGraphics, from, at, to, at, halfWidth, colour);
+    }
+
+    private record NodeLabel(String name, boolean limiting, int markWidth, @Nullable String countText,
+            int countWidth, String rateText) {}
+
+    private NodeLabel buildLabel(RecipeGraphNode node, int textInset, @Nullable RecipeLiveSummary liveStatus) {
+        net.minecraft.client.gui.Font font = Minecraft.getInstance().font;
+        String name = DisplayFormat.formatId(node.getId());
+        boolean hasAmbiguity = !node.getAmbiguityOptions().isEmpty()
+                || graph.unsourcedResourceIds().contains(node.getId());
+        if (hasAmbiguity) {
+            name = "⚠ " + name;
+        }
+        int maxTextWidth = NODE_WIDTH - textInset - 3;
+        boolean limiting = capacity != null && node.getType() == NodeType.MACHINE
+                && (capacity.bottlenecks().contains(node.getId().toString())
+                        || capacity.blockers().contains(node.getId().toString()));
+        int markWidth = font.width("\u25B2");
+        if (limiting) {
+            maxTextWidth -= markWidth + 3;
+        }
+        if (font.width(name) > maxTextWidth) {
+            name = font.plainSubstrByWidth(name, maxTextWidth - 8) + "..";
+        }
+
+        int rateWidth = maxTextWidth;
+        String countText = null;
+        int countWidth = 0;
+        if (liveStatus != null) {
+            countText = liveStatus.running() + "/" + liveStatus.total();
+            countWidth = font.width(countText);
+            rateWidth -= countWidth + 4;
+        }
+        String rateText = DisplayFormat.formatRate(node.getRequiredRate(), this.perHour);
+        if (font.width(rateText) > rateWidth) {
+            rateText = font.plainSubstrByWidth(rateText, rateWidth - 8) + "..";
+        }
+        return new NodeLabel(name, limiting, markWidth, countText, countWidth, rateText);
+    }
+
+    private static boolean polylineVisible(List<com.mervyn.miforeman.goal.EdgeRouter.Point> points,
+            GraphCamera.Viewport view) {
+        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE;
+        for (com.mervyn.miforeman.goal.EdgeRouter.Point p : points) {
+            minX = Math.min(minX, p.x());
+            minY = Math.min(minY, p.y());
+            maxX = Math.max(maxX, p.x());
+            maxY = Math.max(maxY, p.y());
+        }
+        return !points.isEmpty() && view.intersects(minX, minY, maxX, maxY);
     }
 
     private @Nullable com.mervyn.miforeman.goal.EdgeRouter.Route routeFor(int edgeIndex,
