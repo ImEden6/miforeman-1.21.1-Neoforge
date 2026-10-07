@@ -47,6 +47,7 @@ public class GraphSearchBar {
         this.editBox = new EditBox(font, 0, 0, 76, 12, Component.literal("Search"));
         this.editBox.setBordered(false);
         this.editBox.setTextColor(COLOUR_TEXT);
+        this.editBox.setTextShadow(false);
         this.editBox.setHint(Component.translatable("miforeman.screen.search_hint").withColor(COLOUR_MUTED));
         this.editBox.setResponder(query -> {
             onMatchChanged.run();
