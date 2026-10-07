@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-10-07
+
+### Changed
+- The text you type into the graph's search bar no longer has a drop shadow.
+
+### Fixed
+- The recipe graph no longer slows the game to a crawl on big plans. A Quantum Upgrade plan
+  went from about 6 FPS to over 90, and parts of the graph that are off screen are no longer
+  drawn at all, so zooming in makes it faster still.
+
 ## [1.3.0] - 2026-10-03
 
 ### Added
