@@ -529,8 +529,8 @@ public class ForemanGameTests {
         }
 
         var propagated = RecipeGraphTraverser.computeRecipeGraphUncached(level, goal, RecipeGraphTraverser.SolveMode.PROPAGATION_ONLY);
-        if (propagated.edges().size() != 787) {
-            helper.fail("Expected 787 demand edges in the propagated quantum_upgrade graph, but got: " + propagated.edges().size()
+        if (propagated.edges().size() != 780) {
+            helper.fail("Expected 780 demand edges in the propagated quantum_upgrade graph, but got: " + propagated.edges().size()
                     + ". If this changed intentionally, e.g. an MI recipe update, update this snapshot.");
             return;
         }
@@ -548,13 +548,13 @@ public class ForemanGameTests {
                 return;
             }
         }
-        if (graph.edges().size() != 797) {
-            helper.fail("Expected 797 edges (787 demand + 10 byproduct) in the quantum_upgrade graph, but got: "
+        if (graph.edges().size() != 790) {
+            helper.fail("Expected 790 edges (780 demand + 10 byproduct) in the quantum_upgrade graph, but got: "
                     + graph.edges().size() + ". If this changed intentionally, update this snapshot.");
             return;
         }
-        if (graph.nodes().size() != 540) {
-            helper.fail("Expected 540 nodes in the quantum_upgrade graph, but got: " + graph.nodes().size()
+        if (graph.nodes().size() != 536) {
+            helper.fail("Expected 536 nodes in the quantum_upgrade graph, but got: " + graph.nodes().size()
                     + ". If this changed intentionally, e.g. an MI recipe update, update this snapshot.");
             return;
         }
@@ -1119,6 +1119,31 @@ public class ForemanGameTests {
         if (!com.mervyn.miforeman.goal.PlanSolver.makesOnly(smelt, "item:ingot")
                 || com.mervyn.miforeman.goal.PlanSolver.makesOnly(electrolyse, "item:sulfur")) {
             helper.fail("Only a recipe whose sole output is the resource counts as making only it.");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testMiRecipesAreTheDefault(GameTestHelper helper) {
+        var level = helper.getLevel();
+        ResourceLocation curvedPlate = ResourceLocation.parse("modern_industrialization:steel_curved_plate");
+        var candidates = RecipeGraphTraverser.getCandidateRecipes(level, curvedPlate);
+        if (candidates.stream().noneMatch(h -> h.id().getNamespace().equals("extended_industrialization"))) {
+            helper.fail("Expected EI's bending machine to offer steel curved plates, got " + candidates);
+            return;
+        }
+        if (!candidates.get(0).id().getNamespace().equals("modern_industrialization")) {
+            helper.fail("MI's recipes must come first, got " + candidates.get(0).id());
+            return;
+        }
+
+        var graph = RecipeGraphTraverser.computeRecipeGraphUncached(level,
+                new ProductionGoal("mi_default", ProductionGoal.TargetType.ITEM, curvedPlate, 60.0),
+                RecipeGraphTraverser.SolveMode.AUTO);
+        ResourceLocation chosen = graph.node(curvedPlate).getSelectedAmbiguity();
+        if (chosen == null || !chosen.getNamespace().equals("modern_industrialization")) {
+            helper.fail("A steel curved plate plan should default to MI's recipe, got " + chosen);
             return;
         }
         helper.succeed();
@@ -2836,8 +2861,8 @@ public class ForemanGameTests {
         // Confirm the flag going back off restores the pinned snapshot, ensuring the
         // toggle has no lingering side effects on GRAPH_CACHE or recipe indexing.
         var graphRestored = RecipeGraphTraverser.computeRecipeGraph(level, goal);
-        if (graphRestored.nodes().size() != 540 || graphRestored.edges().size() != 797) {
-            helper.fail("Expected graph to return to the pinned 540 nodes/797 edges after disabling "
+        if (graphRestored.nodes().size() != 536 || graphRestored.edges().size() != 790) {
+            helper.fail("Expected graph to return to the pinned 536 nodes/790 edges after disabling "
                     + "includeProxiedRecipeTypes again, but got: " + graphRestored.nodes().size()
                     + " nodes / " + graphRestored.edges().size() + " edges.");
             return;

@@ -159,7 +159,9 @@ public final class RecipeGraphTraverser {
             Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> target) {
         for (var entry : byRecipeId.entrySet()) {
             List<RecipeHolder<MachineRecipe>> sorted = new ArrayList<>(entry.getValue().values());
-            sorted.sort(Comparator.comparing(RecipeHolder::id));
+            // MI's own recipes first, so addons like EI don't take over the default just by sorting earlier.
+            sorted.sort(Comparator.comparing((RecipeHolder<MachineRecipe> h) -> !h.id().getNamespace()
+                    .equals(aztech.modern_industrialization.MI.ID)).thenComparing(RecipeHolder::id));
             target.put(entry.getKey(), sorted);
         }
     }
