@@ -529,8 +529,8 @@ public class ForemanGameTests {
         }
 
         var propagated = RecipeGraphTraverser.computeRecipeGraphUncached(level, goal, RecipeGraphTraverser.SolveMode.PROPAGATION_ONLY);
-        if (propagated.edges().size() != 751) {
-            helper.fail("Expected 751 demand edges in the propagated quantum_upgrade graph, but got: " + propagated.edges().size()
+        if (propagated.edges().size() != 787) {
+            helper.fail("Expected 787 demand edges in the propagated quantum_upgrade graph, but got: " + propagated.edges().size()
                     + ". If this changed intentionally, e.g. an MI recipe update, update this snapshot.");
             return;
         }
@@ -548,13 +548,13 @@ public class ForemanGameTests {
                 return;
             }
         }
-        if (graph.edges().size() != 761) {
-            helper.fail("Expected 761 edges (751 demand + 10 byproduct) in the quantum_upgrade graph, but got: "
+        if (graph.edges().size() != 797) {
+            helper.fail("Expected 797 edges (787 demand + 10 byproduct) in the quantum_upgrade graph, but got: "
                     + graph.edges().size() + ". If this changed intentionally, update this snapshot.");
             return;
         }
-        if (graph.nodes().size() != 519) {
-            helper.fail("Expected 519 nodes in the quantum_upgrade graph, but got: " + graph.nodes().size()
+        if (graph.nodes().size() != 540) {
+            helper.fail("Expected 540 nodes in the quantum_upgrade graph, but got: " + graph.nodes().size()
                     + ". If this changed intentionally, e.g. an MI recipe update, update this snapshot.");
             return;
         }
@@ -2663,9 +2663,18 @@ public class ForemanGameTests {
      * clipboard to
      * the machine and letting the block entity's own ticker run.
      */
-    @SuppressWarnings("removal") // GameTestHelper#makeMockServerPlayerInLevel is deprecated-for-removal
-                                 // upstream but remains the only vanilla API for a real ServerPlayer in a
-                                 // GameTest.
+    /** MI Tweaks sends a packet on login that the mock connection never agreed to receive. Login is the last
+     *  step of placeNewPlayer, so the player is already in the list when that throws. */
+    @SuppressWarnings("removal") // Deprecated upstream, but still the only way to get a real ServerPlayer in a gametest.
+    private static net.minecraft.server.level.ServerPlayer mockServerPlayer(GameTestHelper helper) {
+        try {
+            return helper.makeMockServerPlayerInLevel();
+        } catch (UnsupportedOperationException e) {
+            List<net.minecraft.server.level.ServerPlayer> players = helper.getLevel().getServer().getPlayerList().getPlayers();
+            return players.get(players.size() - 1);
+        }
+    }
+
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID, timeoutTicks = 200)
     public static void testMachineStatusDynamicTransitions(GameTestHelper helper) {
         var level = helper.getLevel();
@@ -2701,7 +2710,7 @@ public class ForemanGameTests {
         // linkedMachines, so
         // a real (mock) player holding a linked clipboard is required to exercise it at
         // all.
-        net.minecraft.server.level.ServerPlayer mockPlayer = helper.makeMockServerPlayerInLevel();
+        net.minecraft.server.level.ServerPlayer mockPlayer = mockServerPlayer(helper);
         GlobalPos key = ServerMonitoringManager.key(level, absolutePos);
 
         ProductionGoal goal = new ProductionGoal(
@@ -2827,8 +2836,8 @@ public class ForemanGameTests {
         // Confirm the flag going back off restores the pinned snapshot, ensuring the
         // toggle has no lingering side effects on GRAPH_CACHE or recipe indexing.
         var graphRestored = RecipeGraphTraverser.computeRecipeGraph(level, goal);
-        if (graphRestored.nodes().size() != 519 || graphRestored.edges().size() != 761) {
-            helper.fail("Expected graph to return to the pinned 519 nodes/761 edges after disabling "
+        if (graphRestored.nodes().size() != 540 || graphRestored.edges().size() != 797) {
+            helper.fail("Expected graph to return to the pinned 540 nodes/797 edges after disabling "
                     + "includeProxiedRecipeTypes again, but got: " + graphRestored.nodes().size()
                     + " nodes / " + graphRestored.edges().size() + " edges.");
             return;

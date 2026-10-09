@@ -160,8 +160,13 @@ configurations {
 }
 
 dependencies {
-    implementation "curse.maven:modern-industrialization-405388:8439736"
-    localRuntime "curse.maven:guideme-1173950:8129788"
+    implementation "curse.maven:modern-industrialization-405388:9091242"
+    localRuntime "curse.maven:guideme-1173950:8897145"
+
+    // Loaded in dev runs and gametests only, so plans are tested against the recipes players have with these installed.
+    localRuntime "curse.maven:tesseract-api-neoforge-1067672:9085694"
+    localRuntime "curse.maven:extended-industrialization-1068418:9094252"
+    localRuntime "curse.maven:mi-tweaks-1068413:9041936"
 
     // EMI (optional mod dependency, same shape as the JEI example below): the API-only jar is
     // declared for compile time use, while the full jar is used at runtime only, so the mod
