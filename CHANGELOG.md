@@ -5,23 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.2] - 2026-10-09
+
+### Added
+- Pick one colour for highlighted wires on the recipe graph under "Highlighted graph wires" in the
+  Colours screen. By default they keep their own colour; Reset goes back to that.
+- Recolour the glow around highlighted wires under "Highlighted wire glow" in the Colours screen,
+  or turn it off by setting its alpha to 00.
 
 ### Changed
+- Selecting a card or searching on the recipe graph no longer recolours wires gold and grey.
+  Wires keep their own colour, so a stalled machine's red wire stays red; highlighted wires turn
+  solid with a faint glow and the rest fade.
 - Zoomed far out on the recipe graph, where card text is too small to read, labels are drawn as
   plain bars. A Quantum Upgrade plan fully zoomed out draws in about a fifth of the time, and
   about half the time at the zoom levels that still show text.
 - Recipe graph cards are fully opaque, so a card dragged over another hides what's under it.
-- Requires NeoForge 21.1.238 or newer, the same as Modern Industrialization 2.5.10.
 - When an addon like Extended Industrialization adds another recipe for something MI already
   makes, plans now default to MI's recipe. Cycle Recipe still offers the addon's. Addon recipes are
   still used where MI has no working recipe of its own, such as bronze from EI's alloy smelter.
-- Selecting a card or searching on the recipe graph no longer recolours wires gold and grey.
-  Wires keep their own colour, so a stalled machine's red wire stays red; highlighted wires turn
-  solid with a faint glow and the rest fade. To use one colour for highlighted wires instead, pick
-  it under "Highlighted graph wires" in the Colours screen; Reset goes back to each wire's own.
-- The glow around highlighted wires can be recoloured under "Highlighted wire glow" in the
-  Colours screen, or turned off by setting its alpha to 00.
+- Requires NeoForge 21.1.238 or newer, the same as Modern Industrialization 2.5.10.
 
 ## [1.3.1] - 2026-10-07
 
