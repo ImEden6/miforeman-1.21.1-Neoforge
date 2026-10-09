@@ -38,6 +38,10 @@ public class ClientConfig {
             .comment("Detail card outputs panel background colour (ARGB hex). Empty = default.")
             .define("colourOutputPanel", "");
 
+    public static final ModConfigSpec.ConfigValue<String> COLOUR_EDGE_HIGHLIGHT = BUILDER
+            .comment("Recipe graph colour for wires touching the selection or joining search matches (ARGB hex). Empty = each wire keeps its own colour.")
+            .define("colourEdgeHighlight", "");
+
     public static final ModConfigSpec SPEC = BUILDER.build();
 
     private ClientConfig() {

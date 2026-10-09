@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - When an addon like Extended Industrialization adds another recipe for something MI already
   makes, plans now default to MI's recipe. Cycle Recipe still offers the addon's. Addon recipes are
   still used where MI has no working recipe of its own, such as bronze from EI's alloy smelter.
+- Selecting a card or searching on the recipe graph no longer recolours wires gold and grey.
+  Wires keep their own colour, so a stalled machine's red wire stays red; highlighted wires turn
+  solid with a faint glow and the rest fade. To use one colour for highlighted wires instead, pick
+  it under "Highlighted graph wires" in the Colours screen; Reset goes back to each wire's own.
 
 ## [1.3.1] - 2026-10-07
 

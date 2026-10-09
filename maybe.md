@@ -92,8 +92,9 @@ legibility comes up again:
   kind today — nothing to fix, but if one is ever added, driving it off the same
   `EdgeRouter.Route.points()` list (not a lerp between the two endpoints) is what keeps
   it glued to the path through corners for free.
-- *Hop bumps built 2026-10-01 as squared bumps on the wire drawn on top; highlight via opacity
-  is still open.* Also present but lower priority: **hop bumps** where two routed wires visually cross
+- *Hop bumps built 2026-10-01 as squared bumps on the wire drawn on top. Highlight via opacity
+  built 2026-10-09 (`EdgeEmphasis`): wires keep their own colour, highlighted ones go opaque with
+  a faint glow, the rest are capped at the old dim alpha.* Also present but lower priority: **hop bumps** where two routed wires visually cross
   (`hop-map.ts` — a small arc "jumps over" the other line) and **highlight via opacity**
   rather than a colour swap (`isHighlighted` sets `strokeOpacity: 1` + a glow filter on
   the same colour, dimming everything else to ~0.72, instead of swapping to a separate

@@ -50,8 +50,10 @@ public class GraphCanvas extends AbstractWidget {
     private static final int COLOUR_NODE_FILL_TOP = 0xDDFFFBEF;
     private static final int COLOUR_NODE_FILL_BOTTOM = 0xDDEFE0BE;
     private static final int COLOUR_EDGE = 0xFF8A7A68;
-    private static final int COLOUR_EDGE_DIM = 0x558A7A68;
-    private static final int COLOUR_EDGE_HIGHLIGHT = 0xFFD4A017;
+    // Highlighted wires get a faint band of their own colour around the casing, so they stand out
+    // without swapping to another colour and losing their status.
+    private static final int COLOUR_EDGE_GLOW_ALPHA = 0x40000000;
+    private static final int EDGE_GLOW_HALF_WIDTH = 3;
     // Every wire is painted twice: a casing, then the coloured core on top. Where two wires
     // cross, the upper one's casing cuts a gap in the lower, so crossings stay readable even
     // where the router couldn't separate them. The canvas sits on light paper, so the casing
@@ -901,6 +903,9 @@ public class GraphCanvas extends AbstractWidget {
         // Highlighted wires paint last: each wire's casing cuts a gap in whatever it crosses,
         // and a dimmed wire must never cut through a highlighted one.
         int[] edgeColours = new int[visibleEdges.size()];
+        boolean[] edgeHighlighted = new boolean[visibleEdges.size()];
+        Integer highlightColour = com.mervyn.miforeman.client.gui.ColourPalette
+                .custom(com.mervyn.miforeman.client.gui.ColourPalette.ColourKey.EDGE_HIGHLIGHT);
         List<Integer> plain = new ArrayList<>();
         List<Integer> highlighted = new ArrayList<>();
         for (int edgeIndex = 0; edgeIndex < visibleEdges.size(); edgeIndex++) {
@@ -909,19 +914,17 @@ public class GraphCanvas extends AbstractWidget {
             RecipeGraphNode to = visibleNodes.get(edge.to());
             if (from == null || to == null || positionOf(from) == null || positionOf(to) == null)
                 continue;
-            int colour = bottleneckEdgeColour(edge);
+            boolean touchesSelected = selectedNodeIds.contains(edge.from()) || selectedNodeIds.contains(edge.to());
+            EdgeEmphasis emphasis = EdgeEmphasis.NORMAL;
             if (isSearching) {
                 boolean bothMatch = searchState.isMatch(edge.from()) && searchState.isMatch(edge.to());
-                boolean touchesSelected = selectedNodeIds.contains(edge.from())
-                        || selectedNodeIds.contains(edge.to());
-                colour = (bothMatch || touchesSelected) ? COLOUR_EDGE_HIGHLIGHT : COLOUR_EDGE_DIM;
+                emphasis = bothMatch || touchesSelected ? EdgeEmphasis.HIGHLIGHTED : EdgeEmphasis.DIMMED;
             } else if (!selectedNodeIds.isEmpty()) {
-                boolean touchesSelected = selectedNodeIds.contains(edge.from())
-                        || selectedNodeIds.contains(edge.to());
-                colour = touchesSelected ? COLOUR_EDGE_HIGHLIGHT : COLOUR_EDGE_DIM;
+                emphasis = touchesSelected ? EdgeEmphasis.HIGHLIGHTED : EdgeEmphasis.DIMMED;
             }
-            edgeColours[edgeIndex] = colour;
-            (colour == COLOUR_EDGE_HIGHLIGHT ? highlighted : plain).add(edgeIndex);
+            edgeColours[edgeIndex] = emphasis.apply(bottleneckEdgeColour(edge), highlightColour);
+            edgeHighlighted[edgeIndex] = emphasis == EdgeEmphasis.HIGHLIGHTED;
+            (edgeHighlighted[edgeIndex] ? highlighted : plain).add(edgeIndex);
         }
         List<Integer> drawOrder = new ArrayList<>(plain);
         drawOrder.addAll(highlighted);
@@ -931,10 +934,11 @@ public class GraphCanvas extends AbstractWidget {
             int edgeIndex = drawOrder.get(k);
             GraphEdge edge = visibleEdges.get(edgeIndex);
             int colour = edgeColours[edgeIndex];
+            boolean glow = edgeHighlighted[edgeIndex];
             com.mervyn.miforeman.goal.EdgeRouter.Route route = routeFor(edgeIndex, dragging ? draggingId : null);
             if (route != null) {
                 if (polylineVisible(route.points(), view))
-                    drawPolyline(guiGraphics, route.points(), colour, hops.get(k));
+                    drawPolyline(guiGraphics, route.points(), colour, hops.get(k), glow);
             } else {
                 NodePosition fromPos = positionOf(visibleNodes.get(edge.from()));
                 NodePosition toPos = positionOf(visibleNodes.get(edge.to()));
@@ -943,7 +947,7 @@ public class GraphCanvas extends AbstractWidget {
                         Math.max(request.fromX(), request.toX()), Math.max(request.fromY(), request.toY())))
                     continue;
                 drawElbowConnector(guiGraphics,
-                        request.fromX(), request.fromY(), request.toX(), request.toY(), colour);
+                        request.fromX(), request.fromY(), request.toX(), request.toY(), colour, glow);
             }
         }
 
@@ -1096,12 +1100,17 @@ public class GraphCanvas extends AbstractWidget {
     }
 
     /**
-     * Draws a routed wire as a chain of axis-aligned segments: every segment's casing first,
+     * Draws a routed wire as a chain of axis-aligned segments: the glow if highlighted, then every segment's casing,
      * then every segment's core. Casing and core per segment instead would let each segment's
      * casing notch the previous segment's core at the corner.
      */
     private void drawPolyline(GuiGraphics guiGraphics, List<com.mervyn.miforeman.goal.EdgeRouter.Point> points,
-            int colour, List<com.mervyn.miforeman.goal.EdgeRouter.Hop> hops) {
+            int colour, List<com.mervyn.miforeman.goal.EdgeRouter.Hop> hops, boolean glow) {
+        if (glow) {
+            int halo = COLOUR_EDGE_GLOW_ALPHA | (colour & 0x00FFFFFF);
+            for (int i = 0; i < points.size() - 1; i++)
+                drawSegment(guiGraphics, points.get(i), points.get(i + 1), i, hops, EDGE_GLOW_HALF_WIDTH, halo);
+        }
         int casing = (colour & 0xFF000000) | COLOUR_EDGE_CASING;
         for (int i = 0; i < points.size() - 1; i++)
             drawSegment(guiGraphics, points.get(i), points.get(i + 1), i, hops,
@@ -1236,13 +1245,14 @@ public class GraphCanvas extends AbstractWidget {
         return cachedHops;
     }
 
-    private void drawElbowConnector(GuiGraphics guiGraphics, int fromX, int fromY, int toX, int toY, int colour) {
+    private void drawElbowConnector(GuiGraphics guiGraphics, int fromX, int fromY, int toX, int toY, int colour,
+            boolean glow) {
         int midX = (fromX + toX) / 2;
         drawPolyline(guiGraphics, List.of(
                 new com.mervyn.miforeman.goal.EdgeRouter.Point(fromX, fromY),
                 new com.mervyn.miforeman.goal.EdgeRouter.Point(midX, fromY),
                 new com.mervyn.miforeman.goal.EdgeRouter.Point(midX, toY),
-                new com.mervyn.miforeman.goal.EdgeRouter.Point(toX, toY)), colour, List.of());
+                new com.mervyn.miforeman.goal.EdgeRouter.Point(toX, toY)), colour, List.of(), glow);
     }
 
     /**

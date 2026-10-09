@@ -22,7 +22,9 @@ public final class ColourPalette {
         // because calling the outer class during nested enum initialization triggers premature
         // class loading, where static initializers access unassigned enum constants.
         INPUT_PANEL((0x33 << 24) | (MachineStatus.RED.colour() & 0xFFFFFF), "Detail card inputs panel"),
-        OUTPUT_PANEL((0x33 << 24) | (MachineStatus.GREEN.colour() & 0xFFFFFF), "Detail card outputs panel");
+        OUTPUT_PANEL((0x33 << 24) | (MachineStatus.GREEN.colour() & 0xFFFFFF), "Detail card outputs panel"),
+        // Unset means each wire keeps its own colour; the default here is only what the picker starts from.
+        EDGE_HIGHLIGHT(0xFF8A7A68, "Highlighted graph wires");
 
         public final int defaultArgb;
         public final String label;
@@ -42,6 +44,7 @@ public final class ColourPalette {
         CONFIG.put(ColourKey.LOCATED_BUTTON, ClientConfig.COLOUR_LOCATED_BUTTON);
         CONFIG.put(ColourKey.INPUT_PANEL, ClientConfig.COLOUR_INPUT_PANEL);
         CONFIG.put(ColourKey.OUTPUT_PANEL, ClientConfig.COLOUR_OUTPUT_PANEL);
+        CONFIG.put(ColourKey.EDGE_HIGHLIGHT, ClientConfig.COLOUR_EDGE_HIGHLIGHT);
     }
 
     private ColourPalette() {
@@ -49,14 +52,20 @@ public final class ColourPalette {
 
     /** Returns the effective ARGB color for a key using config overrides when present. */
     public static int get(ColourKey key) {
+        Integer custom = custom(key);
+        return custom != null ? custom : key.defaultArgb;
+    }
+
+    /** The player's colour for a key, or null when they haven't set one. */
+    public static @org.jetbrains.annotations.Nullable Integer custom(ColourKey key) {
         String hex = CONFIG.get(key).get();
         if (hex == null || hex.isBlank()) {
-            return key.defaultArgb;
+            return null;
         }
         try {
             return (int) Long.parseLong(hex.replace("#", ""), 16);
         } catch (NumberFormatException e) {
-            return key.defaultArgb;
+            return null;
         }
     }
 

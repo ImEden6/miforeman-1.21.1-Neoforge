@@ -3301,6 +3301,36 @@ public class ForemanGameTests {
     }
 
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testEdgeEmphasisKeepsWireColour(GameTestHelper helper) {
+        var normal = com.mervyn.miforeman.client.gui.widget.EdgeEmphasis.NORMAL;
+        var highlighted = com.mervyn.miforeman.client.gui.widget.EdgeEmphasis.HIGHLIGHTED;
+        var dimmed = com.mervyn.miforeman.client.gui.widget.EdgeEmphasis.DIMMED;
+        int plain = 0xFF8A7A68;
+        int stalled = 0x55CC2222;
+        if (normal.apply(plain) != plain || normal.apply(stalled) != stalled) {
+            helper.fail("NORMAL must leave a wire's colour alone");
+            return;
+        }
+        if (highlighted.apply(stalled) != 0xFFCC2222 || highlighted.apply(plain) != plain) {
+            helper.fail("HIGHLIGHTED must keep the colour at full opacity, got "
+                    + Integer.toHexString(highlighted.apply(stalled)));
+            return;
+        }
+        if (dimmed.apply(plain) != 0x558A7A68 || dimmed.apply(stalled) != stalled
+                || dimmed.apply(0x22CC2222) != 0x22CC2222) {
+            helper.fail("DIMMED must keep the colour and cap its opacity, got "
+                    + Integer.toHexString(dimmed.apply(plain)));
+            return;
+        }
+        if (highlighted.apply(stalled, 0xFF3366FF) != 0xFF3366FF || dimmed.apply(plain, 0xFF3366FF) != 0x558A7A68
+                || normal.apply(stalled, 0xFF3366FF) != stalled) {
+            helper.fail("A picked highlight colour must replace only highlighted wires' colour");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testGraphCameraViewportCulling(GameTestHelper helper) {
         // Pan (-100, 50) at zoom 2 on a 400x300 widget shows canvas x 50..250, y -25..125.
         var camera = new com.mervyn.miforeman.client.gui.widget.GraphCamera(-100, 50, 2.0f);
