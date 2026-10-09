@@ -9,7 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Zoomed far out on the recipe graph, where card text is too small to read, labels are drawn as
-  plain bars. A Quantum Upgrade plan fully zoomed out draws in about a third of the time.
+  plain bars. A Quantum Upgrade plan fully zoomed out draws in about a fifth of the time, and
+  about half the time at the zoom levels that still show text.
+- Recipe graph cards are fully opaque, so a card dragged over another hides what's under it.
 - Requires NeoForge 21.1.238 or newer, the same as Modern Industrialization 2.5.10.
 - When an addon like Extended Industrialization adds another recipe for something MI already
   makes, plans now default to MI's recipe. Cycle Recipe still offers the addon's. Addon recipes are

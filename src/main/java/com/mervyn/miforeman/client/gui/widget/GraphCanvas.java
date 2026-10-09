@@ -47,8 +47,8 @@ public class GraphCanvas extends AbstractWidget {
     private static final int COLOUR_MUTED = 0xFF8A7A68;
     private static final int COLOUR_SELECTED = 0x336B5030;
     private static final int COLOUR_HOVER = 0x22FFFFFF;
-    private static final int COLOUR_NODE_FILL_TOP = 0xDDFFFBEF;
-    private static final int COLOUR_NODE_FILL_BOTTOM = 0xDDEFE0BE;
+    private static final int COLOUR_NODE_FILL_TOP = 0xFFFFFBEF;
+    private static final int COLOUR_NODE_FILL_BOTTOM = 0xFFEFE0BE;
     private static final int COLOUR_EDGE = 0xFF8A7A68;
     // Highlighted wires get a glow around the casing (EdgeEmphasis.glow), so they stand out
     // without swapping to another colour and losing their status.
@@ -139,6 +139,9 @@ public class GraphCanvas extends AbstractWidget {
     private Map<ResourceLocation, RecipeLiveSummary> liveStatusByRecipeId = Map.of();
     /** Card text, built on first draw; only a live status update can change it. */
     private final Map<ResourceLocation, NodeLabel> nodeLabels = new HashMap<>();
+    private final List<PendingLabel> pendingLabels = new ArrayList<>();
+    private final List<RecipeGraphNode> drawnNodes = new ArrayList<>();
+    private final List<NodePosition> drawnPositions = new ArrayList<>();
     /** Last live data received, kept so a placement can update the view before the next poll. */
     private List<LiveMonitoringPayload.MachineStatusData> liveMachines = List.of();
     private final MachinePlacementPanel placementPanel;
@@ -955,10 +958,23 @@ public class GraphCanvas extends AbstractWidget {
         }
 
         Minecraft mc = Minecraft.getInstance();
+        // Text deferred until every card is filled: switching between fills and text ends the batch,
+        // so drawing each card's text right after its box cost two batches a card. A card overlapping
+        // another keeps its text inline, or the lower card's text would show through the upper one.
+        pendingLabels.clear();
+        drawnNodes.clear();
+        drawnPositions.clear();
         for (RecipeGraphNode node : visibleNodes.values()) {
             NodePosition pos = positionOf(node);
-            if (pos == null || !view.intersects(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT))
-                continue;
+            if (pos != null && view.intersects(pos.x(), pos.y(), pos.x() + NODE_WIDTH, pos.y() + NODE_HEIGHT)) {
+                drawnNodes.add(node);
+                drawnPositions.add(pos);
+            }
+        }
+        boolean[] overlapping = GraphLayoutEngine.overlapping(drawnPositions, NODE_WIDTH, NODE_HEIGHT);
+        for (int drawn = 0; drawn < drawnNodes.size(); drawn++) {
+            RecipeGraphNode node = drawnNodes.get(drawn);
+            NodePosition pos = drawnPositions.get(drawn);
             boolean selected = selectedNodeIds.contains(node.getId());
             boolean hoveredNode = node.getId().equals(hoveredNodeId);
             // Pick mode borrows the search styling: valid targets highlighted, the rest dimmed.
@@ -1017,23 +1033,15 @@ public class GraphCanvas extends AbstractWidget {
             int rateColour = !isMatch ? COLOUR_MUTED_DIM : COLOUR_MUTED;
 
             NodeLabel label = nodeLabels.computeIfAbsent(node.getId(), id -> buildLabel(node, textInset, liveStatus));
-            if (label.limiting()) {
-                drawLabel(guiGraphics, mc.font, bars, "\u25B2", label.markWidth(),
-                        pos.x() + NODE_WIDTH - textInset - label.markWidth(), pos.y() + 3, COLOUR_SEARCH_CURRENT_MATCH);
-            }
-            drawLabel(guiGraphics, mc.font, bars, label.name(), label.nameWidth(),
-                    pos.x() + textInset, pos.y() + 3, textColour);
-
-            // Running count, right-aligned on the rate line. It's what explains a red node
-            // whose output looks fine: the colour is the worst machine, the count the rest.
-            if (label.countText() != null) {
-                drawLabel(guiGraphics, mc.font, bars, label.countText(), label.countWidth(),
-                        pos.x() + NODE_WIDTH - textInset - label.countWidth(), pos.y() + 14,
-                        !isMatch ? COLOUR_MUTED_DIM : liveStatus.worst().colour());
-            }
-            drawLabel(guiGraphics, mc.font, bars, label.rateText(), label.rateWidth(),
-                    pos.x() + textInset, pos.y() + 14, rateColour);
+            int countColour = label.countText() == null || !isMatch ? COLOUR_MUTED_DIM : liveStatus.worst().colour();
+            PendingLabel pending = new PendingLabel(pos, label, textInset, textColour, rateColour, countColour);
+            if (bars || overlapping[drawn])
+                drawNodeLabel(guiGraphics, mc.font, bars, pending);
+            else
+                pendingLabels.add(pending);
         }
+        for (PendingLabel pending : pendingLabels)
+            drawNodeLabel(guiGraphics, mc.font, false, pending);
 
         GraphCamera.MarqueeRect marquee = camera.liveMarqueeRect();
         if (marquee != null) {
@@ -1174,6 +1182,31 @@ public class GraphCanvas extends AbstractWidget {
 
     private record NodeLabel(String name, int nameWidth, boolean limiting, int markWidth, @Nullable String countText,
             int countWidth, String rateText, int rateWidth) {}
+
+    private record PendingLabel(NodePosition pos, NodeLabel label, int textInset, int textColour, int rateColour,
+            int countColour) {}
+
+    private void drawNodeLabel(GuiGraphics guiGraphics, net.minecraft.client.gui.Font font, boolean bars,
+            PendingLabel pending) {
+        NodePosition pos = pending.pos();
+        NodeLabel label = pending.label();
+        int inset = pending.textInset();
+        if (label.limiting()) {
+            drawLabel(guiGraphics, font, bars, "\u25B2", label.markWidth(),
+                    pos.x() + NODE_WIDTH - inset - label.markWidth(), pos.y() + 3, COLOUR_SEARCH_CURRENT_MATCH);
+        }
+        drawLabel(guiGraphics, font, bars, label.name(), label.nameWidth(), pos.x() + inset, pos.y() + 3,
+                pending.textColour());
+
+        // Running count, right-aligned on the rate line. It's what explains a red node
+        // whose output looks fine: the colour is the worst machine, the count the rest.
+        if (label.countText() != null) {
+            drawLabel(guiGraphics, font, bars, label.countText(), label.countWidth(),
+                    pos.x() + NODE_WIDTH - inset - label.countWidth(), pos.y() + 14, pending.countColour());
+        }
+        drawLabel(guiGraphics, font, bars, label.rateText(), label.rateWidth(), pos.x() + inset, pos.y() + 14,
+                pending.rateColour());
+    }
 
     /** Text, or when it's too small to read a bar the width of the text at half its opacity, which
      *  roughly matches how much ink the glyphs would have put down. Bars are fills, so they batch. */

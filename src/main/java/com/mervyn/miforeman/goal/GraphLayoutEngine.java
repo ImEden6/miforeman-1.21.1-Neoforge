@@ -173,6 +173,34 @@ public final class GraphLayoutEngine {
         return minX > maxX ? null : new Bounds(minX, minY, maxX, maxY);
     }
 
+    /** Which of these same-sized cards overlap at least one other. Touching edges don't count. */
+    public static boolean[] overlapping(List<NodePosition> positions, int nodeWidth, int nodeHeight) {
+        boolean[] result = new boolean[positions.size()];
+        Map<Long, List<Integer>> cells = new HashMap<>();
+        for (int i = 0; i < positions.size(); i++) {
+            NodePosition pos = positions.get(i);
+            int cellX = Math.floorDiv(pos.x(), nodeWidth), cellY = Math.floorDiv(pos.y(), nodeHeight);
+            for (int dx = 0; dx <= 1; dx++)
+                for (int dy = 0; dy <= 1; dy++)
+                    cells.computeIfAbsent(((long) (cellX + dx) << 32) ^ ((cellY + dy) & 0xFFFFFFFFL),
+                            k -> new ArrayList<>()).add(i);
+        }
+        for (List<Integer> cell : cells.values()) {
+            for (int a = 0; a < cell.size(); a++) {
+                NodePosition p = positions.get(cell.get(a));
+                for (int b = a + 1; b < cell.size(); b++) {
+                    NodePosition q = positions.get(cell.get(b));
+                    if (p.x() < q.x() + nodeWidth && q.x() < p.x() + nodeWidth
+                            && p.y() < q.y() + nodeHeight && q.y() < p.y() + nodeHeight) {
+                        result[cell.get(a)] = true;
+                        result[cell.get(b)] = true;
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
     private record OuterResult(Map<ResourceLocation, NodePosition> atomPositions, Map<UUID, NodePosition> metaOrigin) {}
 
     /** Lays out ungrouped nodes and group bounding boxes in a single layered pass. */

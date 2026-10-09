@@ -3355,6 +3355,23 @@ public class ForemanGameTests {
     }
 
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testOverlappingCards(GameTestHelper helper) {
+        List<com.mervyn.miforeman.goal.NodePosition> positions = List.of(
+                new com.mervyn.miforeman.goal.NodePosition(0, 0), new com.mervyn.miforeman.goal.NodePosition(140, 0),       // apart
+                new com.mervyn.miforeman.goal.NodePosition(0, 40), new com.mervyn.miforeman.goal.NodePosition(96, 40),      // touching edges only
+                new com.mervyn.miforeman.goal.NodePosition(-150, -100), new com.mervyn.miforeman.goal.NodePosition(-60, -80), // overlapping across a cell line
+                new com.mervyn.miforeman.goal.NodePosition(300, 300), new com.mervyn.miforeman.goal.NodePosition(300, 300)); // stacked exactly
+        boolean[] got = com.mervyn.miforeman.goal.GraphLayoutEngine.overlapping(positions, 96, 26);
+        boolean[] want = {false, false, false, false, true, true, true, true};
+        if (!java.util.Arrays.equals(got, want)) {
+            helper.fail("Expected overlaps " + java.util.Arrays.toString(want) + ", got "
+                    + java.util.Arrays.toString(got));
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testGraphCameraViewportCulling(GameTestHelper helper) {
         // Pan (-100, 50) at zoom 2 on a 400x300 widget shows canvas x 50..250, y -25..125.
         var camera = new com.mervyn.miforeman.client.gui.widget.GraphCamera(-100, 50, 2.0f);
