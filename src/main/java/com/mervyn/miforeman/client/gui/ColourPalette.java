@@ -24,7 +24,8 @@ public final class ColourPalette {
         INPUT_PANEL((0x33 << 24) | (MachineStatus.RED.colour() & 0xFFFFFF), "Detail card inputs panel"),
         OUTPUT_PANEL((0x33 << 24) | (MachineStatus.GREEN.colour() & 0xFFFFFF), "Detail card outputs panel"),
         // Unset means each wire keeps its own colour; the default here is only what the picker starts from.
-        EDGE_HIGHLIGHT(0xFF8A7A68, "Highlighted graph wires");
+        EDGE_HIGHLIGHT(0xFF8A7A68, "Highlighted graph wires"),
+        EDGE_GLOW(0x408A7A68, "Highlighted wire glow");
 
         public final int defaultArgb;
         public final String label;
@@ -45,6 +46,7 @@ public final class ColourPalette {
         CONFIG.put(ColourKey.INPUT_PANEL, ClientConfig.COLOUR_INPUT_PANEL);
         CONFIG.put(ColourKey.OUTPUT_PANEL, ClientConfig.COLOUR_OUTPUT_PANEL);
         CONFIG.put(ColourKey.EDGE_HIGHLIGHT, ClientConfig.COLOUR_EDGE_HIGHLIGHT);
+        CONFIG.put(ColourKey.EDGE_GLOW, ClientConfig.COLOUR_EDGE_GLOW);
     }
 
     private ColourPalette() {

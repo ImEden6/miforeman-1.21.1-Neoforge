@@ -42,6 +42,10 @@ public class ClientConfig {
             .comment("Recipe graph colour for wires touching the selection or joining search matches (ARGB hex). Empty = each wire keeps its own colour.")
             .define("colourEdgeHighlight", "");
 
+    public static final ModConfigSpec.ConfigValue<String> COLOUR_EDGE_GLOW = BUILDER
+            .comment("Recipe graph glow around highlighted wires (ARGB hex, alpha 00 turns it off). Empty = a faint band of the wire's own colour.")
+            .define("colourEdgeGlow", "");
+
     public static final ModConfigSpec SPEC = BUILDER.build();
 
     private ClientConfig() {

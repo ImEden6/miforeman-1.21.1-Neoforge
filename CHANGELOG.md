@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Wires keep their own colour, so a stalled machine's red wire stays red; highlighted wires turn
   solid with a faint glow and the rest fade. To use one colour for highlighted wires instead, pick
   it under "Highlighted graph wires" in the Colours screen; Reset goes back to each wire's own.
+- The glow around highlighted wires can be recoloured under "Highlighted wire glow" in the
+  Colours screen, or turned off by setting its alpha to 00.
 
 ## [1.3.1] - 2026-10-07
 

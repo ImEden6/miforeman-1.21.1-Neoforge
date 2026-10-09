@@ -3327,6 +3327,11 @@ public class ForemanGameTests {
             helper.fail("A picked highlight colour must replace only highlighted wires' colour");
             return;
         }
+        if (com.mervyn.miforeman.client.gui.widget.EdgeEmphasis.glow(0xFFCC2222, null) != 0x40CC2222
+                || com.mervyn.miforeman.client.gui.widget.EdgeEmphasis.glow(0xFFCC2222, 0x00000000) != 0) {
+            helper.fail("The glow must default to a faint band of the wire's colour and follow a picked one");
+            return;
+        }
         helper.succeed();
     }
 

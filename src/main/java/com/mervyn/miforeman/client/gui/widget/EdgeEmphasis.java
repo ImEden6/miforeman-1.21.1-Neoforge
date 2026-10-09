@@ -8,6 +8,12 @@ public enum EdgeEmphasis {
     DIMMED;
 
     static final int DIMMED_MAX_ALPHA = 0x55;
+    static final int GLOW_ALPHA = 0x40;
+
+    /** The glow around a highlighted wire: the player's pick, else a faint band of the wire's colour. */
+    public static int glow(int wireColour, @org.jetbrains.annotations.Nullable Integer custom) {
+        return custom != null ? custom : (GLOW_ALPHA << 24) | (wireColour & 0x00FFFFFF);
+    }
 
     public int apply(int colour) {
         return apply(colour, null);
