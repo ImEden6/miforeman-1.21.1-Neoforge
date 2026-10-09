@@ -971,7 +971,7 @@ public class GraphCanvas extends AbstractWidget {
                 drawnPositions.add(pos);
             }
         }
-        boolean[] overlapping = GraphLayoutEngine.overlapping(drawnPositions, NODE_WIDTH, NODE_HEIGHT);
+        boolean[] overlapping = bars ? null : GraphLayoutEngine.overlapping(drawnPositions, NODE_WIDTH, NODE_HEIGHT);
         for (int drawn = 0; drawn < drawnNodes.size(); drawn++) {
             RecipeGraphNode node = drawnNodes.get(drawn);
             NodePosition pos = drawnPositions.get(drawn);
@@ -1034,14 +1034,14 @@ public class GraphCanvas extends AbstractWidget {
 
             NodeLabel label = nodeLabels.computeIfAbsent(node.getId(), id -> buildLabel(node, textInset, liveStatus));
             int countColour = label.countText() == null || !isMatch ? COLOUR_MUTED_DIM : liveStatus.worst().colour();
-            PendingLabel pending = new PendingLabel(pos, label, textInset, textColour, rateColour, countColour);
             if (bars || overlapping[drawn])
-                drawNodeLabel(guiGraphics, mc.font, bars, pending);
+                drawNodeLabel(guiGraphics, mc.font, bars, pos, label, textInset, textColour, rateColour, countColour);
             else
-                pendingLabels.add(pending);
+                pendingLabels.add(new PendingLabel(pos, label, textInset, textColour, rateColour, countColour));
         }
-        for (PendingLabel pending : pendingLabels)
-            drawNodeLabel(guiGraphics, mc.font, false, pending);
+        for (PendingLabel p : pendingLabels)
+            drawNodeLabel(guiGraphics, mc.font, false, p.pos(), p.label(), p.textInset(), p.textColour(),
+                    p.rateColour(), p.countColour());
 
         GraphCamera.MarqueeRect marquee = camera.liveMarqueeRect();
         if (marquee != null) {
@@ -1187,25 +1187,22 @@ public class GraphCanvas extends AbstractWidget {
             int countColour) {}
 
     private void drawNodeLabel(GuiGraphics guiGraphics, net.minecraft.client.gui.Font font, boolean bars,
-            PendingLabel pending) {
-        NodePosition pos = pending.pos();
-        NodeLabel label = pending.label();
-        int inset = pending.textInset();
+            NodePosition pos, NodeLabel label, int inset, int textColour, int rateColour, int countColour) {
         if (label.limiting()) {
             drawLabel(guiGraphics, font, bars, "\u25B2", label.markWidth(),
                     pos.x() + NODE_WIDTH - inset - label.markWidth(), pos.y() + 3, COLOUR_SEARCH_CURRENT_MATCH);
         }
         drawLabel(guiGraphics, font, bars, label.name(), label.nameWidth(), pos.x() + inset, pos.y() + 3,
-                pending.textColour());
+                textColour);
 
         // Running count, right-aligned on the rate line. It's what explains a red node
         // whose output looks fine: the colour is the worst machine, the count the rest.
         if (label.countText() != null) {
             drawLabel(guiGraphics, font, bars, label.countText(), label.countWidth(),
-                    pos.x() + NODE_WIDTH - inset - label.countWidth(), pos.y() + 14, pending.countColour());
+                    pos.x() + NODE_WIDTH - inset - label.countWidth(), pos.y() + 14, countColour);
         }
         drawLabel(guiGraphics, font, bars, label.rateText(), label.rateWidth(), pos.x() + inset, pos.y() + 14,
-                pending.rateColour());
+                rateColour);
     }
 
     /** Text, or when it's too small to read a bar the width of the text at half its opacity, which

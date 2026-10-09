@@ -2696,7 +2696,12 @@ public class ForemanGameTests {
             return helper.makeMockServerPlayerInLevel();
         } catch (UnsupportedOperationException e) {
             List<net.minecraft.server.level.ServerPlayer> players = helper.getLevel().getServer().getPlayerList().getPlayers();
-            return players.get(players.size() - 1);
+            if (e.getMessage() == null || !e.getMessage().contains("mi_tweaks:") || players.isEmpty())
+                throw e;
+            var player = players.get(players.size() - 1);
+            if (!player.getGameProfile().getName().equals("test-mock-player"))
+                throw e;
+            return player;
         }
     }
 

@@ -64,8 +64,10 @@ public final class ColourPalette {
         if (hex == null || hex.isBlank()) {
             return null;
         }
+        String digits = hex.replace("#", "");
         try {
-            return (int) Long.parseLong(hex.replace("#", ""), 16);
+            int argb = (int) Long.parseLong(digits, 16);
+            return digits.length() == 6 ? 0xFF000000 | argb : argb;
         } catch (NumberFormatException e) {
             return null;
         }

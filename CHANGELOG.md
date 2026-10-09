@@ -24,7 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - When an addon like Extended Industrialization adds another recipe for something MI already
   makes, plans now default to MI's recipe. Cycle Recipe still offers the addon's. Addon recipes are
   still used where MI has no working recipe of its own, such as bronze from EI's alloy smelter.
-- Requires NeoForge 21.1.238 or newer, the same as Modern Industrialization 2.5.10.
+  Existing goals switch over the next time their plan is recalculated; linked machines running the
+  addon's recipe, like EI bending machines, then show as off the graph. Use Cycle Recipe to pick
+  the addon's recipe again.
 
 ## [1.3.1] - 2026-10-07
 
