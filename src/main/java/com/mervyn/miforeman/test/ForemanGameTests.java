@@ -3336,6 +3336,25 @@ public class ForemanGameTests {
     }
 
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testLabelDetailCutoff(GameTestHelper helper) {
+        var bars = com.mervyn.miforeman.client.gui.widget.LabelDetail.BARS;
+        var text = com.mervyn.miforeman.client.gui.widget.LabelDetail.TEXT;
+        // The vanilla font's line is 9 units, so text needs 6 / 9 = 0.67 of a pixel per unit.
+        Object[][] cases = {
+                {0.25f, 2.0, bars}, {0.33f, 2.0, bars}, {0.34f, 2.0, text}, {1.0f, 2.0, text},
+                {0.5f, 1.0, bars}, {0.67f, 1.0, text}, {0.25f, 3.0, text}, {0.16f, 4.0, bars},
+        };
+        for (Object[] c : cases) {
+            var got = com.mervyn.miforeman.client.gui.widget.LabelDetail.of((float) c[0], (double) c[1], 9);
+            if (got != c[2]) {
+                helper.fail("zoom " + c[0] + " at GUI scale " + c[1] + " should draw " + c[2] + ", got " + got);
+                return;
+            }
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testGraphCameraViewportCulling(GameTestHelper helper) {
         // Pan (-100, 50) at zoom 2 on a 400x300 widget shows canvas x 50..250, y -25..125.
         var camera = new com.mervyn.miforeman.client.gui.widget.GraphCamera(-100, 50, 2.0f);

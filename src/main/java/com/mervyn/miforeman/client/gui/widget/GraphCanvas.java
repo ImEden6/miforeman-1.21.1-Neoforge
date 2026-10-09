@@ -864,6 +864,9 @@ public class GraphCanvas extends AbstractWidget {
         ResourceLocation hoveredNodeId = hovered != null ? hovered.getId() : null;
         boolean isSearching = searchState.isSearching();
         GraphCamera.Viewport view = camera.viewport(getWidth(), getHeight(), CULL_MARGIN);
+        net.minecraft.client.gui.Font font = Minecraft.getInstance().font;
+        boolean bars = LabelDetail.of(camera.zoom(), Minecraft.getInstance().getWindow().getGuiScale(),
+                font.lineHeight) == LabelDetail.BARS;
 
         // Group frames render first so nodes and edges draw on top of them.
         if (!layoutState.groups().isEmpty()) {
@@ -882,9 +885,8 @@ public class GraphCanvas extends AbstractWidget {
                 guiGraphics.fill(minX, maxY - 1, maxX, maxY, COLOUR_GROUP_BORDER);
                 guiGraphics.fill(minX, minY, minX + 1, maxY, COLOUR_GROUP_BORDER);
                 guiGraphics.fill(maxX - 1, minY, maxX, maxY, COLOUR_GROUP_BORDER);
-                guiGraphics.drawString(Minecraft.getInstance().font,
-                        Component.translatable("miforeman.gui.group_label", group.memberIds().size()),
-                        minX + 2, minY - 9, COLOUR_MUTED, false);
+                String groupLabel = Component.translatable("miforeman.gui.group_label", group.memberIds().size()).getString();
+                drawLabel(guiGraphics, font, bars, groupLabel, font.width(groupLabel), minX + 2, minY - 9, COLOUR_MUTED);
             }
         }
 
@@ -1016,19 +1018,21 @@ public class GraphCanvas extends AbstractWidget {
 
             NodeLabel label = nodeLabels.computeIfAbsent(node.getId(), id -> buildLabel(node, textInset, liveStatus));
             if (label.limiting()) {
-                guiGraphics.drawString(mc.font, "\u25B2", pos.x() + NODE_WIDTH - textInset - label.markWidth(),
-                        pos.y() + 3, COLOUR_SEARCH_CURRENT_MATCH, false);
+                drawLabel(guiGraphics, mc.font, bars, "\u25B2", label.markWidth(),
+                        pos.x() + NODE_WIDTH - textInset - label.markWidth(), pos.y() + 3, COLOUR_SEARCH_CURRENT_MATCH);
             }
-            guiGraphics.drawString(mc.font, label.name(), pos.x() + textInset, pos.y() + 3, textColour, false);
+            drawLabel(guiGraphics, mc.font, bars, label.name(), label.nameWidth(),
+                    pos.x() + textInset, pos.y() + 3, textColour);
 
             // Running count, right-aligned on the rate line. It's what explains a red node
             // whose output looks fine: the colour is the worst machine, the count the rest.
             if (label.countText() != null) {
-                guiGraphics.drawString(mc.font, label.countText(),
+                drawLabel(guiGraphics, mc.font, bars, label.countText(), label.countWidth(),
                         pos.x() + NODE_WIDTH - textInset - label.countWidth(), pos.y() + 14,
-                        !isMatch ? COLOUR_MUTED_DIM : liveStatus.worst().colour(), false);
+                        !isMatch ? COLOUR_MUTED_DIM : liveStatus.worst().colour());
             }
-            guiGraphics.drawString(mc.font, label.rateText(), pos.x() + textInset, pos.y() + 14, rateColour, false);
+            drawLabel(guiGraphics, mc.font, bars, label.rateText(), label.rateWidth(),
+                    pos.x() + textInset, pos.y() + 14, rateColour);
         }
 
         GraphCamera.MarqueeRect marquee = camera.liveMarqueeRect();
@@ -1168,8 +1172,20 @@ public class GraphCanvas extends AbstractWidget {
             drawLine(guiGraphics, from, at, to, at, halfWidth, colour);
     }
 
-    private record NodeLabel(String name, boolean limiting, int markWidth, @Nullable String countText,
-            int countWidth, String rateText) {}
+    private record NodeLabel(String name, int nameWidth, boolean limiting, int markWidth, @Nullable String countText,
+            int countWidth, String rateText, int rateWidth) {}
+
+    /** Text, or when it's too small to read a bar the width of the text at half its opacity, which
+     *  roughly matches how much ink the glyphs would have put down. Bars are fills, so they batch. */
+    private static void drawLabel(GuiGraphics guiGraphics, net.minecraft.client.gui.Font font, boolean bars,
+            String text, int width, int x, int y, int colour) {
+        if (bars) {
+            int halfAlpha = ((colour >>> 24) / 2) << 24;
+            guiGraphics.fill(x, y + 2, x + width, y + 6, halfAlpha | (colour & 0x00FFFFFF));
+        } else {
+            guiGraphics.drawString(font, text, x, y, colour, false);
+        }
+    }
 
     private NodeLabel buildLabel(RecipeGraphNode node, int textInset, @Nullable RecipeLiveSummary liveStatus) {
         net.minecraft.client.gui.Font font = Minecraft.getInstance().font;
@@ -1203,7 +1219,8 @@ public class GraphCanvas extends AbstractWidget {
         if (font.width(rateText) > rateWidth) {
             rateText = font.plainSubstrByWidth(rateText, rateWidth - 8) + "..";
         }
-        return new NodeLabel(name, limiting, markWidth, countText, countWidth, rateText);
+        return new NodeLabel(name, font.width(name), limiting, markWidth, countText, countWidth, rateText,
+                font.width(rateText));
     }
 
     private static boolean polylineVisible(List<com.mervyn.miforeman.goal.EdgeRouter.Point> points,
