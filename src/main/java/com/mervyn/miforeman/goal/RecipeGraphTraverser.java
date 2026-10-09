@@ -354,11 +354,9 @@ public final class RecipeGraphTraverser {
 
         Map<ResourceLocation, RecipeGraphNode> nodes = new HashMap<>();
         Map<EdgeKey, GraphEdge> edges = new LinkedHashMap<>();
-        Set<ResourceLocation> cyclicResourceIds = new HashSet<>();
-        List<ResourceLocation[]> backEdges = new ArrayList<>();
-        propagateRates(goal.targetId(), goal.rate(), 0, structNodes, nodes, edges, cyclicResourceIds, backEdges);
-        return new Built(structNodes, nodes, edges, cyclicResourceIds, backEdges, PlanKeys.of(goal, nodes), index,
-                selections, imported);
+        DagWalk dag = propagateRates(goal.targetId(), goal.rate(), 0, structNodes, nodes, edges);
+        return new Built(structNodes, nodes, edges, dag.cyclicResourceIds, dag.backEdges, PlanKeys.of(goal, nodes),
+                index, selections, imported);
     }
 
     public static PlanSolver.Model planModel(Level level, ProductionGoal goal) {
@@ -1029,19 +1027,16 @@ public final class RecipeGraphTraverser {
         return index.fluidRecipes().getOrDefault(resourceId, List.of());
     }
 
-    private static void propagateRates(
+    private static DagWalk propagateRates(
             ResourceLocation rootId, double rootRate, int rootDepth,
             Map<ResourceLocation, StructuralNode> structNodes,
             Map<ResourceLocation, RecipeGraphNode> nodes,
-            Map<EdgeKey, GraphEdge> edges,
-            Set<ResourceLocation> cyclicResourceIds,
-            List<ResourceLocation[]> backEdges) {
+            Map<EdgeKey, GraphEdge> edges) {
 
-        Map<ResourceLocation, Set<ResourceLocation>> forwardEdges = new HashMap<>();
-        Map<ResourceLocation, Integer> inDegree = new HashMap<>();
-        Set<ResourceLocation> onStack = new HashSet<>();
-        Set<ResourceLocation> done = new HashSet<>();
-        collectDag(rootId, structNodes, forwardEdges, inDegree, onStack, done, cyclicResourceIds, backEdges);
+        DagWalk dag = new DagWalk(structNodes);
+        dag.visit(rootId);
+        Map<ResourceLocation, Set<ResourceLocation>> forwardEdges = dag.forwardEdges;
+        Map<ResourceLocation, Integer> inDegree = dag.inDegree;
 
         Map<ResourceLocation, Double> totalRate = new HashMap<>();
         Map<ResourceLocation, Integer> minDepth = new HashMap<>();
@@ -1085,51 +1080,57 @@ public final class RecipeGraphTraverser {
                 }
             }
         }
+        return dag;
     }
 
-    private static void collectDag(
-            ResourceLocation curr,
-            Map<ResourceLocation, StructuralNode> structNodes,
-            Map<ResourceLocation, Set<ResourceLocation>> forwardEdges,
-            Map<ResourceLocation, Integer> inDegree,
-            Set<ResourceLocation> onStack,
-            Set<ResourceLocation> done,
-            Set<ResourceLocation> cyclicResourceIds,
-            List<ResourceLocation[]> backEdges) {
+    private static final class DagWalk {
+        private final Map<ResourceLocation, StructuralNode> structNodes;
+        final Map<ResourceLocation, Set<ResourceLocation>> forwardEdges = new HashMap<>();
+        final Map<ResourceLocation, Integer> inDegree = new HashMap<>();
+        final Set<ResourceLocation> cyclicResourceIds = new HashSet<>();
+        final List<ResourceLocation[]> backEdges = new ArrayList<>();
+        private final Set<ResourceLocation> onStack = new HashSet<>();
+        private final Set<ResourceLocation> done = new HashSet<>();
 
-        if (done.contains(curr))
-            return;
-
-        StructuralNode node = structNodes.get(curr);
-        if (node == null)
-            return;
-
-        onStack.add(curr);
-        List<StructInputEdge> allInputs = new ArrayList<>(node.itemInputs().size() + node.fluidInputs().size());
-        allInputs.addAll(node.itemInputs());
-        allInputs.addAll(node.fluidInputs());
-
-        for (StructInputEdge edge : allInputs) {
-            ResourceLocation child = edge.childId();
-            if (!structNodes.containsKey(child))
-                continue;
-
-            if (onStack.contains(child)) {
-                // Recycling loop back-edge.
-                cyclicResourceIds.add(curr);
-                cyclicResourceIds.add(child);
-                backEdges.add(new ResourceLocation[] { curr, child });
-                continue;
-            }
-
-            if (forwardEdges.computeIfAbsent(curr, k -> new HashSet<>()).add(child)) {
-                inDegree.merge(child, 1, Integer::sum);
-            }
-
-            collectDag(child, structNodes, forwardEdges, inDegree, onStack, done, cyclicResourceIds, backEdges);
+        DagWalk(Map<ResourceLocation, StructuralNode> structNodes) {
+            this.structNodes = structNodes;
         }
-        onStack.remove(curr);
-        done.add(curr);
+
+        void visit(ResourceLocation curr) {
+            if (done.contains(curr))
+                return;
+
+            StructuralNode node = structNodes.get(curr);
+            if (node == null)
+                return;
+
+            onStack.add(curr);
+            List<StructInputEdge> allInputs = new ArrayList<>(node.itemInputs().size() + node.fluidInputs().size());
+            allInputs.addAll(node.itemInputs());
+            allInputs.addAll(node.fluidInputs());
+
+            for (StructInputEdge edge : allInputs) {
+                ResourceLocation child = edge.childId();
+                if (!structNodes.containsKey(child))
+                    continue;
+
+                if (onStack.contains(child)) {
+                    // Recycling loop back-edge.
+                    cyclicResourceIds.add(curr);
+                    cyclicResourceIds.add(child);
+                    backEdges.add(new ResourceLocation[] { curr, child });
+                    continue;
+                }
+
+                if (forwardEdges.computeIfAbsent(curr, k -> new HashSet<>()).add(child)) {
+                    inDegree.merge(child, 1, Integer::sum);
+                }
+
+                visit(child);
+            }
+            onStack.remove(curr);
+            done.add(curr);
+        }
     }
 
     private static void finalizeResourceNode(

@@ -1651,7 +1651,7 @@ public class ForemanGameTests {
         return a.cyclicResourceIds().equals(b.cyclicResourceIds());
     }
 
-    /** Verifies {@code RecipeGraphTraverser.collectDag} actually records recycling-loop
+    /** Verifies {@code RecipeGraphTraverser.DagWalk} actually records recycling-loop
      *  membership on real recipe data (not just the hand-built {@code Set.of(...)} the
      *  {@code testIdentifyBottlenecks} classification cases use).
      *  <p>quantum_upgrade's large, complex recipe web must produce at least one cyclic resource
@@ -1672,7 +1672,7 @@ public class ForemanGameTests {
 
         if (cyclicGraph.cyclicResourceIds().isEmpty()) {
             helper.fail("Expected quantum_upgrade's recipe graph to contain at least one recycling-loop "
-                    + "resource captured by collectDag's back-edge recording, but cyclicResourceIds() was empty.");
+                    + "resource captured by DagWalk's back-edge recording, but cyclicResourceIds() was empty.");
             return;
         }
 

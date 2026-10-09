@@ -114,7 +114,9 @@ legibility comes up again:
   solver ever needs to reason about shared-supply fairness or byproduct
   routing precisely, this staged-LP structure is a cleaner model than
   hand-rolled iteration.
-- **`cyclicResourceIds` out-param threading** — `RecipeGraphTraverser.propagateRates` accepts
+- *Built 2026-10-09: the loop search is now `RecipeGraphTraverser.DagWalk`, which holds its own
+  state, and `propagateRates` returns it instead of taking `cyclicResourceIds` and `backEdges`.*
+  **`cyclicResourceIds` out-param threading** — `RecipeGraphTraverser.propagateRates` accepts
   a `Set<ResourceLocation> cyclicResourceIds` purely to forward it unchanged into `collectDag`
   (the actual writer, at its back-edge branch), which already takes 7 parameters. A code review
   flagged this as a mild Collection/Primitive Obsession smell -- bundling the traversal's
@@ -162,5 +164,10 @@ directly; these two are lower-value or need a design call, not a blind patch.
   recipe. Arguably correct (no live data exists yet for the new assignment) rather than a bug --
   worth a real design decision about what to show for "no data under the current assignment" before
   touching it, not a patch guessed at blind.
-- **`GraphCamera.dragActive`** is a boolean that duplicates state already implied by the
+- *Checked 2026-10-09 and kept: the flag is not redundant. After a press on empty canvas with no
+  modifier the other drag fields look exactly like idle, and `onRelease` also runs when no drag
+  began: `GraphCanvas.mouseClicked` returns true for search bar, drawer and placement panel clicks
+  without calling `beginDrag`, so vanilla focuses the canvas and sends it the release. Without the
+  flag those clicks would count as a click on empty canvas and clear the selection.*
+  **`GraphCamera.dragActive`** is a boolean that duplicates state already implied by the
   begin/end-drag call sequence; could likely be inferred instead of tracked separately.
