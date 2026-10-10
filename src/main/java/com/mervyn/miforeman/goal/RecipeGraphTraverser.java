@@ -389,16 +389,13 @@ public final class RecipeGraphTraverser {
     private static Attempt resolve(Level level, ProductionGoal goal, SolveMode mode) {
         Attempt current = attempt(level, goal, Map.of(), Set.of());
         if (!current.built().cyclicResourceIds().isEmpty()) {
-            PlanSolver.Result first = null;
-            if (mode != SolveMode.FAIL_LP && lpWanted(mode, current.built())) {
-                first = PlanSolver.solve(current.model());
-                if (first == null || first.unsourced().isEmpty())
-                    return withResult(current, first);
-            }
-            Attempt fixed = fixDeadLoops(level, goal, current);
-            if (fixed.built() == current.built() && first != null)
-                return withResult(current, first);
-            current = fixed;
+            // The loop stage alone says whether a loop is dead. A full solve here was thrown away
+            // whenever one was, which on big plans is nearly always.
+            PlanSolver.LoopSupply found = PlanSolver.loopSupply(current.model());
+            if (mode != SolveMode.FAIL_LP && lpWanted(mode, current.built())
+                    && (found == null || found.supply().isEmpty()))
+                return withResult(current, found == null ? null : PlanSolver.solve(current.model()));
+            current = fixDeadLoops(level, goal, current, found);
         }
         if (mode == SolveMode.FAIL_LP || !lpWanted(mode, current.built()))
             return current;
@@ -410,8 +407,8 @@ public final class RecipeGraphTraverser {
                 attempt.fixPivots());
     }
 
-    private static Attempt fixDeadLoops(Level level, ProductionGoal goal, Attempt current) {
-        PlanSolver.LoopSupply found = PlanSolver.loopSupply(current.model());
+    private static Attempt fixDeadLoops(Level level, ProductionGoal goal, Attempt current,
+            @Nullable PlanSolver.LoopSupply found) {
         Map<PlanSolver.BackEdge, Double> dead = found == null ? null : found.supply();
         int pivots = found == null ? 0 : found.pivots();
         boolean allowPicks = true;
