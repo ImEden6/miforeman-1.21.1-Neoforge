@@ -5,19 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.3] - 2026-10-18
 
 ### Changed
 - Plans on the clipboard are calculated in the background, so cycling a recipe or changing the goal
   no longer freezes the game. The old graph stays up with "Calculating plan..." until the new one is
   ready, and if you click again first, only your latest choice is used.
-- On servers, saving a goal no longer pauses the server while its plan is calculated. The plan is
-  worked out in the background and lands on the clipboard a moment later.
+- On servers, saving a goal no longer pauses the server while its plan is calculated. The goal is
+  saved at once and its plan is worked out in the background, following a moment later.
 - Cycling a recipe or changing a plan no longer re-routes every wire on the recipe graph, only the
   ones around the cards that changed. On a Quantum Upgrade plan each click's wire routing went from
   about a quarter of a second to about a sixteenth.
-- Plans with recycling loops are calculated about 20% faster, so cycling a recipe or changing the
-  rate on a big goal freezes the game for less time.
+- Plans with recycling loops are calculated about 20% faster.
 
 ## [1.3.2] - 2026-10-09
 
