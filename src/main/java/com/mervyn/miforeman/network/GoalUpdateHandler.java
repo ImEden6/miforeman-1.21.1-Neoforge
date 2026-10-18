@@ -14,6 +14,9 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.Nullable;
 
@@ -28,6 +31,7 @@ import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
+@EventBusSubscriber(modid = com.mervyn.miforeman.MIForeman.MODID)
 public class GoalUpdateHandler {
     // 2 ticks (0.1s). Handlers run from GUI clicks (see MonitoringState's applyLink/applyUnlink/applyReject),
     // so fast clicks must not drop silently. The short window prevents packet floods while allowing
@@ -56,8 +60,16 @@ public class GoalUpdateHandler {
         });
     }
 
-    /** Saves the goal onto the held clipboard. An uncached plan is computed on {@code background} and
-     *  applied on {@code main} (the server thread), so a big plan doesn't stall the server. */
+    @SubscribeEvent
+    public static void onLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
+        PlanWorker worker = WORKERS.remove(event.getEntity().getUUID());
+        if (worker != null)
+            worker.cancel();
+    }
+
+    /** Saves the goal onto the held clipboard at once. An uncached plan is computed on
+     *  {@code background} and patched in on {@code main} (the server thread) later, so a big plan
+     *  doesn't stall the server and nothing written to the clipboard meanwhile is overwritten. */
     public static void update(ServerPlayer player, GoalUpdatePayload payload, Executor background, Executor main) {
         if (!holdsClipboard(player, payload)) {
             return;
@@ -65,11 +77,13 @@ public class GoalUpdateHandler {
         ServerLevel level = player.serverLevel();
         ProductionGoal newGoal = payload.goal();
         PlanWorker worker = WORKERS.computeIfAbsent(player.getUUID(), id -> new PlanWorker(background, main));
-        if (RecipeGraphTraverser.isGraphCached(newGoal)) {
+        ProductionGoal.FactoryPlan cached = RecipeGraphTraverser.cachedPlan(newGoal);
+        if (cached != null) {
             worker.cancel();
-            apply(player, payload, RecipeGraphTraverser.computePlan(level, newGoal));
+            apply(player, payload, cached);
             return;
         }
+        apply(player, payload, null);
         RecipeGraphTraverser.prepareRecipeIndex(level);
         worker.submit(() -> RecipeGraphTraverser.computePlan(level, newGoal), (plan, error) -> {
             if (error != null) {
@@ -77,8 +91,22 @@ public class GoalUpdateHandler {
                 return;
             }
             if (!player.hasDisconnected())
-                apply(player, payload, plan);
+                patchPlan(player, payload, plan);
         });
+    }
+
+    /** Puts a finished plan on the clipboard if its goal still asks for that plan. */
+    private static void patchPlan(ServerPlayer player, GoalUpdatePayload payload, ProductionGoal.FactoryPlan plan) {
+        if (!holdsClipboard(player, payload)) {
+            return;
+        }
+        ItemStack stack = player.getItemInHand(payload.hand());
+        ProductionGoal current = stack.get(ModComponents.PRODUCTION_GOAL.get());
+        ProductionGoal planned = payload.goal();
+        if (current != null && current.type() == planned.type() && current.targetId().equals(planned.targetId())
+                && current.rate() == planned.rate() && current.recipeSelections().equals(planned.recipeSelections())) {
+            stack.set(ModComponents.PRODUCTION_GOAL.get(), current.withPlan(Optional.of(plan)));
+        }
     }
 
     private static boolean holdsClipboard(ServerPlayer player, GoalUpdatePayload payload) {
@@ -86,7 +114,8 @@ public class GoalUpdateHandler {
         return !stack.isEmpty() && stack.is(ModItems.FOREMAN_CLIPBOARD_ITEM.get());
     }
 
-    private static void apply(ServerPlayer player, GoalUpdatePayload payload, ProductionGoal.FactoryPlan plan) {
+    /** A null plan keeps the clipboard's current one until the new plan is ready. */
+    private static void apply(ServerPlayer player, GoalUpdatePayload payload, @Nullable ProductionGoal.FactoryPlan plan) {
         if (!holdsClipboard(player, payload)) {
             return;
         }
@@ -99,8 +128,9 @@ public class GoalUpdateHandler {
                         Config.AUTOLINK_SCAN_RADIUS_CHUNKS.get(), Config.AUTOLINK_SCAN_MAX_RADIUS_CHUNKS.get()),
                 newGoal.linkedMachines(), oldGoal != null ? oldGoal.linkedMachines() : null);
 
+        Optional<ProductionGoal.FactoryPlan> keptPlan = oldGoal != null ? oldGoal.plan() : Optional.empty();
         ProductionGoal updatedGoal = newGoal
-                .withPlan(Optional.of(plan))
+                .withPlan(plan != null ? Optional.of(plan) : keptPlan)
                 .withLinkedMachines(validatedLinked, newGoal.machineLinkHistory());
         stack.set(ModComponents.PRODUCTION_GOAL.get(), updatedGoal);
     }

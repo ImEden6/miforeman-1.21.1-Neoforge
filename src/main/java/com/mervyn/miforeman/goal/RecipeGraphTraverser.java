@@ -203,13 +203,19 @@ public final class RecipeGraphTraverser {
             Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> fluidRecipes) {
     }
 
-    private static volatile RecipeIndex cachedIndex;
+    // One per RecipeManager: in singleplayer the client and the integrated server each have their own,
+    // and a single slot made them evict each other on every alternation.
+    private static final Map<RecipeManager, RecipeIndex> INDEXES = Collections.synchronizedMap(new WeakHashMap<>());
+
+    private static GraphCacheKey cacheKey(ProductionGoal goal) {
+        return new GraphCacheKey(goal.type(), goal.targetId(), goal.rate(), new HashMap<>(goal.recipeSelections()));
+    }
 
     public static void clearGraphCache() {
         synchronized (GRAPH_CACHE) {
             GRAPH_CACHE.clear();
         }
-        cachedIndex = null;
+        INDEXES.clear();
     }
 
     /** Builds the recipe index on the calling thread, so a plan computed on another thread only reads
@@ -219,39 +225,42 @@ public final class RecipeGraphTraverser {
     }
 
     private static RecipeIndex ensureRecipeIndex(Level level, RecipeManager recipeManager) {
-        RecipeIndex local = cachedIndex;
-        if (local != null && local.recipeManager() == recipeManager && local.dimension().equals(level.dimension())) {
+        RecipeIndex local = INDEXES.get(recipeManager);
+        if (local != null && local.dimension().equals(level.dimension())) {
             return local;
         }
         Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> itemRecipes = new HashMap<>();
         Map<ResourceLocation, List<RecipeHolder<MachineRecipe>>> fluidRecipes = new HashMap<>();
         indexMachineRecipes(level, recipeManager, itemRecipes, fluidRecipes);
         RecipeIndex fresh = new RecipeIndex(recipeManager, level.dimension(), itemRecipes, fluidRecipes);
-        cachedIndex = fresh;
+        INDEXES.put(recipeManager, fresh);
         return fresh;
     }
 
     /** Cache-only lookup of a goal's recycling-loop resource IDs. */
     public static Set<ResourceLocation> peekCyclicResourceIds(ProductionGoal goal) {
-        GraphCacheKey key = new GraphCacheKey(goal.type(), goal.targetId(), goal.rate(),
-                new HashMap<>(goal.recipeSelections()));
+        GraphCacheKey key = cacheKey(goal);
         synchronized (GRAPH_CACHE) {
             RecipeGraph cached = GRAPH_CACHE.get(key);
             return cached != null ? cached.cyclicResourceIds() : Set.of();
         }
     }
 
-    public static boolean isGraphCached(ProductionGoal goal) {
-        GraphCacheKey key = new GraphCacheKey(goal.type(), goal.targetId(), goal.rate(),
-                new HashMap<>(goal.recipeSelections()));
+    /** The goal's plan if its graph is cached, else null; never computes. */
+    public static @Nullable FactoryPlan cachedPlan(ProductionGoal goal) {
+        GraphCacheKey key = cacheKey(goal);
+        RecipeGraph cached;
         synchronized (GRAPH_CACHE) {
-            return GRAPH_CACHE.containsKey(key);
+            cached = GRAPH_CACHE.get(key);
+            if (cached == null)
+                return null;
+            cached = cached.copy();
         }
+        return planFromGraph(cached);
     }
 
     public static @Nullable Set<ResourceLocation> peekMachineNodeIds(ProductionGoal goal) {
-        GraphCacheKey key = new GraphCacheKey(goal.type(), goal.targetId(), goal.rate(),
-                new HashMap<>(goal.recipeSelections()));
+        GraphCacheKey key = cacheKey(goal);
         synchronized (GRAPH_CACHE) {
             RecipeGraph cached = GRAPH_CACHE.get(key);
             if (cached == null) return null;
@@ -326,8 +335,7 @@ public final class RecipeGraphTraverser {
     public enum SolveMode { AUTO, FORCE_LP, PROPAGATION_ONLY, FAIL_LP }
 
     public static RecipeGraph computeRecipeGraph(Level level, ProductionGoal goal) {
-        GraphCacheKey key = new GraphCacheKey(goal.type(), goal.targetId(), goal.rate(),
-                new HashMap<>(goal.recipeSelections()));
+        GraphCacheKey key = cacheKey(goal);
         synchronized (GRAPH_CACHE) {
             RecipeGraph cached = GRAPH_CACHE.get(key);
             if (cached != null) {

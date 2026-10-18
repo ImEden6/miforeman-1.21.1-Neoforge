@@ -3328,14 +3328,18 @@ public class ForemanGameTests {
         java.util.function.Supplier<ProductionGoal> held = () -> player.getMainHandItem().get(ModComponents.PRODUCTION_GOAL.get());
 
         com.mervyn.miforeman.network.GoalUpdateHandler.update(player, save.apply(7.31), background::add, main::add);
-        if (held.get() != null || background.isEmpty()) {
-            helper.fail("An uncached plan must be computed in the background, not applied straight away");
+        if (held.get() == null || held.get().rate() != 7.31 || held.get().plan().isPresent() || background.isEmpty()) {
+            helper.fail("An uncached save must land at once and leave its plan to the background, got " + held.get());
             return;
         }
+        // A machine linked by hand while the plan computes must survive the plan landing.
+        GlobalPos linkedMeanwhile = GlobalPos.of(helper.getLevel().dimension(), new BlockPos(1, 2, 3));
+        player.getMainHandItem().set(ModComponents.PRODUCTION_GOAL.get(),
+                held.get().withLinkedMachines(List.of(linkedMeanwhile), held.get().machineLinkHistory()));
         runBackgroundNewestFirst.run();
         runMain.run();
-        if (held.get() == null || held.get().rate() != 7.31 || held.get().plan().isEmpty()) {
-            helper.fail("The saved goal must land on the clipboard with its plan once computed, got " + held.get());
+        if (held.get().plan().isEmpty() || !held.get().linkedMachines().contains(linkedMeanwhile)) {
+            helper.fail("The plan must be patched in without undoing what changed meanwhile, got " + held.get());
             return;
         }
 
@@ -3377,13 +3381,18 @@ public class ForemanGameTests {
                 main.remove(0).run();
         };
 
-        worker.submit(() -> "old", (plan, error) -> delivered.add(plan));
-        worker.submit(() -> "new", (plan, error) -> delivered.add(plan));
+        java.util.concurrent.atomic.AtomicInteger computed = new java.util.concurrent.atomic.AtomicInteger();
+        worker.submit(() -> { computed.incrementAndGet(); return "old"; }, (plan, error) -> delivered.add(plan));
+        worker.submit(() -> { computed.incrementAndGet(); return "new"; }, (plan, error) -> delivered.add(plan));
         if (!worker.pending()) {
             helper.fail("A submitted plan must count as pending until it's delivered");
             return;
         }
         runAll.run();
+        if (computed.get() != 1) {
+            helper.fail("A request already replaced must not be computed at all; computed " + computed.get());
+            return;
+        }
         if (!delivered.equals(List.of("new")) || worker.pending()) {
             helper.fail("Only the newest plan may be applied, even when the older one finishes last; got "
                     + delivered + ", pending " + worker.pending());

@@ -11,7 +11,8 @@ import java.util.function.Supplier;
 public final class PlanWorker {
     private final Executor background;
     private final Executor main;
-    private int latest;
+    // Written only on the main thread; read by the background thread to skip superseded requests.
+    private volatile int latest;
     private int delivered;
 
     public PlanWorker(Executor background, Executor main) {
@@ -22,6 +23,8 @@ public final class PlanWorker {
     public <T> void submit(Supplier<T> compute, BiConsumer<@Nullable T, @Nullable Exception> deliver) {
         int request = ++latest;
         background.execute(() -> {
+            if (request != latest)
+                return;
             T result = null;
             Exception error = null;
             try {

@@ -782,28 +782,27 @@ public class ClipboardScreen extends Screen {
 
     /** Runs {@code then} once the draft has its plan. A cached plan arrives at once; otherwise it's
      *  computed off the render thread, the old graph stays up meanwhile, and only the newest edit's
-     *  plan is applied. */
+     *  plan is applied. {@code then} is skipped if the player has changed step since asking. */
     private void computePlan(Runnable then) {
         ProductionGoal request = goalDraft.planRequest(monitoringState.linkedMachines);
         if (request == null) {
             then.run();
             return;
         }
-        net.minecraft.world.level.Level level = this.minecraft.level;
-        if (RecipeGraphTraverser.isGraphCached(request)) {
-            try {
-                goalDraft.applyPlan(RecipeGraphTraverser.computePlan(level, request), null);
-            } catch (Exception e) {
-                goalDraft.applyPlan(null, e);
-            }
+        ProductionGoal.FactoryPlan cached = RecipeGraphTraverser.cachedPlan(request);
+        if (cached != null) {
+            goalDraft.applyPlan(cached, null);
             then.run();
             return;
         }
+        net.minecraft.world.level.Level level = this.minecraft.level;
+        int stepAtRequest = currentStep;
         planWorker.submit(() -> RecipeGraphTraverser.computePlan(level, request), (plan, error) -> {
             if (this.minecraft.screen != this)
                 return;
             goalDraft.applyPlan(plan, error);
-            then.run();
+            if (currentStep == stepAtRequest)
+                then.run();
         });
     }
 

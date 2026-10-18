@@ -747,13 +747,6 @@ public class GraphCanvas extends AbstractWidget {
         routesDirty = true;
     }
 
-    /**
-     * Rebuilds the routed wire polylines for the current nodes and positions.
-     *
-     * <p>Called from the render path, but guarded by {@link #routesDirty} so it only runs
-     * when something actually moved. A wire the router can't solve comes back flagged as a
-     * fallback elbow, so this always returns one entry per visible edge.
-     */
     /** A rebuilt canvas reuses the last one's wires wherever their endpoints didn't change, so a
      *  recipe change re-routes only around the cards it touched. */
     public void inheritRouting(@Nullable GraphCanvas previous) {
@@ -761,6 +754,13 @@ public class GraphCanvas extends AbstractWidget {
             lastRouting = previous.lastRouting;
     }
 
+    /**
+     * Rebuilds the routed wire polylines for the current nodes and positions.
+     *
+     * <p>Called from the render path, but guarded by {@link #routesDirty} so it only runs
+     * when something actually moved. A wire the router can't solve comes back flagged as a
+     * fallback elbow, so this always returns one entry per visible edge.
+     */
     private void computeRoutes() {
         routedEdges = List.of();
         routesDirty = false;
