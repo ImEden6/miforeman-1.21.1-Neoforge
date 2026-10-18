@@ -212,6 +212,12 @@ public final class RecipeGraphTraverser {
         cachedIndex = null;
     }
 
+    /** Builds the recipe index on the calling thread, so a plan computed on another thread only reads
+     *  it. Building can touch MI's own recipe caches (proxied types), which aren't thread-safe. */
+    public static void prepareRecipeIndex(Level level) {
+        ensureRecipeIndex(level, level.getRecipeManager());
+    }
+
     private static RecipeIndex ensureRecipeIndex(Level level, RecipeManager recipeManager) {
         RecipeIndex local = cachedIndex;
         if (local != null && local.recipeManager() == recipeManager && local.dimension().equals(level.dimension())) {

@@ -4,6 +4,7 @@ import com.mervyn.miforeman.compat.emi.EmiCompat;
 import com.mervyn.miforeman.goal.ClipboardCloseSync;
 import com.mervyn.miforeman.goal.ClipboardUiState;
 import com.mervyn.miforeman.goal.MachineStatus;
+import com.mervyn.miforeman.goal.PlanWorker;
 import com.mervyn.miforeman.goal.ProductionGoal;
 import com.mervyn.miforeman.goal.ProductionGoal.TargetType;
 import com.mervyn.miforeman.registry.ModComponents;

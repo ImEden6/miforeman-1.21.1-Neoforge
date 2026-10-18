@@ -3,6 +3,7 @@ package com.mervyn.miforeman.network;
 import aztech.modern_industrialization.machines.MachineBlockEntity;
 import com.mervyn.miforeman.Config;
 import com.mervyn.miforeman.goal.MachineScanner;
+import com.mervyn.miforeman.goal.PlanWorker;
 import com.mervyn.miforeman.goal.ProductionGoal;
 import com.mervyn.miforeman.goal.RecipeGraphTraverser;
 import com.mervyn.miforeman.registry.ModComponents;
@@ -17,16 +18,28 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 public class GoalUpdateHandler {
     // 2 ticks (0.1s). Handlers run from GUI clicks (see MonitoringState's applyLink/applyUnlink/applyReject),
     // so fast clicks must not drop silently. The short window prevents packet floods while allowing
     // quick successive clicks.
     private static final PacketRateLimiter LIMITER = new PacketRateLimiter(2);
+    private static final Executor PLAN_THREAD = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "MI Foreman server plan");
+        thread.setDaemon(true);
+        return thread;
+    });
+    /** Server thread only. One per player, so a newer save drops that player's older pending plan. */
+    private static final Map<UUID, PlanWorker> WORKERS = new HashMap<>();
 
     public static void handle(final GoalUpdatePayload payload, final IPayloadContext context) {
         context.enqueueWork(() -> {
@@ -39,23 +52,57 @@ public class GoalUpdateHandler {
                 return;
             }
 
-            ItemStack stack = player.getItemInHand(payload.hand());
-            if (!stack.isEmpty() && stack.is(ModItems.FOREMAN_CLIPBOARD_ITEM.get())) {
-                ProductionGoal newGoal = payload.goal();
-                ProductionGoal.FactoryPlan plan = RecipeGraphTraverser.computePlan(level, newGoal);
-
-                ProductionGoal oldGoal = stack.get(ModComponents.PRODUCTION_GOAL.get());
-                List<GlobalPos> validatedLinked = validateLinkedMachines(
-                        level, player.blockPosition(), MachineScanner.linkValidationRadius(
-                                Config.AUTOLINK_SCAN_RADIUS_CHUNKS.get(), Config.AUTOLINK_SCAN_MAX_RADIUS_CHUNKS.get()),
-                        newGoal.linkedMachines(), oldGoal != null ? oldGoal.linkedMachines() : null);
-
-                ProductionGoal updatedGoal = newGoal
-                        .withPlan(Optional.of(plan))
-                        .withLinkedMachines(validatedLinked, newGoal.machineLinkHistory());
-                stack.set(ModComponents.PRODUCTION_GOAL.get(), updatedGoal);
-            }
+            update(player, payload, PLAN_THREAD, player.server);
         });
+    }
+
+    /** Saves the goal onto the held clipboard. An uncached plan is computed on {@code background} and
+     *  applied on {@code main} (the server thread), so a big plan doesn't stall the server. */
+    public static void update(ServerPlayer player, GoalUpdatePayload payload, Executor background, Executor main) {
+        if (!holdsClipboard(player, payload)) {
+            return;
+        }
+        ServerLevel level = player.serverLevel();
+        ProductionGoal newGoal = payload.goal();
+        PlanWorker worker = WORKERS.computeIfAbsent(player.getUUID(), id -> new PlanWorker(background, main));
+        if (RecipeGraphTraverser.isGraphCached(newGoal)) {
+            worker.cancel();
+            apply(player, payload, RecipeGraphTraverser.computePlan(level, newGoal));
+            return;
+        }
+        RecipeGraphTraverser.prepareRecipeIndex(level);
+        worker.submit(() -> RecipeGraphTraverser.computePlan(level, newGoal), (plan, error) -> {
+            if (error != null) {
+                com.mervyn.miforeman.MIForeman.LOGGER.warn("Couldn't calculate the plan for {}", newGoal.targetId(), error);
+                return;
+            }
+            if (!player.hasDisconnected())
+                apply(player, payload, plan);
+        });
+    }
+
+    private static boolean holdsClipboard(ServerPlayer player, GoalUpdatePayload payload) {
+        ItemStack stack = player.getItemInHand(payload.hand());
+        return !stack.isEmpty() && stack.is(ModItems.FOREMAN_CLIPBOARD_ITEM.get());
+    }
+
+    private static void apply(ServerPlayer player, GoalUpdatePayload payload, ProductionGoal.FactoryPlan plan) {
+        if (!holdsClipboard(player, payload)) {
+            return;
+        }
+        ItemStack stack = player.getItemInHand(payload.hand());
+        ServerLevel level = player.serverLevel();
+        ProductionGoal newGoal = payload.goal();
+        ProductionGoal oldGoal = stack.get(ModComponents.PRODUCTION_GOAL.get());
+        List<GlobalPos> validatedLinked = validateLinkedMachines(
+                level, player.blockPosition(), MachineScanner.linkValidationRadius(
+                        Config.AUTOLINK_SCAN_RADIUS_CHUNKS.get(), Config.AUTOLINK_SCAN_MAX_RADIUS_CHUNKS.get()),
+                newGoal.linkedMachines(), oldGoal != null ? oldGoal.linkedMachines() : null);
+
+        ProductionGoal updatedGoal = newGoal
+                .withPlan(Optional.of(plan))
+                .withLinkedMachines(validatedLinked, newGoal.machineLinkHistory());
+        stack.set(ModComponents.PRODUCTION_GOAL.get(), updatedGoal);
     }
 
     /**

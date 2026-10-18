@@ -3305,11 +3305,70 @@ public class ForemanGameTests {
         helper.succeed();
     }
 
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID, timeoutTicks = 400)
+    public static void testServerGoalSaveComputesPlanOffThread(GameTestHelper helper) {
+        var player = mockServerPlayer(helper);
+        player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, new ItemStack(ModItems.FOREMAN_CLIPBOARD_ITEM.get()));
+        List<Runnable> background = new java.util.ArrayList<>();
+        List<Runnable> main = new java.util.ArrayList<>();
+        Runnable runBackgroundNewestFirst = () -> {
+            while (!background.isEmpty())
+                background.remove(background.size() - 1).run();
+        };
+        Runnable runMain = () -> {
+            while (!main.isEmpty())
+                main.remove(0).run();
+        };
+        ResourceLocation plate = ResourceLocation.parse("modern_industrialization:steel_plate");
+        // Odd rates so none of these plans is cached already.
+        java.util.function.DoubleFunction<com.mervyn.miforeman.network.GoalUpdatePayload> save = rate ->
+                new com.mervyn.miforeman.network.GoalUpdatePayload(
+                        new ProductionGoal("async_" + rate, ProductionGoal.TargetType.ITEM, plate, rate),
+                        net.minecraft.world.InteractionHand.MAIN_HAND);
+        java.util.function.Supplier<ProductionGoal> held = () -> player.getMainHandItem().get(ModComponents.PRODUCTION_GOAL.get());
+
+        com.mervyn.miforeman.network.GoalUpdateHandler.update(player, save.apply(7.31), background::add, main::add);
+        if (held.get() != null || background.isEmpty()) {
+            helper.fail("An uncached plan must be computed in the background, not applied straight away");
+            return;
+        }
+        runBackgroundNewestFirst.run();
+        runMain.run();
+        if (held.get() == null || held.get().rate() != 7.31 || held.get().plan().isEmpty()) {
+            helper.fail("The saved goal must land on the clipboard with its plan once computed, got " + held.get());
+            return;
+        }
+
+        com.mervyn.miforeman.network.GoalUpdateHandler.update(player, save.apply(7.32), background::add, main::add);
+        com.mervyn.miforeman.network.GoalUpdateHandler.update(player, save.apply(7.33), background::add, main::add);
+        runBackgroundNewestFirst.run();
+        runMain.run();
+        if (held.get().rate() != 7.33) {
+            helper.fail("The newest save must win even when the older one finishes last, got rate " + held.get().rate());
+            return;
+        }
+
+        com.mervyn.miforeman.network.GoalUpdateHandler.update(player, save.apply(7.34), background::add, main::add);
+        RecipeGraphTraverser.computeRecipeGraph(helper.getLevel(), save.apply(7.35).goal());
+        com.mervyn.miforeman.network.GoalUpdateHandler.update(player, save.apply(7.35), background::add, main::add);
+        if (held.get().rate() != 7.35) {
+            helper.fail("A cached plan must apply straight away, got rate " + held.get().rate());
+            return;
+        }
+        runBackgroundNewestFirst.run();
+        runMain.run();
+        if (held.get().rate() != 7.35) {
+            helper.fail("An older save still computing must not overwrite a newer cached one, got rate " + held.get().rate());
+            return;
+        }
+        helper.succeed();
+    }
+
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testPlanWorkerAppliesOnlyTheNewestPlan(GameTestHelper helper) {
         List<Runnable> background = new java.util.ArrayList<>();
         List<Runnable> main = new java.util.ArrayList<>();
-        var worker = new com.mervyn.miforeman.client.gui.PlanWorker(background::add, main::add);
+        var worker = new com.mervyn.miforeman.goal.PlanWorker(background::add, main::add);
         List<String> delivered = new java.util.ArrayList<>();
         Runnable runAll = () -> {
             while (!background.isEmpty())

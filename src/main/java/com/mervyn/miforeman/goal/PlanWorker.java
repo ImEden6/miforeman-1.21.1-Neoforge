@@ -1,4 +1,4 @@
-package com.mervyn.miforeman.client.gui;
+package com.mervyn.miforeman.goal;
 
 import org.jetbrains.annotations.Nullable;
 
