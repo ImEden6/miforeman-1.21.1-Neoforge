@@ -6,10 +6,8 @@ import com.mervyn.miforeman.goal.MachineLinkHistory;
 import com.mervyn.miforeman.goal.ProductionGoal;
 import com.mervyn.miforeman.goal.ProductionGoal.FactoryPlan;
 import com.mervyn.miforeman.goal.ProductionGoal.TargetType;
-import com.mervyn.miforeman.goal.RecipeGraphTraverser;
 import net.minecraft.core.GlobalPos;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.level.Level;
 
 import java.util.HashMap;
 import java.util.List;
@@ -80,33 +78,29 @@ class GoalDraft {
         return this.rate / (this.perHour ? 60.0 : 1.0);
     }
 
-    void computePlan(Level level, List<GlobalPos> linkedMachines) {
+    /** The goal to plan from the form, or null with {@link #errorMessage} set when it's invalid. Its
+     *  maps are copies, since the plan may be computed on another thread while the form changes. */
+    @org.jetbrains.annotations.Nullable ProductionGoal planRequest(List<GlobalPos> linkedMachines) {
         this.errorMessage = null;
         ResourceLocation targetRes = ResourceLocation.tryParse(this.targetIdStr);
         if (targetRes == null) {
             this.errorMessage = "Invalid Target ID format";
+            return null;
+        }
+        return new ProductionGoal(this.goalName, this.targetType, targetRes, adjustedRatePerMinute(),
+                Map.copyOf(this.recipeSelections), Optional.empty(), this.perHour, this.threshold,
+                List.copyOf(linkedMachines));
+    }
+
+    void applyPlan(@org.jetbrains.annotations.Nullable FactoryPlan plan, @org.jetbrains.annotations.Nullable Exception error) {
+        if (error != null) {
+            this.errorMessage = "Error calculating plan: " + error.getMessage();
+            this.currentPlan = null;
             return;
         }
-
-        try {
-            ProductionGoal tempGoal = new ProductionGoal(
-                    this.goalName,
-                    this.targetType,
-                    targetRes,
-                    adjustedRatePerMinute(),
-                    this.recipeSelections,
-                    Optional.empty(),
-                    this.perHour,
-                    this.threshold,
-                    linkedMachines
-            );
-            this.currentPlan = RecipeGraphTraverser.computePlan(level, tempGoal);
-            if (this.currentPlan != null && this.currentPlan.graph() != null) {
-                this.graphLayout = this.graphLayout.prunedTo(this.currentPlan.graph());
-            }
-        } catch (Exception e) {
-            this.errorMessage = "Error calculating plan: " + e.getMessage();
-            this.currentPlan = null;
+        this.currentPlan = plan;
+        if (plan != null && plan.graph() != null) {
+            this.graphLayout = this.graphLayout.prunedTo(plan.graph());
         }
     }
 

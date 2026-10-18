@@ -26,6 +26,7 @@
   "miforeman.button.dissolve_group": "Dissolve Group",
   "miforeman.button.remove_from_group": "Leave Group",
   "miforeman.gui.group_label": "Group (%d)",
+  "miforeman.gui.calculating_plan": "Calculating plan...",
   "miforeman.button.next": "Next ->",
   "miforeman.button.edit": "Edit",
   "miforeman.button.view": "View",

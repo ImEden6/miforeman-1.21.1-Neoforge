@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Plans on the clipboard are calculated in the background, so cycling a recipe or changing the goal
+  no longer freezes the game. The old graph stays up with "Calculating plan..." until the new one is
+  ready, and if you click again first, only your latest choice is used.
 - Cycling a recipe or changing a plan no longer re-routes every wire on the recipe graph, only the
   ones around the cards that changed. On a Quantum Upgrade plan each click's wire routing went from
   about a quarter of a second to about a sixteenth.

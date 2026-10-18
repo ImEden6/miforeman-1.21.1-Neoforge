@@ -3306,6 +3306,50 @@ public class ForemanGameTests {
     }
 
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
+    public static void testPlanWorkerAppliesOnlyTheNewestPlan(GameTestHelper helper) {
+        List<Runnable> background = new java.util.ArrayList<>();
+        List<Runnable> main = new java.util.ArrayList<>();
+        var worker = new com.mervyn.miforeman.client.gui.PlanWorker(background::add, main::add);
+        List<String> delivered = new java.util.ArrayList<>();
+        Runnable runAll = () -> {
+            while (!background.isEmpty())
+                background.remove(background.size() - 1).run();
+            while (!main.isEmpty())
+                main.remove(0).run();
+        };
+
+        worker.submit(() -> "old", (plan, error) -> delivered.add(plan));
+        worker.submit(() -> "new", (plan, error) -> delivered.add(plan));
+        if (!worker.pending()) {
+            helper.fail("A submitted plan must count as pending until it's delivered");
+            return;
+        }
+        runAll.run();
+        if (!delivered.equals(List.of("new")) || worker.pending()) {
+            helper.fail("Only the newest plan may be applied, even when the older one finishes last; got "
+                    + delivered + ", pending " + worker.pending());
+            return;
+        }
+
+        worker.submit(() -> "closed", (plan, error) -> delivered.add(plan));
+        worker.cancel();
+        runAll.run();
+        if (delivered.size() != 1 || worker.pending()) {
+            helper.fail("A cancelled plan must never be applied; got " + delivered);
+            return;
+        }
+
+        List<Exception> errors = new java.util.ArrayList<>();
+        worker.submit(() -> { throw new IllegalStateException("boom"); }, (plan, error) -> errors.add(error));
+        runAll.run();
+        if (errors.size() != 1 || !(errors.get(0) instanceof IllegalStateException)) {
+            helper.fail("A failed plan must reach the callback as its error; got " + errors);
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID)
     public static void testEdgeEmphasisKeepsWireColour(GameTestHelper helper) {
         var normal = com.mervyn.miforeman.client.gui.widget.EdgeEmphasis.NORMAL;
         var highlighted = com.mervyn.miforeman.client.gui.widget.EdgeEmphasis.HIGHLIGHTED;

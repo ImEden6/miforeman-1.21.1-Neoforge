@@ -235,6 +235,14 @@ public final class RecipeGraphTraverser {
         }
     }
 
+    public static boolean isGraphCached(ProductionGoal goal) {
+        GraphCacheKey key = new GraphCacheKey(goal.type(), goal.targetId(), goal.rate(),
+                new HashMap<>(goal.recipeSelections()));
+        synchronized (GRAPH_CACHE) {
+            return GRAPH_CACHE.containsKey(key);
+        }
+    }
+
     public static @Nullable Set<ResourceLocation> peekMachineNodeIds(ProductionGoal goal) {
         GraphCacheKey key = new GraphCacheKey(goal.type(), goal.targetId(), goal.rate(),
                 new HashMap<>(goal.recipeSelections()));

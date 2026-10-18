@@ -81,6 +81,12 @@ public class ClipboardScreen extends Screen {
     private boolean stepInitialized = false;
 
     private final GoalDraft goalDraft;
+    private static final java.util.concurrent.Executor PLAN_THREAD = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "MI Foreman plan");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private final PlanWorker planWorker = new PlanWorker(PLAN_THREAD, task -> Minecraft.getInstance().execute(task));
     private final MonitoringState monitoringState;
 
     private ResourceLocation selectedNodeId = null;
@@ -153,6 +159,7 @@ public class ClipboardScreen extends Screen {
     @Override
     public void removed() {
         super.removed();
+        planWorker.cancel();
         ClipboardUiState snapshot = new ClipboardUiState(
                 currentStep, cameraX, cameraY, cameraZoom,
                 graphViewMode, graphDragEnabled, detailCardCollapsed, isMinimized, showMachineNumbers, detailCardExpanded);
@@ -183,7 +190,7 @@ public class ClipboardScreen extends Screen {
             // whenever the graph is missing, not just when the whole plan is, or
             // GraphCanvas never gets built when backing up from Monitor into Review Plan.
             if (hasExistingGoal && (this.goalDraft.currentPlan == null || this.goalDraft.currentPlan.graph() == null)) {
-                computePlan();
+                computePlan(() -> rebuildStep(currentStep));
             }
             stepInitialized = true;
         }
@@ -335,18 +342,19 @@ public class ClipboardScreen extends Screen {
                         this.cameraZoom = 1.0f;
                         this.goalDraft.graphLayout = com.mervyn.miforeman.goal.GraphLayoutState.EMPTY;
                     }
-                    computePlan();
-                    if (this.goalDraft.errorMessage == null && this.goalDraft.currentPlan != null) {
-                        this.selectedNodeId = null;
-                        goToStep(STEP_REVIEW_PLAN);
-                    } else {
-                        String serverError = this.goalDraft.errorMessage;
-                        rebuildStep(STEP_DEFINE_GOAL);
-                        if (serverError != null) {
-                            this.goalDraft.errorMessage = serverError;
-                            defineNextButton.active = false;
+                    computePlan(() -> {
+                        if (this.goalDraft.errorMessage == null && this.goalDraft.currentPlan != null) {
+                            this.selectedNodeId = null;
+                            goToStep(STEP_REVIEW_PLAN);
+                        } else {
+                            String serverError = this.goalDraft.errorMessage;
+                            rebuildStep(STEP_DEFINE_GOAL);
+                            if (serverError != null) {
+                                this.goalDraft.errorMessage = serverError;
+                                defineNextButton.active = false;
+                            }
                         }
-                    }
+                    });
                 });
         this.addRenderableWidget(defineNextButton);
 
@@ -473,16 +481,17 @@ public class ClipboardScreen extends Screen {
                                             : null;
                             boolean cyclingSelectedMachine = cyclingNode != null
                                     && cyclingNode.getType() == NodeType.MACHINE;
-                            computePlan();
-                            if (this.goalDraft.currentPlan != null && selectedNodeId != null
-                                    && this.goalDraft.currentPlan.graph().node(selectedNodeId) == null) {
-                                selectedNodeId = cyclingSelectedMachine && choiceRecipeId != null
-                                        && this.goalDraft.currentPlan.graph().node(choiceRecipeId) != null
-                                                ? choiceRecipeId
-                                                : null;
-                                selectedNodeIds = selectedNodeId != null ? Set.of(selectedNodeId) : Set.of();
-                            }
-                            rebuildStep(STEP_REVIEW_PLAN);
+                            computePlan(() -> {
+                                if (this.goalDraft.currentPlan != null && selectedNodeId != null
+                                        && this.goalDraft.currentPlan.graph().node(selectedNodeId) == null) {
+                                    selectedNodeId = cyclingSelectedMachine && choiceRecipeId != null
+                                            && this.goalDraft.currentPlan.graph().node(choiceRecipeId) != null
+                                                    ? choiceRecipeId
+                                                    : null;
+                                    selectedNodeIds = selectedNodeId != null ? Set.of(selectedNodeId) : Set.of();
+                                }
+                                rebuildStep(STEP_REVIEW_PLAN);
+                            });
                         }, () -> {
                             this.showMachineNumbers = !this.showMachineNumbers;
                             rebuildStep(STEP_REVIEW_PLAN);
@@ -770,8 +779,31 @@ public class ClipboardScreen extends Screen {
         new GoalUpdatePayload(lastSyncedGoal, hand).sendToServer();
     }
 
-    private void computePlan() {
-        goalDraft.computePlan(this.minecraft.level, monitoringState.linkedMachines);
+    /** Runs {@code then} once the draft has its plan. A cached plan arrives at once; otherwise it's
+     *  computed off the render thread, the old graph stays up meanwhile, and only the newest edit's
+     *  plan is applied. */
+    private void computePlan(Runnable then) {
+        ProductionGoal request = goalDraft.planRequest(monitoringState.linkedMachines);
+        if (request == null) {
+            then.run();
+            return;
+        }
+        net.minecraft.world.level.Level level = this.minecraft.level;
+        if (RecipeGraphTraverser.isGraphCached(request)) {
+            try {
+                goalDraft.applyPlan(RecipeGraphTraverser.computePlan(level, request), null);
+            } catch (Exception e) {
+                goalDraft.applyPlan(null, e);
+            }
+            then.run();
+            return;
+        }
+        planWorker.submit(() -> RecipeGraphTraverser.computePlan(level, request), (plan, error) -> {
+            if (this.minecraft.screen != this)
+                return;
+            goalDraft.applyPlan(plan, error);
+            then.run();
+        });
     }
 
     private void drawStepIndicator(GuiGraphics guiGraphics, int left, int top) {
@@ -842,6 +874,15 @@ public class ClipboardScreen extends Screen {
         }
 
         super.render(guiGraphics, mouseX, mouseY, partialTick);
+
+        if (planWorker.pending() && !isMinimized) {
+            Component calculating = Component.translatable("miforeman.gui.calculating_plan");
+            int textWidth = this.font.width(calculating);
+            int x = left + (guiWidth - textWidth) / 2;
+            int y = top + guiHeight - 22;
+            guiGraphics.fill(x - 4, y - 3, x + textWidth + 4, y + 11, 0xEEEFE0BE);
+            guiGraphics.drawString(this.font, calculating, x, y, COLOUR_MUTED, false);
+        }
     }
 
     private void renderViewMode(GuiGraphics guiGraphics, int left, int top) {
@@ -993,8 +1034,7 @@ public class ClipboardScreen extends Screen {
             ResourceLocation newSel = candidates.get(nextIndex).id();
             this.goalDraft.recipeSelections.put(resourceId, newSel);
         }
-        computePlan();
-        rebuildStep(STEP_REVIEW_PLAN);
+        computePlan(() -> rebuildStep(STEP_REVIEW_PLAN));
     }
 
     @Override
