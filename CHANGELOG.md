@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Cycling a recipe or changing a plan no longer re-routes every wire on the recipe graph, only the
+  ones around the cards that changed. On a Quantum Upgrade plan each click's wire routing went from
+  about a quarter of a second to about a sixteenth.
 - Plans with recycling loops are calculated about 20% faster, so cycling a recipe or changing the
   rate on a big goal freezes the game for less time.
 

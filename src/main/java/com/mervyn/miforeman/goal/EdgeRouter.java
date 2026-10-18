@@ -1,5 +1,6 @@
 package com.mervyn.miforeman.goal;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -161,18 +162,23 @@ public final class EdgeRouter {
         List<Boolean> fallbacks = new ArrayList<>(Collections.nCopies(n, false));
 
         // An exhausted pass is all elbows; reusing it would pin the graph to elbows for good.
-        if (previous != null && !previous.exhausted() && previous.requests().size() == n) {
+        if (previous != null && !previous.exhausted()) {
             Set<Obstacle> before = new HashSet<>(previous.obstacles());
             Set<Obstacle> now = new HashSet<>(obstacles);
             List<Obstacle> added = obstacles.stream().filter(o -> !before.contains(o)).toList();
             List<Obstacle> changed = new ArrayList<>(added);
             previous.obstacles().stream().filter(o -> !now.contains(o)).forEach(changed::add);
+            // Matched by endpoints, not index: a plan change adds, drops and reorders wires.
+            Map<Request, ArrayDeque<Integer>> previousAt = new HashMap<>();
+            for (int j = 0; j < previous.requests().size(); j++)
+                previousAt.computeIfAbsent(previous.requests().get(j), k -> new ArrayDeque<>()).add(j);
             for (int i = 0; i < n; i++) {
-                Request request = requests.get(i);
-                if (!request.equals(previous.requests().get(i)))
+                ArrayDeque<Integer> matches = previousAt.get(requests.get(i));
+                Integer j = matches == null ? null : matches.poll();
+                if (j == null)
                     continue;
-                List<Point> old = previous.unpacked().get(i);
-                if (previous.fallbacks().get(i)) {
+                List<Point> old = previous.unpacked().get(j);
+                if (previous.fallbacks().get(j)) {
                     // Retry only when a card near it moved, since that may have opened a path.
                     if (!overlapsAny(old, changed, clearance)) {
                         polylines.set(i, new ArrayList<>(old));

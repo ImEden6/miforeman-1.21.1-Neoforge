@@ -4278,6 +4278,51 @@ public class ForemanGameTests {
     }
 
     @GameTest(template = "empty", templateNamespace = MIForeman.MODID, timeoutTicks = 600)
+    public static void testEdgeRouterReusesWiresAcrossPlanChanges(GameTestHelper helper) {
+        var level = helper.getLevel();
+        com.mervyn.miforeman.goal.RecipeGraph graph = RecipeGraphTraverser.computeRecipeGraph(level,
+                new ProductionGoal("router_plan_change", ProductionGoal.TargetType.ITEM,
+                        ResourceLocation.parse("modern_industrialization:analog_circuit"), 60.0));
+        var positions = routerArrange(graph);
+        var requests = routerRequestsWithPorts(routerPortWiresFor(graph, positions));
+        var cards = routerCardsFor(positions);
+        var full = com.mervyn.miforeman.goal.EdgeRouter.route(requests, cards, 6, 3, null);
+
+        // A recipe change adds and drops wires, so the list changes length and order.
+        List<com.mervyn.miforeman.goal.EdgeRouter.Request> changed = new java.util.ArrayList<>();
+        for (int i = requests.size() - 1; i >= 0; i--)
+            if (i % 7 != 0)
+                changed.add(requests.get(i));
+        var reused = com.mervyn.miforeman.goal.EdgeRouter.route(changed, cards, 6, 3, full);
+        var fresh = com.mervyn.miforeman.goal.EdgeRouter.route(changed, cards, 6, 3, null);
+
+        Map<com.mervyn.miforeman.goal.EdgeRouter.Request, Integer> before = new java.util.HashMap<>();
+        for (int i = 0; i < requests.size(); i++)
+            before.merge(requests.get(i), i, (a, b) -> -1);
+        int kept = 0;
+        for (int i = 0; i < changed.size(); i++) {
+            Integer was = before.get(changed.get(i));
+            if (was == null || was < 0 || full.fallbacks().get(was))
+                continue;
+            if (!reused.unpacked().get(i).equals(full.unpacked().get(was))) {
+                helper.fail("Wire " + i + " kept its endpoints across the plan change but was re-routed.");
+                return;
+            }
+            kept++;
+        }
+        if (kept < changed.size() / 2) {
+            helper.fail("Only " + kept + " of " + changed.size() + " wires kept their route.");
+            return;
+        }
+        if (reused.expansions() * 4 > fresh.expansions()) {
+            helper.fail("Re-routing after a plan change spent " + reused.expansions() + " expansions against "
+                    + fresh.expansions() + " from scratch; it isn't reusing wires.");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = MIForeman.MODID, timeoutTicks = 600)
     public static void testEdgeRouterIncrementalMatchesContract(GameTestHelper helper) {
         var level = helper.getLevel();
         com.mervyn.miforeman.goal.RecipeGraph graph = RecipeGraphTraverser.computeRecipeGraph(level,

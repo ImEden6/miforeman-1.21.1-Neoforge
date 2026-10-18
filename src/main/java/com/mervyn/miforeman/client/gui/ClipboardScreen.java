@@ -413,6 +413,7 @@ public class ClipboardScreen extends Screen {
             int detailWidth = detailCardCollapsed ? 0 : detailCardExpanded ? contentW : (int) (contentW * 0.42);
             int canvasWidth = detailCardExpanded ? 0 : contentW - (detailCardCollapsed ? 0 : detailWidth + 6);
 
+            GraphCanvas previousCanvas = graphCanvas;
             graphCanvas = new GraphCanvas(contentX, canvasY, canvasWidth, contentH,
                     this.goalDraft.currentPlan.graph(), this.goalDraft.graphLayout, cameraX, cameraY, cameraZoom,
                     selectedNodeIds,
@@ -440,6 +441,7 @@ public class ClipboardScreen extends Screen {
                     graphViewMode,
                     graphDragEnabled,
                     this.goalDraft.perHour);
+            graphCanvas.inheritRouting(previousCanvas);
             graphCanvas.setMachineAssignmentHandler((pos, recipeId) -> {
                 if (recipeId == null) {
                     monitoringState.machineAssignments.remove(pos);
