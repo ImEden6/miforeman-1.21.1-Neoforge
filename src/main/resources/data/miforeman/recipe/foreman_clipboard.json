@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "minecraft:book"
+    },
+    {
+      "item": "modern_industrialization:analog_circuit"
+    }
+  ],
+  "result": {
+    "id": "miforeman:foreman_clipboard",
+    "count": 1
+  }
+}

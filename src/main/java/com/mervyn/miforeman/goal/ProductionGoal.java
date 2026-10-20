@@ -1,0 +1,343 @@
+package com.mervyn.miforeman.goal;
+
+import com.mojang.datafixers.util.Either;
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.GlobalPos;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.StringRepresentable;
+
+import org.jetbrains.annotations.Nullable;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+public record ProductionGoal(
+        String name,
+        TargetType type,
+        ResourceLocation targetId,
+        double rate,
+        Map<ResourceLocation, ResourceLocation> recipeSelections,
+        Optional<FactoryPlan> plan,
+        boolean perHour,
+        double threshold,
+        List<GlobalPos> linkedMachines,
+        GraphLayoutState graphLayout,
+        MachineLinkHistory machineLinkHistory,
+        List<GlobalPos> rejectedMachines,
+        ClipboardUiState uiState,
+        Map<GlobalPos, ResourceLocation> machineAssignments
+) {
+    public static final Codec<List<GlobalPos>> GLOBAL_POS_LIST_CODEC = Codec.either(
+            GlobalPos.CODEC.listOf(),
+            BlockPos.CODEC.listOf()
+    ).xmap(
+            either -> either.map(
+                    globalList -> globalList,
+                    blockList -> blockList.stream()
+                            .map(bp -> GlobalPos.of(net.minecraft.world.level.Level.OVERWORLD, bp))
+                            .toList()
+            ),
+            Either::left
+    );
+
+    public static double getDefaultThreshold() {
+        try {
+            return com.mervyn.miforeman.Config.DEFAULT_EFFICIENCY_THRESHOLD.get();
+        } catch (Exception e) {
+            return 0.8;
+        }
+    }
+
+    public ProductionGoal(String name, TargetType type, ResourceLocation targetId, double rate) {
+        this(name, type, targetId, rate, Map.of(), Optional.empty(), false, getDefaultThreshold(), List.of(), GraphLayoutState.EMPTY, MachineLinkHistory.EMPTY, List.of());
+    }
+
+    public ProductionGoal(String name, TargetType type, ResourceLocation targetId, double rate, Map<ResourceLocation, ResourceLocation> recipeSelections, Optional<FactoryPlan> plan) {
+        this(name, type, targetId, rate, recipeSelections, plan, false, getDefaultThreshold(), List.of(), GraphLayoutState.EMPTY, MachineLinkHistory.EMPTY, List.of());
+    }
+
+    public ProductionGoal(String name, TargetType type, ResourceLocation targetId, double rate, Map<ResourceLocation, ResourceLocation> recipeSelections, Optional<FactoryPlan> plan, boolean perHour, double threshold, List<GlobalPos> linkedMachines) {
+        this(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, GraphLayoutState.EMPTY, MachineLinkHistory.EMPTY, List.of());
+    }
+
+    public ProductionGoal(String name, TargetType type, ResourceLocation targetId, double rate, Map<ResourceLocation, ResourceLocation> recipeSelections, Optional<FactoryPlan> plan, boolean perHour, double threshold, List<GlobalPos> linkedMachines, GraphLayoutState graphLayout) {
+        this(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, MachineLinkHistory.EMPTY, List.of());
+    }
+
+    public ProductionGoal(String name, TargetType type, ResourceLocation targetId, double rate, Map<ResourceLocation, ResourceLocation> recipeSelections, Optional<FactoryPlan> plan, boolean perHour, double threshold, List<GlobalPos> linkedMachines, GraphLayoutState graphLayout, MachineLinkHistory machineLinkHistory) {
+        this(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, List.of());
+    }
+
+    public ProductionGoal(String name, TargetType type, ResourceLocation targetId, double rate, Map<ResourceLocation, ResourceLocation> recipeSelections, Optional<FactoryPlan> plan, boolean perHour, double threshold, List<GlobalPos> linkedMachines, GraphLayoutState graphLayout, MachineLinkHistory machineLinkHistory, List<GlobalPos> rejectedMachines) {
+        this(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, ClipboardUiState.EMPTY);
+    }
+
+    public ProductionGoal(String name, TargetType type, ResourceLocation targetId, double rate, Map<ResourceLocation, ResourceLocation> recipeSelections, Optional<FactoryPlan> plan, boolean perHour, double threshold, List<GlobalPos> linkedMachines, GraphLayoutState graphLayout, MachineLinkHistory machineLinkHistory, List<GlobalPos> rejectedMachines, ClipboardUiState uiState) {
+        this(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState, Map.of());
+    }
+
+    public ProductionGoal withGraphLayout(GraphLayoutState graphLayout) {
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState, machineAssignments);
+    }
+
+    public ProductionGoal withPlan(Optional<FactoryPlan> plan) {
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState, machineAssignments);
+    }
+
+    public ProductionGoal withRecipeSelections(Map<ResourceLocation, ResourceLocation> recipeSelections) {
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState, machineAssignments);
+    }
+
+    /** Also drops assignments of unlinked machines, so every unlink path clears them. */
+    public ProductionGoal withLinkedMachines(List<GlobalPos> linkedMachines, MachineLinkHistory machineLinkHistory) {
+        Map<GlobalPos, ResourceLocation> kept = new java.util.HashMap<>(machineAssignments);
+        kept.keySet().retainAll(new java.util.HashSet<>(linkedMachines));
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState, Map.copyOf(kept));
+    }
+
+    /** A null recipeId clears the placement. Only used until the machine's first real craft. */
+    public ProductionGoal withMachineAssignment(GlobalPos pos, @Nullable ResourceLocation recipeId) {
+        Map<GlobalPos, ResourceLocation> updated = new java.util.HashMap<>(machineAssignments);
+        if (recipeId == null) {
+            updated.remove(pos);
+        } else {
+            updated.put(pos, recipeId);
+        }
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState, Map.copyOf(updated));
+    }
+
+    public ProductionGoal withUiState(ClipboardUiState uiState) {
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState, machineAssignments);
+    }
+
+    public ProductionGoal withRejectedMachine(GlobalPos pos) {
+        if (rejectedMachines.contains(pos)) {
+            return this;
+        }
+        List<GlobalPos> updated = new java.util.ArrayList<>(rejectedMachines);
+        updated.add(pos);
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, updated, uiState, machineAssignments);
+    }
+
+    public ProductionGoal withoutRejectedMachine(GlobalPos pos) {
+        if (!rejectedMachines.contains(pos)) {
+            return this;
+        }
+        List<GlobalPos> updated = new java.util.ArrayList<>(rejectedMachines);
+        updated.remove(pos);
+        return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, updated, uiState, machineAssignments);
+    }
+
+    public enum TargetType implements StringRepresentable {
+        ITEM("item"),
+        FLUID("fluid");
+
+        private final String name;
+
+        TargetType(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public String getSerializedName() {
+            return this.name;
+        }
+    }
+
+    public record MachineRequirement(
+            ResourceLocation machineId,
+            double count,
+            long baseEuPerTick,
+            long totalEuPerTick
+    ) {
+        public MachineRequirement(ResourceLocation machineId, double count) {
+            this(machineId, count, 0L, 0L);
+        }
+
+        public static final Codec<MachineRequirement> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                ResourceLocation.CODEC.fieldOf("machine").forGetter(MachineRequirement::machineId),
+                Codec.DOUBLE.fieldOf("count").forGetter(MachineRequirement::count),
+                Codec.LONG.optionalFieldOf("base_eu", 0L).forGetter(MachineRequirement::baseEuPerTick),
+                Codec.LONG.optionalFieldOf("total_eu", 0L).forGetter(MachineRequirement::totalEuPerTick)
+        ).apply(instance, MachineRequirement::new));
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, MachineRequirement> STREAM_CODEC = StreamCodec.composite(
+                ResourceLocation.STREAM_CODEC,
+                MachineRequirement::machineId,
+                ByteBufCodecs.DOUBLE,
+                MachineRequirement::count,
+                ByteBufCodecs.VAR_LONG,
+                MachineRequirement::baseEuPerTick,
+                ByteBufCodecs.VAR_LONG,
+                MachineRequirement::totalEuPerTick,
+                MachineRequirement::new
+        );
+    }
+
+    public record MaterialFlow(
+            TargetType type,
+            ResourceLocation resourceId,
+            double rate
+    ) {
+        public static final Codec<MaterialFlow> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                StringRepresentable.fromEnum(TargetType::values).fieldOf("type").forGetter(MaterialFlow::type),
+                ResourceLocation.CODEC.fieldOf("resource").forGetter(MaterialFlow::resourceId),
+                Codec.DOUBLE.fieldOf("rate").forGetter(MaterialFlow::rate)
+        ).apply(instance, MaterialFlow::new));
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, MaterialFlow> STREAM_CODEC = StreamCodec.composite(
+                ByteBufCodecs.fromCodec(StringRepresentable.fromEnum(TargetType::values)),
+                MaterialFlow::type,
+                ResourceLocation.STREAM_CODEC,
+                MaterialFlow::resourceId,
+                ByteBufCodecs.DOUBLE,
+                MaterialFlow::rate,
+                MaterialFlow::new
+        );
+    }
+
+    public record Ambiguity(
+            ResourceLocation resourceId,
+            List<ResourceLocation> recipeIds
+    ) {
+        public static final Codec<Ambiguity> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                ResourceLocation.CODEC.fieldOf("resource").forGetter(Ambiguity::resourceId),
+                ResourceLocation.CODEC.listOf().fieldOf("recipes").forGetter(Ambiguity::recipeIds)
+        ).apply(instance, Ambiguity::new));
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, Ambiguity> STREAM_CODEC = StreamCodec.composite(
+                ResourceLocation.STREAM_CODEC,
+                Ambiguity::resourceId,
+                ResourceLocation.STREAM_CODEC.apply(ByteBufCodecs.list()),
+                Ambiguity::recipeIds,
+                Ambiguity::new
+        );
+    }
+
+    public record FactoryPlan(
+            List<MachineRequirement> machines,
+            List<MaterialFlow> rawInputs,
+            List<MaterialFlow> intermediateFlows,
+            List<Ambiguity> ambiguities,
+            @Nullable RecipeGraph graph
+    ) {
+        public FactoryPlan(List<MachineRequirement> machines, List<MaterialFlow> rawInputs, List<MaterialFlow> intermediateFlows, List<Ambiguity> ambiguities) {
+            this(machines, rawInputs, intermediateFlows, ambiguities, null);
+        }
+
+        public FactoryPlan withGraph(RecipeGraph graph) {
+            return new FactoryPlan(this.machines, this.rawInputs, this.intermediateFlows, this.ambiguities, graph);
+        }
+
+        public long totalPowerDemandEu() {
+            long total = 0;
+            for (MachineRequirement req : machines) {
+                total += req.totalEuPerTick();
+            }
+            return total;
+        }
+
+        public static final Codec<FactoryPlan> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                MachineRequirement.CODEC.listOf().fieldOf("machines").forGetter(FactoryPlan::machines),
+                MaterialFlow.CODEC.listOf().fieldOf("raw_inputs").forGetter(FactoryPlan::rawInputs),
+                MaterialFlow.CODEC.listOf().fieldOf("intermediates").forGetter(FactoryPlan::intermediateFlows),
+                Ambiguity.CODEC.listOf().fieldOf("ambiguities").forGetter(FactoryPlan::ambiguities)
+        ).apply(instance, FactoryPlan::new));
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, FactoryPlan> STREAM_CODEC = StreamCodec.composite(
+                MachineRequirement.STREAM_CODEC.apply(ByteBufCodecs.list()),
+                FactoryPlan::machines,
+                MaterialFlow.STREAM_CODEC.apply(ByteBufCodecs.list()),
+                FactoryPlan::rawInputs,
+                MaterialFlow.STREAM_CODEC.apply(ByteBufCodecs.list()),
+                FactoryPlan::intermediateFlows,
+                Ambiguity.STREAM_CODEC.apply(ByteBufCodecs.list()),
+                FactoryPlan::ambiguities,
+                FactoryPlan::new
+        );
+    }
+
+    /** GlobalPos can't be a Codec map key, since keys must encode as strings. */
+    private record Assignment(GlobalPos pos, ResourceLocation recipeId) {
+        static final Codec<Assignment> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                GlobalPos.CODEC.fieldOf("pos").forGetter(Assignment::pos),
+                ResourceLocation.CODEC.fieldOf("recipe").forGetter(Assignment::recipeId)
+        ).apply(instance, Assignment::new));
+    }
+
+    private static final Codec<Map<GlobalPos, ResourceLocation>> ASSIGNMENTS_CODEC = Assignment.CODEC.listOf().xmap(
+            list -> {
+                Map<GlobalPos, ResourceLocation> map = new java.util.HashMap<>();
+                list.forEach(a -> map.put(a.pos(), a.recipeId()));
+                return Map.copyOf(map);
+            },
+            map -> map.entrySet().stream().map(e -> new Assignment(e.getKey(), e.getValue())).toList());
+
+    private static final StreamCodec<RegistryFriendlyByteBuf, Map<GlobalPos, ResourceLocation>> ASSIGNMENTS_STREAM_CODEC =
+            ByteBufCodecs.<RegistryFriendlyByteBuf, GlobalPos, ResourceLocation, Map<GlobalPos, ResourceLocation>>map(
+                    java.util.HashMap::new, GlobalPos.STREAM_CODEC, ResourceLocation.STREAM_CODEC)
+                    .map(Map::copyOf, java.util.HashMap::new);
+
+    public static final Codec<ProductionGoal> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+            Codec.STRING.fieldOf("name").forGetter(ProductionGoal::name),
+            StringRepresentable.fromEnum(TargetType::values).fieldOf("type").forGetter(ProductionGoal::type),
+            ResourceLocation.CODEC.fieldOf("target").forGetter(ProductionGoal::targetId),
+            Codec.DOUBLE.fieldOf("rate").forGetter(ProductionGoal::rate),
+            Codec.unboundedMap(ResourceLocation.CODEC, ResourceLocation.CODEC).fieldOf("selections").forGetter(ProductionGoal::recipeSelections),
+            FactoryPlan.CODEC.optionalFieldOf("plan").forGetter(ProductionGoal::plan),
+            Codec.BOOL.optionalFieldOf("per_hour", false).forGetter(ProductionGoal::perHour),
+            Codec.DOUBLE.optionalFieldOf("threshold", 0.8).forGetter(ProductionGoal::threshold),
+            GLOBAL_POS_LIST_CODEC.optionalFieldOf("linked_machines", List.of()).forGetter(ProductionGoal::linkedMachines),
+            GraphLayoutState.CODEC.optionalFieldOf("graph_layout", GraphLayoutState.EMPTY).forGetter(ProductionGoal::graphLayout),
+            MachineLinkHistory.CODEC.optionalFieldOf("machine_link_history", MachineLinkHistory.EMPTY).forGetter(ProductionGoal::machineLinkHistory),
+            GLOBAL_POS_LIST_CODEC.optionalFieldOf("rejected_machines", List.of()).forGetter(ProductionGoal::rejectedMachines),
+            ClipboardUiState.CODEC.optionalFieldOf("ui_state", ClipboardUiState.EMPTY).forGetter(ProductionGoal::uiState),
+            ASSIGNMENTS_CODEC.optionalFieldOf("machine_assignments", Map.of()).forGetter(ProductionGoal::machineAssignments)
+    ).apply(instance, ProductionGoal::new));
+
+    public static final StreamCodec<RegistryFriendlyByteBuf, ProductionGoal> STREAM_CODEC = new StreamCodec<RegistryFriendlyByteBuf, ProductionGoal>() {
+        @Override
+        public ProductionGoal decode(RegistryFriendlyByteBuf buf) {
+            String name = ByteBufCodecs.STRING_UTF8.decode(buf);
+            TargetType type = ByteBufCodecs.fromCodec(StringRepresentable.fromEnum(TargetType::values)).decode(buf);
+            ResourceLocation targetId = ResourceLocation.STREAM_CODEC.decode(buf);
+            double rate = ByteBufCodecs.DOUBLE.decode(buf);
+            Map<ResourceLocation, ResourceLocation> recipeSelections = ByteBufCodecs.map(java.util.HashMap::new, ResourceLocation.STREAM_CODEC, ResourceLocation.STREAM_CODEC).decode(buf);
+            Optional<FactoryPlan> plan = ByteBufCodecs.optional(FactoryPlan.STREAM_CODEC).decode(buf);
+            boolean perHour = ByteBufCodecs.BOOL.decode(buf);
+            double threshold = ByteBufCodecs.DOUBLE.decode(buf);
+            List<GlobalPos> linkedMachines = GlobalPos.STREAM_CODEC.apply(ByteBufCodecs.list()).decode(buf);
+            GraphLayoutState graphLayout = GraphLayoutState.STREAM_CODEC.decode(buf);
+            MachineLinkHistory machineLinkHistory = MachineLinkHistory.STREAM_CODEC.decode(buf);
+            List<GlobalPos> rejectedMachines = GlobalPos.STREAM_CODEC.apply(ByteBufCodecs.list()).decode(buf);
+            ClipboardUiState uiState = ClipboardUiState.STREAM_CODEC.decode(buf);
+            Map<GlobalPos, ResourceLocation> machineAssignments = ASSIGNMENTS_STREAM_CODEC.decode(buf);
+            return new ProductionGoal(name, type, targetId, rate, recipeSelections, plan, perHour, threshold, linkedMachines, graphLayout, machineLinkHistory, rejectedMachines, uiState, machineAssignments);
+        }
+
+        @Override
+        public void encode(RegistryFriendlyByteBuf buf, ProductionGoal goal) {
+            ByteBufCodecs.STRING_UTF8.encode(buf, goal.name());
+            ByteBufCodecs.fromCodec(StringRepresentable.fromEnum(TargetType::values)).encode(buf, goal.type());
+            ResourceLocation.STREAM_CODEC.encode(buf, goal.targetId());
+            ByteBufCodecs.DOUBLE.encode(buf, goal.rate());
+            ByteBufCodecs.map(java.util.HashMap::new, ResourceLocation.STREAM_CODEC, ResourceLocation.STREAM_CODEC).encode(buf, new java.util.HashMap<>(goal.recipeSelections()));
+            ByteBufCodecs.optional(FactoryPlan.STREAM_CODEC).encode(buf, goal.plan());
+            ByteBufCodecs.BOOL.encode(buf, goal.perHour());
+            ByteBufCodecs.DOUBLE.encode(buf, goal.threshold());
+            GlobalPos.STREAM_CODEC.apply(ByteBufCodecs.list()).encode(buf, goal.linkedMachines());
+            GraphLayoutState.STREAM_CODEC.encode(buf, goal.graphLayout());
+            MachineLinkHistory.STREAM_CODEC.encode(buf, goal.machineLinkHistory());
+            GlobalPos.STREAM_CODEC.apply(ByteBufCodecs.list()).encode(buf, goal.rejectedMachines());
+            ClipboardUiState.STREAM_CODEC.encode(buf, goal.uiState());
+            ASSIGNMENTS_STREAM_CODEC.encode(buf, goal.machineAssignments());
+        }
+    };
+}
+

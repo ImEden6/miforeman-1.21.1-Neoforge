@@ -1,0 +1,251 @@
+package com.mervyn.miforeman.client.gui;
+
+import com.mervyn.miforeman.MIForeman;
+import com.mervyn.miforeman.client.DisplayFormat;
+import com.mervyn.miforeman.client.WorldHighlightRenderer;
+import com.mervyn.miforeman.client.gui.widget.ReviewListPanel;
+import com.mervyn.miforeman.goal.MachineLinkHistory;
+import com.mervyn.miforeman.goal.MachineScanner;
+import com.mervyn.miforeman.goal.ProductionGoal;
+import com.mervyn.miforeman.network.LiveMonitoringPayload;
+import com.mervyn.miforeman.network.ScanResultPayload;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.GlobalPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.InteractionHand;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+class MonitoringState {
+    final List<GlobalPos> linkedMachines = new ArrayList<>();
+    final List<GlobalPos> rejectedMachines = new ArrayList<>();
+    final Map<GlobalPos, ResourceLocation> machineAssignments = new HashMap<>();
+    MachineLinkHistory machineLinkHistory = MachineLinkHistory.EMPTY;
+    final List<LiveMonitoringPayload.MachineStatusData> liveData = new ArrayList<>();
+    final List<ScanResultPayload.Candidate> lastScanResults = new ArrayList<>();
+    /** Radius for the next scan. Lives only for this screen session and is never saved to config. */
+    int scanRadiusChunks = MachineScanner.DEFAULT_RADIUS;
+    /** Radius the last scan ran at, as the server reported it. 0 before any scan. */
+    int lastScanRadiusChunks = 0;
+    boolean showRejected = false;
+    boolean showInWorldHighlights;
+    /** Which hand's clipboard this state belongs to, so payload updates reach the right one. */
+    InteractionHand hand = InteractionHand.MAIN_HAND;
+    private int tickCount = 0;
+    /** The goal's recipe graph. Null with no client level yet or no goal. */
+    private @Nullable com.mervyn.miforeman.goal.RecipeGraph graph;
+
+    private MonitoringState() {
+        // The highlight toggle is static and outlives screens, so read the live value.
+        this.showInWorldHighlights = WorldHighlightRenderer.isEnabled();
+    }
+
+    static MonitoringState fromGoal(ProductionGoal goal) {
+        MonitoringState state = new MonitoringState();
+        state.linkedMachines.addAll(goal.linkedMachines());
+        state.machineLinkHistory = goal.machineLinkHistory();
+        state.rejectedMachines.addAll(goal.rejectedMachines());
+        state.machineAssignments.putAll(goal.machineAssignments());
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level != null) {
+            state.graph = com.mervyn.miforeman.goal.RecipeGraphTraverser.computeRecipeGraph(mc.level, goal);
+        }
+        return state;
+    }
+
+    static MonitoringState defaults() {
+        return new MonitoringState();
+    }
+
+    /** ClipboardScreen reuses one state across edits, so it refreshes the graph when the goal changes. */
+    void refreshGraph(@Nullable com.mervyn.miforeman.goal.RecipeGraph graph) {
+        this.graph = graph;
+    }
+
+    void applyLink(GlobalPos pos, Runnable onChange) {
+        boolean wasLinked = linkedMachines.contains(pos);
+        if (!wasLinked)
+            linkedMachines.add(pos);
+        rejectedMachines.remove(pos);
+        machineLinkHistory = machineLinkHistory.withToggle(pos, wasLinked, true);
+        onChange.run();
+    }
+
+    void applyUnlink(GlobalPos pos, Runnable onChange) {
+        boolean wasLinked = linkedMachines.contains(pos);
+        linkedMachines.remove(pos);
+        machineLinkHistory = machineLinkHistory.withToggle(pos, wasLinked, false);
+        onChange.run();
+    }
+
+    void applyReject(GlobalPos pos, Runnable onChange) {
+        if (!rejectedMachines.contains(pos))
+            rejectedMachines.add(pos);
+        onChange.run();
+    }
+
+    void applyUnreject(GlobalPos pos, Runnable onChange) {
+        rejectedMachines.remove(pos);
+        onChange.run();
+    }
+
+    void applyLinkHistoryResult(MachineLinkHistory.UndoResult result, Runnable onChange) {
+        machineLinkHistory = result.history();
+        if (result.linked()) {
+            if (!linkedMachines.contains(result.pos()))
+                linkedMachines.add(result.pos());
+            rejectedMachines.remove(result.pos());
+        } else {
+            linkedMachines.remove(result.pos());
+        }
+        onChange.run();
+    }
+
+    /** Replaces the scan results and returns the candidates to ping: new since the last scan and
+     *  not linked or rejected. */
+    List<GlobalPos> setScanResults(List<ScanResultPayload.Candidate> candidates, int radiusChunks) {
+        Set<GlobalPos> known = new HashSet<>(linkedMachines);
+        known.addAll(rejectedMachines);
+        for (ScanResultPayload.Candidate previous : lastScanResults) {
+            known.add(previous.pos());
+        }
+        List<GlobalPos> newlyFound = MachineScanner.newlyFound(
+                candidates.stream().map(ScanResultPayload.Candidate::pos).toList(), known);
+
+        this.lastScanResults.clear();
+        this.lastScanResults.addAll(candidates);
+        this.lastScanRadiusChunks = radiusChunks;
+        this.scanRadiusChunks = MachineScanner.pickAfterScan(scanRadiusChunks, radiusChunks);
+        return newlyFound;
+    }
+
+    void stepScanRadius(int delta) {
+        scanRadiusChunks = MachineScanner.stepScanRadius(scanRadiusChunks, lastScanRadiusChunks,
+                com.mervyn.miforeman.Config.AUTOLINK_SCAN_RADIUS_CHUNKS.get(), delta);
+    }
+
+    net.minecraft.network.chat.Component scanRadiusLabel() {
+        if (scanRadiusChunks != MachineScanner.DEFAULT_RADIUS) {
+            return net.minecraft.network.chat.Component.translatable("miforeman.scan.radius", scanRadiusChunks);
+        }
+        return lastScanRadiusChunks > 0
+                ? net.minecraft.network.chat.Component.translatable("miforeman.scan.radius_default_known", lastScanRadiusChunks)
+                : net.minecraft.network.chat.Component.translatable("miforeman.scan.radius_default");
+    }
+
+    void setLiveData(List<LiveMonitoringPayload.MachineStatusData> data) {
+        this.liveData.clear();
+        this.liveData.addAll(data);
+    }
+
+    boolean tickAndShouldPoll() {
+        tickCount++;
+        if (tickCount >= 20) {
+            tickCount = 0;
+            return true;
+        }
+        return false;
+    }
+
+    List<ReviewListPanel.ReviewRow> buildReviewRows() {
+        List<ReviewListPanel.ReviewRow> rows = new ArrayList<>();
+        Set<GlobalPos> seen = new HashSet<>();
+
+        Map<GlobalPos, LiveMonitoringPayload.MachineStatusData> liveByPos = new HashMap<>();
+        for (LiveMonitoringPayload.MachineStatusData entry : liveData) {
+            liveByPos.put(entry.pos(), entry);
+        }
+
+        Map<GlobalPos, ScanResultPayload.Candidate> candidatesByPos = new HashMap<>();
+        for (ScanResultPayload.Candidate candidate : lastScanResults) {
+            candidatesByPos.put(candidate.pos(), candidate);
+        }
+
+        for (GlobalPos pos : linkedMachines) {
+            ResourceLocation machineId = resolveMachineId(pos);
+            LiveMonitoringPayload.MachineStatusData live = liveByPos.get(pos);
+            ResourceLocation recipeId = live == null ? null : live.recipeId().orElse(null);
+            String productLabel = recipeId == null ? null : DisplayFormat.productLabel(recipeId);
+            if (productLabel == null) {
+                ScanResultPayload.Candidate candidate = candidatesByPos.get(pos);
+                if (candidate != null) {
+                    recipeId = candidate.recipeId();
+                    productLabel = DisplayFormat.productLabel(recipeId);
+                    if (machineId.equals(ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "unknown"))) {
+                        machineId = candidate.machineId();
+                    }
+                }
+            }
+            rows.add(new ReviewListPanel.ReviewRow(pos, machineId, true, rejectedMachines.contains(pos), false,
+                    productLabel, recipeId));
+            seen.add(pos);
+        }
+
+        for (ScanResultPayload.Candidate candidate : lastScanResults) {
+            if (seen.contains(candidate.pos()))
+                continue;
+            boolean isRejected = rejectedMachines.contains(candidate.pos());
+            if (isRejected && !showRejected)
+                continue;
+            String productLabel = DisplayFormat.productLabel(candidate.recipeId());
+            rows.add(new ReviewListPanel.ReviewRow(candidate.pos(), candidate.machineId(), false, isRejected, true,
+                    productLabel, candidate.recipeId()));
+            seen.add(candidate.pos());
+        }
+
+        return rows;
+    }
+
+    void updateWorldHighlightPositions(List<ReviewListPanel.ReviewRow> rows) {
+        List<GlobalPos> linked = new ArrayList<>();
+        List<GlobalPos> candidates = new ArrayList<>();
+        for (ReviewListPanel.ReviewRow row : rows) {
+            if (row.linked())
+                linked.add(row.pos());
+            else if (row.isNewCandidate())
+                candidates.add(row.pos());
+        }
+        WorldHighlightRenderer.setPositions(linked, candidates);
+    }
+
+    private static ResourceLocation resolveMachineId(GlobalPos pos) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level != null && mc.level.dimension().equals(pos.dimension()) && mc.level.isLoaded(pos.pos())) {
+            var be = mc.level.getBlockEntity(pos.pos());
+            if (be != null) {
+                return BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(pos.pos()).getBlock());
+            }
+        }
+        return ResourceLocation.fromNamespaceAndPath(MIForeman.MODID, "unknown");
+    }
+
+    /** Names of every resource from {@code recipeId}'s machine up to the goal's target, inclusive.
+     *  Empty when the graph isn't computed, {@code recipeId} is null, or it isn't a machine in this plan. */
+    List<String> endProductNames(@Nullable ResourceLocation recipeId) {
+        if (graph == null || recipeId == null) {
+            return List.of();
+        }
+        return com.mervyn.miforeman.goal.RecipeGraphTraverser.collectUpstreamResourceIds(graph, recipeId).stream()
+                .map(DisplayFormat::formatId)
+                .toList();
+    }
+
+    List<String> rowSearchableTexts(ResourceLocation machineId, @Nullable String productLabel, @Nullable ResourceLocation recipeId) {
+        List<String> texts = new ArrayList<>();
+        texts.add(DisplayFormat.formatId(machineId));
+        if (productLabel != null) {
+            texts.add(productLabel);
+        }
+        texts.addAll(endProductNames(recipeId));
+        return texts;
+    }
+
+}

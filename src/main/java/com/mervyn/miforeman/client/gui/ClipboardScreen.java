@@ -1,0 +1,1016 @@
+package com.mervyn.miforeman.client.gui;
+
+import com.mervyn.miforeman.compat.emi.EmiCompat;
+import com.mervyn.miforeman.goal.ClipboardCloseSync;
+import com.mervyn.miforeman.goal.ClipboardUiState;
+import com.mervyn.miforeman.goal.MachineStatus;
+import com.mervyn.miforeman.goal.PlanWorker;
+import com.mervyn.miforeman.goal.ProductionGoal;
+import com.mervyn.miforeman.goal.ProductionGoal.TargetType;
+import com.mervyn.miforeman.registry.ModComponents;
+import com.mervyn.miforeman.network.GoalUpdatePayload;
+import com.mervyn.miforeman.network.RequestMonitoringUpdatePayload;
+import com.mervyn.miforeman.network.LiveMonitoringPayload;
+import com.mervyn.miforeman.client.gui.widget.ClipboardButton;
+import com.mervyn.miforeman.client.gui.widget.GraphCanvas;
+import com.mervyn.miforeman.client.gui.widget.DetailCard;
+import com.mervyn.miforeman.client.gui.widget.ReviewListPanel;
+import com.mervyn.miforeman.client.WorldHighlightRenderer;
+import com.mervyn.miforeman.goal.RecipeGraphNode;
+import com.mervyn.miforeman.goal.RecipeGraphTraverser;
+import com.mervyn.miforeman.goal.NodeType;
+import com.mervyn.miforeman.network.ScanRequestPayload;
+import com.mervyn.miforeman.network.ScanResultPayload;
+import aztech.modern_industrialization.machines.recipe.MachineRecipe;
+import net.minecraft.world.item.crafting.RecipeHolder;
+
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.language.I18n;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.ItemStack;
+
+import java.util.*;
+
+public class ClipboardScreen extends Screen {
+    private static final int MIN_GUI_WIDTH = 440;
+    private static final int MIN_GUI_HEIGHT = 230;
+    private static final int PADDING = 8;
+    private static final int FIELD_HEIGHT = 14;
+    private static final int SCAN_RADIUS_X = 188;
+
+    private static final int EMI_PICK_BUTTON_WIDTH = 70;
+    private static final int EMI_PICK_BUTTON_GAP = 4;
+
+    private static final int COLOUR_TITLE = 0xFFDAA520;
+    private static final int COLOUR_LABEL = 0xFF8B7355;
+    private static final int COLOUR_ERROR = MachineStatus.RED.colour();
+    private static final int COLOUR_GREEN = MachineStatus.GREEN.colour();
+    private static final int COLOUR_CYAN = 0xFF006080;
+    private static final int COLOUR_AMBER = MachineStatus.YELLOW.colour();
+    private static final int COLOUR_TEXT = 0xFF3A2A18;
+    private static final int COLOUR_MUTED = 0xFF8A7A68;
+
+    private static final int STEP_DEFINE_GOAL = 0;
+    private static final int STEP_REVIEW_PLAN = 1;
+    private static final int STEP_MONITOR = 2;
+
+    private static final int STEP_INDICATOR_Y = 8;
+    private static final int STEP_DOT_RADIUS = 4;
+    private static final int STEP_DOT_GAP = 20;
+
+    private int currentStep = STEP_DEFINE_GOAL;
+    private boolean hasExistingGoal = false;
+    private boolean stepInitialized = false;
+
+    private final GoalDraft goalDraft;
+    private static final java.util.concurrent.Executor PLAN_THREAD = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "MI Foreman plan");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private final PlanWorker planWorker = new PlanWorker(PLAN_THREAD, task -> Minecraft.getInstance().execute(task));
+    private final MonitoringState monitoringState;
+
+    private ResourceLocation selectedNodeId = null;
+    /** selectedNodeId mirrors this when exactly one node is selected. */
+    private Set<ResourceLocation> selectedNodeIds = new LinkedHashSet<>();
+    private GraphCanvas graphCanvas;
+    private DetailCard detailCard;
+    private double cameraX, cameraY;
+    private float cameraZoom;
+    private int detailScrollOffset = 0;
+    private boolean detailCardCollapsed;
+    private boolean detailCardExpanded;
+    private com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode graphViewMode;
+    private boolean graphDragEnabled;
+    private boolean showMachineNumbers;
+    /** Client-side only, not saved in GraphLayoutState. Whether auto-arrange also lays out each locked group's interior. */
+    private boolean rearrangeInsideGroups;
+    private Button toggleDetailButton;
+    private Button toggleMachineViewButton;
+    private Button toggleDragModeButton;
+    private Button undoLayoutButton, redoLayoutButton, resetLayoutButton;
+    private Button autoArrangeButton, rearrangeToggleButton, groupActionButton;
+
+    private Button nextButton;
+    private Button backButton;
+    private Button defineNextButton;
+    private Button reviewButton;
+    private Button monitoringButton;
+
+    private boolean isMinimized;
+    private Button toggleModeButton;
+
+    private final ProductionGoal openedGoal;
+
+    private ProductionGoal lastSyncedGoal;
+
+    private final InteractionHand hand;
+
+    public ClipboardScreen(ItemStack stack, InteractionHand hand) {
+        super(Component.translatable("miforeman.screen.clipboard.title"));
+
+        this.hand = hand;
+        ProductionGoal goal = stack.get(ModComponents.PRODUCTION_GOAL.get());
+        this.openedGoal = goal;
+        this.lastSyncedGoal = goal;
+        this.hasExistingGoal = (goal != null);
+        this.goalDraft = (goal != null) ? GoalDraft.fromGoal(goal) : GoalDraft.defaults();
+        this.monitoringState = (goal != null) ? MonitoringState.fromGoal(goal) : MonitoringState.defaults();
+        this.monitoringState.hand = hand;
+
+        ClipboardUiState ui = (goal != null) ? goal.uiState() : ClipboardUiState.EMPTY;
+        this.cameraX = ui.cameraX();
+        this.cameraY = ui.cameraY();
+        this.cameraZoom = ui.cameraZoom();
+        this.graphViewMode = ui.graphViewMode();
+        this.graphDragEnabled = ui.graphDragEnabled();
+        this.detailCardCollapsed = ui.detailCardCollapsed();
+        this.detailCardExpanded = ui.detailCardExpanded();
+        this.isMinimized = ui.isMinimized();
+        this.showMachineNumbers = ui.showMachineNumbers();
+    }
+
+    @Override
+    public void removed() {
+        super.removed();
+        planWorker.cancel();
+        ClipboardUiState snapshot = new ClipboardUiState(
+                currentStep, cameraX, cameraY, cameraZoom,
+                graphViewMode, graphDragEnabled, detailCardCollapsed, isMinimized, showMachineNumbers, detailCardExpanded);
+        // Save layout changes on close, even without an explicit save.
+        ClipboardCloseSync.computeCloseSyncGoal(lastSyncedGoal, snapshot, goalDraft.graphLayout)
+                .ifPresent(toPersist -> new GoalUpdatePayload(toPersist, hand).sendToServer());
+    }
+
+    private int guiWidth() {
+        return ClipboardChrome.guiWidth(this.width, MIN_GUI_WIDTH);
+    }
+
+    private int guiHeight() {
+        return ClipboardChrome.guiHeight(this.height, MIN_GUI_HEIGHT);
+    }
+
+    @Override
+    protected void init() {
+        super.init();
+        if (!stepInitialized) {
+            this.currentStep = hasExistingGoal
+                    ? Math.max(STEP_DEFINE_GOAL, Math.min(STEP_MONITOR, openedGoal.uiState().lastStep()))
+                    : STEP_DEFINE_GOAL;
+            // FactoryPlan's codecs leave out graph, so a plan loaded from a saved goal has none.
+            // Without this check, going back from Monitor to Review Plan never builds the GraphCanvas.
+            if (hasExistingGoal && (this.goalDraft.currentPlan == null || this.goalDraft.currentPlan.graph() == null)) {
+                computePlan(() -> rebuildStep(currentStep));
+            }
+            stepInitialized = true;
+        }
+        rebuildStep(currentStep);
+    }
+
+    private void rebuildStep(int step) {
+        this.clearWidgets();
+        this.goalDraft.errorMessage = null;
+
+        int guiWidth = guiWidth();
+        int guiHeight = guiHeight();
+        int left = (this.width - guiWidth) / 2;
+        int top = (this.height - guiHeight) / 2;
+
+        toggleModeButton = new ClipboardButton(left + guiWidth - 54, top + 8, 46, 14,
+                this.isMinimized ? Component.translatable("miforeman.button.edit") : Component.translatable("miforeman.button.view"),
+                b -> {
+                    this.isMinimized = !this.isMinimized;
+                    rebuildStep(this.currentStep);
+                });
+        this.addRenderableWidget(toggleModeButton);
+
+        Button coloursButton = new ClipboardButton(left + guiWidth - 54 - 54, top + 8, 50, 14,
+                Component.translatable("miforeman.screen.colours.title"), b -> Minecraft.getInstance().setScreen(new ColourPickerScreen(this)));
+        this.addRenderableWidget(coloursButton);
+
+        if (this.isMinimized) {
+            return;
+        }
+
+        switch (step) {
+            case STEP_DEFINE_GOAL -> buildStepDefineGoal();
+            case STEP_REVIEW_PLAN -> buildStepReviewPlan();
+            case STEP_MONITOR -> buildStepMonitor();
+        }
+    }
+
+    private static Component perHourLabel(boolean perHour) {
+        return Component.translatable(perHour ? "miforeman.button.per_hour" : "miforeman.button.per_min");
+    }
+
+    private void buildStepDefineGoal() {
+        int left = (this.width - guiWidth()) / 2;
+        int top = (this.height - guiHeight()) / 2;
+
+        int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
+        int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
+        int contentW = guiWidth() - (PADDING + ClipboardChrome.MAIN_BORDER) * 2 - 4;
+
+        int y = contentY + 16;
+
+        EditBox nameField = new EditBox(this.font, contentX, y + 10, contentW, FIELD_HEIGHT,
+                Component.literal("Goal Name"));
+        nameField.setMaxLength(64);
+        nameField.setValue(this.goalDraft.goalName == null ? "" : this.goalDraft.goalName);
+        nameField.setResponder(val -> {
+            this.goalDraft.goalName = val;
+            revalidateDefineGoal();
+        });
+        this.addRenderableWidget(nameField);
+        y += 10 + FIELD_HEIGHT + 8;
+
+        Button typeButton = new ClipboardButton(contentX, y + 10, 55, FIELD_HEIGHT,
+                Component.literal(this.goalDraft.targetType.name()), b -> {
+                    this.goalDraft.targetType = this.goalDraft.targetType == TargetType.ITEM ? TargetType.FLUID
+                            : TargetType.ITEM;
+                    b.setMessage(Component.literal(this.goalDraft.targetType.name()));
+                    revalidateDefineGoal();
+                });
+        this.addRenderableWidget(typeButton);
+
+        boolean emiLoaded = EmiCompat.isLoaded();
+        int emiButtonWidth = emiLoaded ? EMI_PICK_BUTTON_WIDTH + EMI_PICK_BUTTON_GAP : 0;
+
+        int targetIdWidth = contentW - 60 - emiButtonWidth;
+        EditBox targetIdField = new EditBox(this.font, contentX + 60, y + 10, targetIdWidth, FIELD_HEIGHT,
+                Component.literal("Target ID"));
+        targetIdField.setMaxLength(256);
+        targetIdField.setValue(this.goalDraft.targetIdStr == null ? "" : this.goalDraft.targetIdStr);
+        targetIdField.setResponder(val -> {
+            this.goalDraft.targetIdStr = val;
+            revalidateDefineGoal();
+        });
+        this.addRenderableWidget(targetIdField);
+
+        if (emiLoaded) {
+            Button pickFromEmiButton = new ClipboardButton(contentX + 60 + targetIdWidth + EMI_PICK_BUTTON_GAP, y + 10,
+                    EMI_PICK_BUTTON_WIDTH, FIELD_HEIGHT, Component.translatable("miforeman.button.from_emi"),
+                    b -> Minecraft.getInstance().setScreen(new EmiTargetPickerScreen(this)));
+            this.addRenderableWidget(pickFromEmiButton);
+        }
+        y += 10 + FIELD_HEIGHT + 8;
+
+        EditBox rateField = new EditBox(this.font, contentX, y + 10, contentW - 80, FIELD_HEIGHT,
+                Component.literal("Rate"));
+        rateField.setValue(String.valueOf(this.goalDraft.rate));
+        rateField.setResponder(val -> {
+            try {
+                this.goalDraft.rate = Double.parseDouble(val);
+            } catch (NumberFormatException e) {
+            }
+            revalidateDefineGoal();
+        });
+        this.addRenderableWidget(rateField);
+
+        Button unitButton = new ClipboardButton(contentX + contentW - 70, y + 10, 70, FIELD_HEIGHT,
+                perHourLabel(this.goalDraft.perHour), b -> {
+                    this.goalDraft.perHour = !this.goalDraft.perHour;
+                    b.setMessage(perHourLabel(this.goalDraft.perHour));
+                    revalidateDefineGoal();
+                });
+        this.addRenderableWidget(unitButton);
+        y += 10 + FIELD_HEIGHT + 8;
+
+        EditBox thresholdField = new EditBox(this.font, contentX, y + 10, contentW, FIELD_HEIGHT,
+                Component.literal("Threshold"));
+        thresholdField.setValue(String.valueOf((int) (this.goalDraft.threshold * 100)));
+        thresholdField.setResponder(val -> {
+            try {
+                double pct = Double.parseDouble(val);
+                this.goalDraft.threshold = pct / 100.0;
+            } catch (NumberFormatException e) {
+            }
+            revalidateDefineGoal();
+        });
+        this.addRenderableWidget(thresholdField);
+
+        int btnY = top + guiHeight() - PADDING - ClipboardChrome.MAIN_BORDER - 22;
+
+        Button cancelButton = new ClipboardButton(contentX, btnY, 80, 16, Component.translatable("miforeman.button.cancel"),
+                b -> this.onClose());
+        this.addRenderableWidget(cancelButton);
+
+        defineNextButton = new ClipboardButton(contentX + contentW - 80, btnY, 80, 16, Component.translatable("miforeman.button.next"),
+                b -> {
+                    String previousTarget = this.goalDraft.currentPlan != null && this.goalDraft.currentPlan.graph() != null
+                            ? this.goalDraft.currentPlan.graph().target().toString() : null;
+                    GoalFormResult result = new GoalFormResult(
+                            this.goalDraft.goalName, this.goalDraft.targetType, this.goalDraft.targetIdStr,
+                            this.goalDraft.rate, this.goalDraft.perHour, this.goalDraft.threshold);
+                    this.goalDraft.applyFormResult(result);
+                    // Camera and node positions belong to the old graph.
+                    if (previousTarget != null && !previousTarget.equals(String.valueOf(ResourceLocation.tryParse(this.goalDraft.targetIdStr)))) {
+                        this.cameraX = 0;
+                        this.cameraY = 0;
+                        this.cameraZoom = 1.0f;
+                        this.goalDraft.graphLayout = com.mervyn.miforeman.goal.GraphLayoutState.EMPTY;
+                    }
+                    computePlan(() -> {
+                        if (this.goalDraft.errorMessage == null && this.goalDraft.currentPlan != null) {
+                            this.selectedNodeId = null;
+                            goToStep(STEP_REVIEW_PLAN);
+                        } else {
+                            String serverError = this.goalDraft.errorMessage;
+                            rebuildStep(STEP_DEFINE_GOAL);
+                            if (serverError != null) {
+                                this.goalDraft.errorMessage = serverError;
+                                defineNextButton.active = false;
+                            }
+                        }
+                    });
+                });
+        this.addRenderableWidget(defineNextButton);
+
+        revalidateDefineGoal();
+    }
+
+    /** Public so the EMI compat package can call back without this class importing dev.emi. */
+    public void applyDroppedTarget(TargetType type, String idStr) {
+        this.goalDraft.targetType = type;
+        this.goalDraft.targetIdStr = idStr;
+        rebuildStep(STEP_DEFINE_GOAL);
+    }
+
+    private void revalidateDefineGoal() {
+        Optional<String> error = GoalFormValidation.validateGoalInputs(
+                this.goalDraft.goalName, this.goalDraft.targetIdStr, this.goalDraft.targetType,
+                this.goalDraft.rate, this.goalDraft.threshold);
+        this.goalDraft.errorMessage = error.orElse(null);
+        if (defineNextButton != null) {
+            defineNextButton.active = error.isEmpty();
+        }
+    }
+
+    private void goToStep(int step) {
+        this.currentStep = step;
+        rebuildStep(step);
+    }
+
+    private void buildStepReviewPlan() {
+        int left = (this.width - guiWidth()) / 2;
+        int top = (this.height - guiHeight()) / 2;
+
+        int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
+        int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
+        int contentW = guiWidth() - (PADDING + ClipboardChrome.MAIN_BORDER) * 2 - 4;
+
+        int titleRowHeight = 16; // matches the "+16" gap already used after the title in renderStepMonitor
+        int topButtonRowHeight = 12;
+        int rowGap = 4;
+
+        int topButtonRowY = contentY + titleRowHeight;
+        int arrangeRowY = topButtonRowY + topButtonRowHeight + rowGap;
+        int canvasY = arrangeRowY + topButtonRowHeight + rowGap;
+        int btnY = top + guiHeight() - PADDING - ClipboardChrome.MAIN_BORDER - 22;
+        int contentH = btnY - rowGap - canvasY;
+
+        if (this.goalDraft.currentPlan != null && this.goalDraft.currentPlan.graph() != null) {
+            int detailWidth = detailCardCollapsed ? 0 : detailCardExpanded ? contentW : (int) (contentW * 0.42);
+            int canvasWidth = detailCardExpanded ? 0 : contentW - (detailCardCollapsed ? 0 : detailWidth + 6);
+
+            GraphCanvas previousCanvas = graphCanvas;
+            graphCanvas = new GraphCanvas(contentX, canvasY, canvasWidth, contentH,
+                    this.goalDraft.currentPlan.graph(), this.goalDraft.graphLayout, cameraX, cameraY, cameraZoom,
+                    selectedNodeIds,
+                    newSelection -> {
+                        selectedNodeIds = newSelection;
+                        selectedNodeId = newSelection.size() == 1 ? newSelection.iterator().next() : null;
+                        if (detailCard != null) {
+                            detailCard.setNode(selectedNodeId != null
+                                    ? this.goalDraft.currentPlan.graph().node(selectedNodeId) : null);
+                        }
+                        updateGroupActionButton();
+                    },
+                    layout -> {
+                        this.goalDraft.graphLayout = layout;
+                        if (undoLayoutButton != null)
+                            undoLayoutButton.active = graphCanvas.canUndo();
+                        if (redoLayoutButton != null)
+                            redoLayoutButton.active = graphCanvas.canRedo();
+                    },
+                    (panX, panY, zoomLevel) -> {
+                        this.cameraX = panX;
+                        this.cameraY = panY;
+                        this.cameraZoom = zoomLevel;
+                    },
+                    graphViewMode,
+                    graphDragEnabled,
+                    this.goalDraft.perHour);
+            graphCanvas.inheritRouting(previousCanvas);
+            graphCanvas.setMachineAssignmentHandler((pos, recipeId) -> {
+                if (recipeId == null) {
+                    monitoringState.machineAssignments.remove(pos);
+                } else {
+                    monitoringState.machineAssignments.put(pos, recipeId);
+                }
+                syncGoal();
+            });
+            graphCanvas.updateLiveStatus(monitoringState.liveData);
+            // Built while expanded so toolbar lambdas stay valid, but not added as a widget.
+            if (!detailCardExpanded) {
+                this.addRenderableWidget(graphCanvas);
+            }
+
+            if (!detailCardCollapsed) {
+                RecipeGraphNode selectedNode = selectedNodeId != null
+                        ? this.goalDraft.currentPlan.graph().node(selectedNodeId)
+                        : null;
+                DetailCard.Callbacks detailCardCallbacks = new DetailCard.Callbacks((resId, choiceRecipeId) -> {
+                            if (choiceRecipeId == null)
+                                this.goalDraft.recipeSelections.remove(resId);
+                            else
+                                this.goalDraft.recipeSelections.put(resId, choiceRecipeId);
+                            // A machine node's id is its recipe id, so look the selection up again on the rebuilt graph.
+                            RecipeGraphNode cyclingNode = selectedNodeId != null && this.goalDraft.currentPlan != null
+                                    && this.goalDraft.currentPlan.graph() != null
+                                            ? this.goalDraft.currentPlan.graph().node(selectedNodeId)
+                                            : null;
+                            boolean cyclingSelectedMachine = cyclingNode != null
+                                    && cyclingNode.getType() == NodeType.MACHINE;
+                            computePlan(() -> {
+                                if (this.goalDraft.currentPlan != null && selectedNodeId != null
+                                        && this.goalDraft.currentPlan.graph().node(selectedNodeId) == null) {
+                                    selectedNodeId = cyclingSelectedMachine && choiceRecipeId != null
+                                            && this.goalDraft.currentPlan.graph().node(choiceRecipeId) != null
+                                                    ? choiceRecipeId
+                                                    : null;
+                                    selectedNodeIds = selectedNodeId != null ? Set.of(selectedNodeId) : Set.of();
+                                }
+                                rebuildStep(STEP_REVIEW_PLAN);
+                            });
+                        }, () -> {
+                            this.showMachineNumbers = !this.showMachineNumbers;
+                            rebuildStep(STEP_REVIEW_PLAN);
+                        }, nodeId -> {
+                            if (graphCanvas != null) {
+                                graphCanvas.toggleNodeVisibility(nodeId);
+                                this.goalDraft.graphLayout = graphCanvas.getLayoutState();
+                                rebuildStep(STEP_REVIEW_PLAN);
+                            }
+                        }, () -> {
+                            if (graphCanvas != null) {
+                                graphCanvas.unhideAll();
+                                this.goalDraft.graphLayout = graphCanvas.getLayoutState();
+                                rebuildStep(STEP_REVIEW_PLAN);
+                            }
+                        }, resId -> {
+                            return this.goalDraft.graphLayout != null && this.goalDraft.graphLayout.isHidden(resId);
+                        }, this::expandMaterialNode, this.goalDraft.recipeSelections::containsKey);
+                int detailX = detailCardExpanded ? contentX : contentX + canvasWidth + 6;
+                detailCard = new DetailCard(detailX, canvasY, detailWidth, contentH, selectedNode,
+                        this.goalDraft.currentPlan,
+                        new DetailCard.DisplayOptions(this.goalDraft.perHour, showMachineNumbers, detailCardExpanded),
+                        detailCardCallbacks, detailScrollOffset, v -> this.detailScrollOffset = v);
+                detailCard.setCapacity(graphCanvas.capacity());
+                this.addRenderableWidget(detailCard);
+            } else {
+                detailCard = null;
+            }
+
+            // Cycles Sidebar, Expanded, Hidden. The label shows the current state.
+            Component detailButtonLabel = detailCardCollapsed ? Component.translatable("miforeman.button.details_hidden")
+                    : detailCardExpanded ? Component.translatable("miforeman.button.details_expanded")
+                    : Component.translatable("miforeman.button.details_sidebar");
+            toggleDetailButton = new ClipboardButton(contentX + contentW - 90, topButtonRowY, 90, 12,
+                    detailButtonLabel,
+                    b -> {
+                        if (detailCardCollapsed) {
+                            detailCardCollapsed = false;
+                            detailCardExpanded = false;
+                        } else if (!detailCardExpanded) {
+                            detailCardExpanded = true;
+                        } else {
+                            detailCardCollapsed = true;
+                            detailCardExpanded = false;
+                        }
+                        rebuildStep(STEP_REVIEW_PLAN);
+                    });
+            this.addRenderableWidget(toggleDetailButton);
+
+            undoLayoutButton = new ClipboardButton(contentX, topButtonRowY, 40, 12,
+                    Component.translatable("miforeman.button.undo"), b -> graphCanvas.undo());
+            undoLayoutButton.active = graphCanvas.canUndo();
+            this.addRenderableWidget(undoLayoutButton);
+
+            redoLayoutButton = new ClipboardButton(contentX + 44, topButtonRowY, 40, 12,
+                    Component.translatable("miforeman.button.redo"), b -> graphCanvas.redo());
+            redoLayoutButton.active = graphCanvas.canRedo();
+            this.addRenderableWidget(redoLayoutButton);
+
+            resetLayoutButton = new ClipboardButton(contentX + 88, topButtonRowY, 40, 12,
+                    Component.translatable("miforeman.button.reset"), b -> graphCanvas.resetLayout());
+            this.addRenderableWidget(resetLayoutButton);
+
+            Component viewLabel = switch (graphViewMode) {
+                case ALL -> Component.translatable("miforeman.button.view_all");
+                case ITEMS_ONLY -> Component.translatable("miforeman.button.view_items");
+                case MACHINES_ONLY -> Component.translatable("miforeman.button.view_machines");
+            };
+            toggleMachineViewButton = new ClipboardButton(contentX + 132, topButtonRowY, 86, 12,
+                    viewLabel,
+                    b -> {
+                        graphViewMode = graphViewMode.next();
+                        if (selectedNodeId != null && this.goalDraft.currentPlan != null
+                                && this.goalDraft.currentPlan.graph() != null) {
+                            RecipeGraphNode selected = this.goalDraft.currentPlan.graph().node(selectedNodeId);
+                            if (selected != null) {
+                                if (graphViewMode == com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.ITEMS_ONLY
+                                        && selected.getType() == NodeType.MACHINE) {
+                                    selectedNodeId = null;
+                                    selectedNodeIds = Set.of();
+                                } else if (graphViewMode == com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode.MACHINES_ONLY
+                                        && selected.getType() != NodeType.MACHINE) {
+                                    selectedNodeId = null;
+                                    selectedNodeIds = Set.of();
+                                }
+                            }
+                        }
+                        rebuildStep(STEP_REVIEW_PLAN);
+                    });
+            this.addRenderableWidget(toggleMachineViewButton);
+
+            toggleDragModeButton = new ClipboardButton(contentX + 222, topButtonRowY, 86, 12,
+                    graphDragEnabled ? Component.translatable("miforeman.button.edit_mode") : Component.translatable("miforeman.button.view_mode"),
+                    b -> {
+                        graphDragEnabled = !graphDragEnabled;
+                        rebuildStep(STEP_REVIEW_PLAN);
+                    });
+            this.addRenderableWidget(toggleDragModeButton);
+
+            autoArrangeButton = new ClipboardButton(contentX, arrangeRowY, 70, 12,
+                    Component.translatable("miforeman.button.auto_arrange"), b -> {
+                        graphCanvas.autoArrange(rearrangeInsideGroups);
+                        this.goalDraft.graphLayout = graphCanvas.getLayoutState();
+                        if (undoLayoutButton != null) undoLayoutButton.active = graphCanvas.canUndo();
+                        rebuildStep(STEP_REVIEW_PLAN);
+                    });
+            this.addRenderableWidget(autoArrangeButton);
+
+            rearrangeToggleButton = new ClipboardButton(contentX + 74, arrangeRowY, 128, 12,
+                    rearrangeInsideGroups ? Component.translatable("miforeman.button.rearrange_inside_on")
+                            : Component.translatable("miforeman.button.rearrange_inside_off"),
+                    b -> {
+                        rearrangeInsideGroups = !rearrangeInsideGroups;
+                        rebuildStep(STEP_REVIEW_PLAN);
+                    });
+            this.addRenderableWidget(rearrangeToggleButton);
+
+            groupActionButton = new ClipboardButton(contentX + 206, arrangeRowY, 90, 12,
+                    Component.translatable("miforeman.button.group_selection"), b -> {
+                        UUID covering = graphCanvas.groupCoveringSelection();
+                        UUID singleGroup = graphCanvas.groupOfSingleSelection();
+                        if (covering != null) {
+                            graphCanvas.dissolveGroup(covering);
+                        } else if (singleGroup != null) {
+                            graphCanvas.removeSingleSelectionFromGroup();
+                        } else if (graphCanvas.canGroupSelection()) {
+                            graphCanvas.groupSelection();
+                        }
+                        this.goalDraft.graphLayout = graphCanvas.getLayoutState();
+                        rebuildStep(STEP_REVIEW_PLAN);
+                    });
+            this.addRenderableWidget(groupActionButton);
+            updateGroupActionButton();
+        }
+
+        backButton = new ClipboardButton(contentX, btnY, 80, 16,
+                Component.translatable("miforeman.button.back"), b -> goToStep(STEP_DEFINE_GOAL));
+        this.addRenderableWidget(backButton);
+
+        nextButton = new ClipboardButton(contentX + contentW - 110, btnY, 110, 16,
+                Component.translatable("miforeman.button.save_and_monitor"), b -> {
+                    save();
+                    goToStep(STEP_MONITOR);
+                });
+        this.addRenderableWidget(nextButton);
+    }
+
+    private void updateGroupActionButton() {
+        if (groupActionButton == null || graphCanvas == null) return;
+        UUID covering = graphCanvas.groupCoveringSelection();
+        UUID singleGroup = graphCanvas.groupOfSingleSelection();
+        if (covering != null) {
+            groupActionButton.visible = true;
+            groupActionButton.setMessage(Component.translatable("miforeman.button.dissolve_group"));
+        } else if (singleGroup != null) {
+            groupActionButton.visible = true;
+            groupActionButton.setMessage(Component.translatable("miforeman.button.remove_from_group"));
+        } else if (graphCanvas.canGroupSelection()) {
+            groupActionButton.visible = true;
+            groupActionButton.setMessage(Component.translatable("miforeman.button.group_selection"));
+        } else {
+            groupActionButton.visible = false;
+        }
+    }
+
+    private void buildStepMonitor() {
+        monitoringState.refreshGraph(this.goalDraft.currentPlan != null ? this.goalDraft.currentPlan.graph() : null);
+
+        int left = (this.width - guiWidth()) / 2;
+        int top = (this.height - guiHeight()) / 2;
+
+        int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
+        int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
+        int contentW = guiWidth() - (PADDING + ClipboardChrome.MAIN_BORDER) * 2 - 4;
+
+        Button scanButton = new ClipboardButton(contentX, contentY + 28, 90, 14,
+                Component.translatable("miforeman.button.scan_nearby"), b -> triggerScan());
+        this.addRenderableWidget(scanButton);
+
+        Button highlightsButton = new ClipboardButton(contentX + 94, contentY + 28, 90, 14,
+                monitoringState.showInWorldHighlights ? Component.translatable("miforeman.button.highlights_on")
+                        : Component.translatable("miforeman.button.highlights_off"),
+                b -> {
+                    monitoringState.showInWorldHighlights = !monitoringState.showInWorldHighlights;
+                    WorldHighlightRenderer.setEnabled(monitoringState.showInWorldHighlights);
+                    rebuildStep(STEP_MONITOR);
+                });
+        this.addRenderableWidget(highlightsButton);
+
+        this.addRenderableWidget(new ClipboardButton(contentX + SCAN_RADIUS_X, contentY + 28, 14, 14,
+                Component.literal("-"), b -> {
+                    monitoringState.stepScanRadius(-1);
+                    rebuildStep(STEP_MONITOR);
+                }));
+        this.addRenderableWidget(new ClipboardButton(contentX + SCAN_RADIUS_X + 16, contentY + 28, 14, 14,
+                Component.literal("+"), b -> {
+                    monitoringState.stepScanRadius(1);
+                    rebuildStep(STEP_MONITOR);
+                }));
+
+        List<ReviewListPanel.ReviewRow> rows = monitoringState.buildReviewRows();
+        monitoringState.updateWorldHighlightPositions(rows);
+
+        int halfW = (contentW - 6) / 2;
+        reviewButton = new ClipboardButton(contentX, contentY + 46, halfW, 16,
+                Component.translatable("miforeman.button.review_machines", rows.size()),
+                b -> Minecraft.getInstance().setScreen(new ReviewMachinesScreen(
+                        monitoringState, this::onMonitoringStateChanged, this)));
+        this.addRenderableWidget(reviewButton);
+
+        int monitoredCount = monitoringState.liveData.isEmpty()
+                ? monitoringState.linkedMachines.size()
+                : monitoringState.liveData.size();
+        monitoringButton = new ClipboardButton(contentX + halfW + 6, contentY + 46, halfW, 16,
+                Component.translatable("miforeman.button.view_monitoring", monitoredCount),
+                b -> Minecraft.getInstance().setScreen(new MonitoringScreen(
+                        monitoringState, goalDraft.perHour, this)));
+        this.addRenderableWidget(monitoringButton);
+
+        int btnY = top + guiHeight() - PADDING - ClipboardChrome.MAIN_BORDER - 22;
+        backButton = new ClipboardButton(contentX, btnY, 80, 16,
+                Component.translatable("miforeman.button.back"), b -> goToStep(STEP_REVIEW_PLAN));
+        this.addRenderableWidget(backButton);
+
+        nextButton = new ClipboardButton(contentX + contentW - 80, btnY, 80, 16,
+                Component.translatable("miforeman.button.done"), b -> this.onClose());
+        this.addRenderableWidget(nextButton);
+
+        new RequestMonitoringUpdatePayload(monitoringState.hand).sendToServer();
+    }
+
+    private void updateMonitoringButtonLabels() {
+        if (reviewButton != null) {
+            reviewButton.setMessage(Component.translatable("miforeman.button.review_machines", monitoringState.buildReviewRows().size()));
+        }
+        if (monitoringButton != null) {
+            int count = monitoringState.liveData.isEmpty()
+                    ? monitoringState.linkedMachines.size()
+                    : monitoringState.liveData.size();
+            monitoringButton.setMessage(Component.translatable("miforeman.button.view_monitoring", count));
+        }
+    }
+
+    private void onMonitoringStateChanged() {
+        syncGoal();
+        rebuildStep(STEP_MONITOR);
+    }
+
+    private void triggerScan() {
+        if (this.goalDraft.currentPlan == null)
+            return;
+        ProductionGoal goal = buildCurrentGoal();
+        new ScanRequestPayload(goal, monitoringState.scanRadiusChunks).sendToServer();
+    }
+
+    public List<net.minecraft.core.GlobalPos> updateScanResults(List<ScanResultPayload.Candidate> candidates, int radiusChunks) {
+        List<net.minecraft.core.GlobalPos> newlyFound = monitoringState.setScanResults(candidates, radiusChunks);
+        if (currentStep == STEP_MONITOR)
+            rebuildStep(STEP_MONITOR);
+        return newlyFound;
+    }
+
+    private ProductionGoal buildCurrentGoal() {
+        return goalDraft.buildGoal(monitoringState.linkedMachines, monitoringState.machineLinkHistory,
+                monitoringState.rejectedMachines, monitoringState.machineAssignments);
+    }
+
+    private void syncGoal() {
+        if (!goalDraft.isReadyToSave())
+            return;
+        lastSyncedGoal = buildCurrentGoal();
+        new GoalUpdatePayload(lastSyncedGoal, hand).sendToServer();
+    }
+
+    /** Runs then once the draft has its plan. Uncached plans compute off the render thread and only the
+     *  newest edit's plan applies. Skips then if the player changed step meanwhile. */
+    private void computePlan(Runnable then) {
+        ProductionGoal request = goalDraft.planRequest(monitoringState.linkedMachines);
+        if (request == null) {
+            then.run();
+            return;
+        }
+        ProductionGoal.FactoryPlan cached = RecipeGraphTraverser.cachedPlan(request);
+        if (cached != null) {
+            goalDraft.applyPlan(cached, null);
+            then.run();
+            return;
+        }
+        net.minecraft.world.level.Level level = this.minecraft.level;
+        int stepAtRequest = currentStep;
+        planWorker.submit(() -> RecipeGraphTraverser.computePlan(level, request), (plan, error) -> {
+            if (this.minecraft.screen != this)
+                return;
+            goalDraft.applyPlan(plan, error);
+            if (currentStep == stepAtRequest)
+                then.run();
+        });
+    }
+
+    private void drawStepIndicator(GuiGraphics guiGraphics, int left, int top) {
+        int cx = left + guiWidth() / 2;
+        int dotY = top + STEP_INDICATOR_Y + 4;
+        int startX = cx - STEP_DOT_GAP;
+
+        for (int i = 0; i < 3; i++) {
+            int dx = startX + i * STEP_DOT_GAP;
+            int dotColour = (i == currentStep) ? COLOUR_TITLE : COLOUR_MUTED;
+            guiGraphics.fill(dx - STEP_DOT_RADIUS, dotY - STEP_DOT_RADIUS,
+                    dx + STEP_DOT_RADIUS, dotY + STEP_DOT_RADIUS, dotColour);
+        }
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        boolean wantsLiveData = currentStep == STEP_MONITOR || (currentStep == STEP_REVIEW_PLAN && graphCanvas != null);
+        if (wantsLiveData && monitoringState.tickAndShouldPoll()) {
+            new RequestMonitoringUpdatePayload(monitoringState.hand).sendToServer();
+        }
+    }
+
+    public void updateLiveMonitoring(List<LiveMonitoringPayload.MachineStatusData> data) {
+        monitoringState.setLiveData(data);
+        if (currentStep == STEP_MONITOR) {
+            updateMonitoringButtonLabels();
+        }
+        if (currentStep == STEP_REVIEW_PLAN && graphCanvas != null) {
+            graphCanvas.updateLiveStatus(data);
+            if (detailCard != null)
+                detailCard.setCapacity(graphCanvas.capacity());
+        }
+    }
+
+    @Override
+    public void renderBackground(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        // No dimmed background, so the world stays visible.
+    }
+
+    @Override
+    public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        this.renderBackground(guiGraphics, mouseX, mouseY, partialTick);
+
+        int guiWidth = guiWidth();
+        int guiHeight = guiHeight();
+        int left = (this.width - guiWidth) / 2;
+        int top = (this.height - guiHeight) / 2;
+
+        ClipboardChrome.drawBackground(guiGraphics, left, top, guiWidth, guiHeight);
+
+        if (!isMinimized) {
+            drawStepIndicator(guiGraphics, left, top);
+        }
+
+        if (isMinimized) {
+            renderViewMode(guiGraphics, left, top);
+        } else {
+            switch (currentStep) {
+                case STEP_DEFINE_GOAL -> renderStepDefineGoal(guiGraphics, left, top);
+                case STEP_REVIEW_PLAN -> renderStepReviewPlan(guiGraphics, left, top);
+                case STEP_MONITOR -> renderStepMonitor(guiGraphics, left, top);
+            }
+        }
+
+        super.render(guiGraphics, mouseX, mouseY, partialTick);
+
+        if (planWorker.pending() && !isMinimized) {
+            Component calculating = Component.translatable("miforeman.gui.calculating_plan");
+            int textWidth = this.font.width(calculating);
+            int x = left + (guiWidth - textWidth) / 2;
+            int y = top + guiHeight - 22;
+            guiGraphics.fill(x - 4, y - 3, x + textWidth + 4, y + 11, 0xEEEFE0BE);
+            guiGraphics.drawString(this.font, calculating, x, y, COLOUR_MUTED, false);
+        }
+    }
+
+    private void renderViewMode(GuiGraphics guiGraphics, int left, int top) {
+        int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
+        int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
+
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.clipboard.summary_title"), contentX, contentY,
+                COLOUR_TITLE, false);
+
+        int currentY = contentY + 20;
+
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.label.goal_name"), contentX, currentY, COLOUR_LABEL, false);
+        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.goalName), contentX + 80, currentY,
+                COLOUR_TEXT, false);
+        currentY += 15;
+
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.label.target_id"), contentX, currentY, COLOUR_LABEL, false);
+        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.targetIdStr), contentX + 80, currentY,
+                COLOUR_TEXT, false);
+        currentY += 15;
+
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.label.target_type"), contentX, currentY, COLOUR_LABEL, false);
+        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.targetType.name()), contentX + 80, currentY,
+                COLOUR_TEXT, false);
+        currentY += 15;
+
+        String rateStr = String.format("%.2f units/%s", this.goalDraft.rate, this.goalDraft.perHour ? "hour" : "min");
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.label.desired_rate"), contentX, currentY, COLOUR_LABEL, false);
+        guiGraphics.drawString(this.font, Component.literal(rateStr), contentX + 80, currentY, COLOUR_TEXT, false);
+        currentY += 15;
+
+        String thresholdStr = String.format("%d%%", (int) (this.goalDraft.threshold * 100));
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.label.threshold"), contentX, currentY, COLOUR_LABEL, false);
+        guiGraphics.drawString(this.font, Component.literal(thresholdStr), contentX + 80, currentY, COLOUR_TEXT, false);
+        currentY += 20;
+
+        Component statusComp = Component.translatable("miforeman.clipboard.status.planning_complete");
+        int statusColour = COLOUR_GREEN;
+        if (currentStep == STEP_MONITOR) {
+            statusComp = Component.translatable("miforeman.clipboard.status.live_monitoring_active", this.monitoringState.liveData.size());
+            statusColour = COLOUR_CYAN;
+        } else if (currentStep == STEP_DEFINE_GOAL) {
+            statusComp = Component.translatable("miforeman.clipboard.status.goal_definition_draft");
+            statusColour = COLOUR_AMBER;
+        }
+        guiGraphics.drawString(this.font, statusComp, contentX, currentY, statusColour, false);
+    }
+
+    private void renderStepDefineGoal(GuiGraphics guiGraphics, int left, int top) {
+        int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
+        int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
+
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.clipboard.define_goal_title"), contentX, contentY, COLOUR_TITLE, false);
+
+        int y = contentY + 16;
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.field.goal_name"), contentX, y, COLOUR_LABEL, false);
+        y += 10 + FIELD_HEIGHT + 8;
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.field.target_type_and_id"), contentX, y, COLOUR_LABEL, false);
+        y += 10 + FIELD_HEIGHT + 8;
+        guiGraphics.drawString(this.font,
+                this.goalDraft.perHour ? Component.translatable("miforeman.field.rate_per_hour")
+                        : Component.translatable("miforeman.field.rate_per_min"), contentX, y,
+                COLOUR_LABEL, false);
+        y += 10 + FIELD_HEIGHT + 8;
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.field.threshold_percent"), contentX, y, COLOUR_LABEL, false);
+        y += 10 + FIELD_HEIGHT + 6;
+
+        if (this.goalDraft.errorMessage != null) {
+            guiGraphics.drawString(this.font, Component.literal(this.goalDraft.errorMessage), contentX, y, COLOUR_ERROR,
+                    false);
+        }
+    }
+
+    private void renderStepReviewPlan(GuiGraphics guiGraphics, int left, int top) {
+        int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
+        int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.clipboard.factory_plan_title"), contentX, contentY, COLOUR_TITLE, false);
+    }
+
+    private void renderStepMonitor(GuiGraphics guiGraphics, int left, int top) {
+        int contentX = left + PADDING + ClipboardChrome.MAIN_BORDER + 2;
+        int contentY = top + PADDING + ClipboardChrome.MAIN_BORDER + 18;
+
+        guiGraphics.drawString(this.font, Component.translatable("miforeman.clipboard.factory_monitoring_title"), contentX, contentY, COLOUR_TITLE, false);
+        guiGraphics.drawString(this.font, this.monitoringState.scanRadiusLabel(),
+                contentX + SCAN_RADIUS_X + 34, contentY + 31, COLOUR_TEXT, false);
+
+        int currentY = contentY + 16;
+        if (this.monitoringState.liveData.isEmpty()) {
+            guiGraphics.drawString(this.font, Component.translatable("miforeman.clipboard.none_linked_yet"), contentX + 4, currentY,
+                    COLOUR_MUTED, false);
+            return;
+        }
+
+        int red = 0, orange = 0, yellow = 0, green = 0;
+        for (var machine : this.monitoringState.liveData) {
+            switch (machine.status()) {
+                case RED -> red++;
+                case ORANGE -> orange++;
+                case YELLOW -> yellow++;
+                case GREEN -> green++;
+            }
+        }
+
+        // Counts lead with RED and ORANGE, the states that need attention.
+        String prefix = I18n.get("miforeman.clipboard.machines_count", this.monitoringState.liveData.size());
+        guiGraphics.drawString(this.font, Component.literal(prefix), contentX + 4, currentY, COLOUR_TEXT, false);
+        int segX = contentX + 4 + this.font.width(prefix);
+        segX = drawStatusCount(guiGraphics, segX, currentY, red, "RED", COLOUR_ERROR);
+        segX = drawStatusCount(guiGraphics, segX, currentY, orange, "ORANGE", MachineStatus.ORANGE.colour());
+        segX = drawStatusCount(guiGraphics, segX, currentY, yellow, "YELLOW", COLOUR_AMBER);
+        drawStatusCount(guiGraphics, segX, currentY, green, "GREEN", COLOUR_GREEN);
+    }
+
+    private int drawStatusCount(GuiGraphics guiGraphics, int x, int y, int count, String label, int colour) {
+        if (count == 0)
+            return x;
+        String segment = count + " " + label + "  ";
+        guiGraphics.drawString(this.font, Component.literal(segment), x, y, colour, false);
+        return x + this.font.width(segment);
+    }
+
+    private void save() {
+        if (!goalDraft.isReadyToSave())
+            return;
+        lastSyncedGoal = buildCurrentGoal();
+        new GoalUpdatePayload(lastSyncedGoal, hand).sendToServer();
+    }
+
+    private void expandMaterialNode(ResourceLocation resourceId) {
+        if (this.minecraft == null || this.minecraft.level == null) return;
+        List<RecipeHolder<MachineRecipe>> candidates = RecipeGraphTraverser.getCandidateRecipes(this.minecraft.level, resourceId);
+        if (candidates.isEmpty()) return;
+
+        ResourceLocation currentSel = this.goalDraft.recipeSelections.get(resourceId);
+        int nextIndex = 0;
+        if (currentSel != null) {
+            for (int i = 0; i < candidates.size(); i++) {
+                if (candidates.get(i).id().equals(currentSel)) {
+                    nextIndex = i + 1;
+                    break;
+                }
+            }
+        }
+        if (nextIndex >= candidates.size() && currentSel != null) {
+            this.goalDraft.recipeSelections.remove(resourceId);
+        } else {
+            ResourceLocation newSel = candidates.get(nextIndex).id();
+            this.goalDraft.recipeSelections.put(resourceId, newSel);
+        }
+        computePlan(() -> rebuildStep(STEP_REVIEW_PLAN));
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (currentStep == STEP_REVIEW_PLAN && !detailCardExpanded && graphCanvas != null) {
+            if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_F && hasControlDown()) {
+                graphCanvas.toggleSearch();
+                return true;
+            }
+            if (graphCanvas.isSearchFocused()) {
+                if (graphCanvas.keyPressed(keyCode, scanCode, modifiers)) {
+                    return true;
+                }
+            }
+            if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE && graphCanvas.cancelPlacement()) {
+                return true;
+            }
+            if (graphCanvas.isSearchVisible() && keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
+                graphCanvas.toggleSearch();
+                return true;
+            }
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    @Override
+    public boolean charTyped(char codePoint, int modifiers) {
+        if (currentStep == STEP_REVIEW_PLAN && !detailCardExpanded && graphCanvas != null && graphCanvas.isSearchFocused()) {
+            if (graphCanvas.charTyped(codePoint, modifiers)) {
+                return true;
+            }
+        }
+        return super.charTyped(codePoint, modifiers);
+    }
+
+    @Override
+    public boolean isPauseScreen() {
+        return false;
+    }
+}
