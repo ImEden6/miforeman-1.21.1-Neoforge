@@ -100,7 +100,7 @@ public class ColourPickerScreen extends Screen {
         for (ColourKey key : ColourKey.values()) {
             rowY.put(key, y);
             Button row = new ClipboardButton(listX + SWATCH_SIZE + 4, y, 150, ROW_HEIGHT - 2,
-                    Component.literal((key == selectedKey ? "> " : "") + key.label),
+                    Component.literal(key == selectedKey ? "> " : "").append(Component.translatable(key.translationKey())),
                     b -> {
                         selectedKey = key;
                         resetCachedHueForCurrentColour();
@@ -161,7 +161,7 @@ public class ColourPickerScreen extends Screen {
                 });
         this.addRenderableWidget(sliderC);
 
-        hexBox = new EditBox(this.font, editorX, editorHexY, 100, 14, Component.literal("Hex"));
+        hexBox = new EditBox(this.font, editorX, editorHexY, 100, 14, Component.translatable("miforeman.colour_picker.hex"));
         hexBox.setMaxLength(9);
         hexBox.setValue(ColourPalette.toHex(ColourPalette.get(selectedKey)));
         hexBox.setResponder(this::onHexChanged);
@@ -288,7 +288,7 @@ public class ColourPickerScreen extends Screen {
         }
 
         int editorX = listX + SWATCH_SIZE + 4 + 150 + 16;
-        guiGraphics.drawString(this.font, Component.literal(selectedKey.label), editorX, editorLabelY, COLOUR_LABEL, false);
+        guiGraphics.drawString(this.font, Component.translatable(selectedKey.translationKey()), editorX, editorLabelY, COLOUR_LABEL, false);
         int previewArgb = ColourPalette.get(selectedKey);
         guiGraphics.fill(editorX, editorSwatchY, editorX + SWATCH_SIZE * 4, editorSwatchY + PREVIEW_HEIGHT, 0xFF000000 | previewArgb);
         guiGraphics.renderOutline(editorX, editorSwatchY, SWATCH_SIZE * 4, PREVIEW_HEIGHT, COLOUR_LABEL);

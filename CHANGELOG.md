@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.4] - 2026-10-22
+
+### Changed
+- All of the mod's on-screen text can now be translated. Text that was built into the code, such
+  as the detail card, the hidden nodes drawer, form errors and status names, now comes from the
+  language file.
+- Symbols that some fonts drew as boxes or emoji are now pixel icons: a warning triangle on cards
+  whose loop has no outside input, an hourglass on bottleneck machines, an eye on the hidden nodes
+  drawer and its unhide buttons, and new search, previous, next and close icons on the graph search
+  bar. Resource packs can replace them in `textures/gui/icons.png`.
+- The Back and Next buttons no longer show text arrows.
+
 ## [1.3.3] - 2026-10-18
 
 ### Changed

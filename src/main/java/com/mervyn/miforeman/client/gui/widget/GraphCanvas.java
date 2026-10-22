@@ -1,6 +1,7 @@
 package com.mervyn.miforeman.client.gui.widget;
 
 import com.mervyn.miforeman.client.DisplayFormat;
+import com.mervyn.miforeman.client.gui.GuiIcon;
 import com.mervyn.miforeman.goal.GraphEdge;
 import com.mervyn.miforeman.goal.GraphLayoutEngine;
 import com.mervyn.miforeman.goal.GraphLayoutState;
@@ -162,7 +163,7 @@ public class GraphCanvas extends AbstractWidget {
             com.mervyn.miforeman.goal.ClipboardUiState.GraphViewMode viewMode,
             boolean dragEnabled,
             boolean perHour) {
-        super(x, y, width, height, Component.literal("Recipe Graph"));
+        super(x, y, width, height, Component.translatable("miforeman.widget.recipe_graph"));
         this.graph = graph;
         this.layoutState = layoutState;
         this.camera = new GraphCamera(panX, panY, zoom);
@@ -950,6 +951,7 @@ public class GraphCanvas extends AbstractWidget {
 
             NodeLabel label = nodeLabels.computeIfAbsent(node.getId(), id -> buildLabel(node, textInset, liveStatus));
             int countColour = label.countText() == null || !isMatch ? COLOUR_MUTED_DIM : liveStatus.worst().colour();
+            drawNodeIcons(guiGraphics, pos, label, textInset, textColour);
             if (bars || overlapping[drawn])
                 drawNodeLabel(guiGraphics, mc.font, bars, pos, label, textInset, textColour, rateColour, countColour);
             else
@@ -1088,20 +1090,28 @@ public class GraphCanvas extends AbstractWidget {
             drawLine(guiGraphics, from, at, to, at, halfWidth, colour);
     }
 
-    private record NodeLabel(String name, int nameWidth, boolean limiting, int markWidth, @Nullable String countText,
+    private record NodeLabel(String name, int nameWidth, boolean warning, boolean limiting, @Nullable String countText,
             int countWidth, String rateText, int rateWidth) {}
 
     private record PendingLabel(NodePosition pos, NodeLabel label, int textInset, int textColour, int rateColour,
             int countColour) {}
 
+    /** Batched with the cards rather than in the deferred text pass. */
+    private static void drawNodeIcons(GuiGraphics guiGraphics, NodePosition pos, NodeLabel label, int inset,
+            int textColour) {
+        if (label.warning()) {
+            GuiIcon.WARNING.drawBatched(guiGraphics, pos.x() + inset, pos.y() + 2, textColour);
+        }
+        if (label.limiting()) {
+            GuiIcon.HOURGLASS.drawBatched(guiGraphics, pos.x() + NODE_WIDTH - inset - GuiIcon.HOURGLASS.width(), pos.y() + 2,
+                    COLOUR_SEARCH_CURRENT_MATCH);
+        }
+    }
+
     private void drawNodeLabel(GuiGraphics guiGraphics, net.minecraft.client.gui.Font font, boolean bars,
             NodePosition pos, NodeLabel label, int inset, int textColour, int rateColour, int countColour) {
-        if (label.limiting()) {
-            drawLabel(guiGraphics, font, bars, "\u25B2", label.markWidth(),
-                    pos.x() + NODE_WIDTH - inset - label.markWidth(), pos.y() + 3, COLOUR_SEARCH_CURRENT_MATCH);
-        }
-        drawLabel(guiGraphics, font, bars, label.name(), label.nameWidth(), pos.x() + inset, pos.y() + 3,
-                textColour);
+        int nameX = pos.x() + inset + (label.warning() ? GuiIcon.WARNING.width() + 2 : 0);
+        drawLabel(guiGraphics, font, bars, label.name(), label.nameWidth(), nameX, pos.y() + 3, textColour);
 
         // The count explains a red node whose output looks fine: the colour is only the worst machine.
         if (label.countText() != null) {
@@ -1129,19 +1139,16 @@ public class GraphCanvas extends AbstractWidget {
         String name = DisplayFormat.formatId(node.getId());
         boolean hasAmbiguity = !node.getAmbiguityOptions().isEmpty()
                 || graph.unsourcedResourceIds().contains(node.getId());
-        if (hasAmbiguity) {
-            name = "⚠ " + name;
-        }
         int maxTextWidth = NODE_WIDTH - textInset - 3;
         boolean limiting = capacity != null && node.getType() == NodeType.MACHINE
                 && (capacity.bottlenecks().contains(node.getId().toString())
                         || capacity.blockers().contains(node.getId().toString()));
-        int markWidth = font.width("\u25B2");
         if (limiting) {
-            maxTextWidth -= markWidth + 3;
+            maxTextWidth -= GuiIcon.HOURGLASS.width() + 3;
         }
-        if (font.width(name) > maxTextWidth) {
-            name = font.plainSubstrByWidth(name, maxTextWidth - 8) + "..";
+        int maxNameWidth = hasAmbiguity ? maxTextWidth - GuiIcon.WARNING.width() - 2 : maxTextWidth;
+        if (font.width(name) > maxNameWidth) {
+            name = font.plainSubstrByWidth(name, maxNameWidth - 8) + "..";
         }
 
         int rateWidth = maxTextWidth;
@@ -1156,7 +1163,7 @@ public class GraphCanvas extends AbstractWidget {
         if (font.width(rateText) > rateWidth) {
             rateText = font.plainSubstrByWidth(rateText, rateWidth - 8) + "..";
         }
-        return new NodeLabel(name, font.width(name), limiting, markWidth, countText, countWidth, rateText,
+        return new NodeLabel(name, font.width(name), hasAmbiguity, limiting, countText, countWidth, rateText,
                 font.width(rateText));
     }
 

@@ -46,7 +46,7 @@ public class ReviewListPanel extends AbstractWidget {
                             Consumer<ReviewRow> onUnreject,
                             int initialScrollOffset,
                             IntConsumer onScrollChange) {
-        super(x, y, width, height, Component.literal("Machine Review List"));
+        super(x, y, width, height, Component.translatable("miforeman.widget.review_list"));
         this.rows = rows;
         this.onToggleLink = onToggleLink;
         this.onRejectRequest = onRejectRequest;
@@ -76,7 +76,7 @@ public class ReviewListPanel extends AbstractWidget {
         guiGraphics.renderOutline(getX(), getY(), getWidth(), getHeight(), COLOUR_BORDER);
 
         if (rows.isEmpty()) {
-            guiGraphics.drawString(mc.font, "No machines found.", getX() + 6, getY() + 6, COLOUR_MUTED, false);
+            guiGraphics.drawString(mc.font, I18n.get("miforeman.review.no_machines"), getX() + 6, getY() + 6, COLOUR_MUTED, false);
             return;
         }
 

@@ -3,6 +3,7 @@ package com.mervyn.miforeman.client.gui.widget;
 import com.mervyn.miforeman.client.DisplayFormat;
 import com.mervyn.miforeman.client.gui.ColourPalette;
 import com.mervyn.miforeman.client.gui.ColourPalette.ColourKey;
+import com.mervyn.miforeman.client.gui.GuiIcon;
 import com.mervyn.miforeman.goal.RecipeGraphNode;
 import com.mervyn.miforeman.goal.GraphEdge;
 import com.mervyn.miforeman.goal.MachineStatus;
@@ -19,6 +20,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -113,7 +115,7 @@ public class DetailCard extends AbstractWidget {
     public DetailCard(int x, int y, int width, int height, @Nullable RecipeGraphNode node,
                       FactoryPlan plan, DisplayOptions options, Callbacks callbacks,
                       int initialScrollOffset, IntConsumer onScrollChange) {
-        super(x, y, width, height, Component.literal("Detail Card"));
+        super(x, y, width, height, Component.translatable("miforeman.widget.detail_card"));
         this.node = node;
         this.plan = plan;
         this.summaryInputRows = plan.rawInputs().stream()
@@ -167,7 +169,7 @@ public class DetailCard extends AbstractWidget {
 
         int rowY = y + headerHeight;
         if (rows.isEmpty()) {
-            guiGraphics.drawString(mc.font, "None", x + 4, rowY + 4, COLOUR_MUTED, false);
+            guiGraphics.drawString(mc.font, I18n.get("miforeman.detail.none"), x + 4, rowY + 4, COLOUR_MUTED, false);
         } else {
             for (ResourceRow row : rows) {
                 renderResourceRow(guiGraphics, row.id(), row.rate(), x + 4, rowY, mouseX, mouseY);
@@ -234,41 +236,42 @@ public class DetailCard extends AbstractWidget {
 
         if (node == null) {
             RecipeGraph graph = plan.graph();
-            String title = graph != null ? DisplayFormat.formatId(graph.target()) : "Factory Summary";
+            String title = graph != null ? DisplayFormat.formatId(graph.target()) : I18n.get("miforeman.detail.factory_summary");
             guiGraphics.drawString(fontSource.font, title, getX() + 6, currentY, COLOUR_TITLE, false);
             currentY += 12;
 
             long totalPower = plan.totalPowerDemandEu();
             String metaLine = totalPower > 0
-                    ? String.format("%d machines · %d EU/t", plan.machines().size(), totalPower)
-                    : String.format("%d machines", plan.machines().size());
+                    ? I18n.get("miforeman.detail.machines_power", plan.machines().size(), totalPower)
+                    : I18n.get("miforeman.detail.machines", plan.machines().size());
             guiGraphics.drawString(fontSource.font, metaLine, getX() + 6, currentY, COLOUR_MUTED, false);
             currentY += 15;
 
             if (graph != null) {
-                String targetLine = "Target: " + DisplayFormat.formatRate(graph.targetRate(), perHour)
-                        + " " + DisplayFormat.formatId(graph.target());
+                String targetLine = I18n.get("miforeman.detail.target", DisplayFormat.formatRate(graph.targetRate(), perHour),
+                        DisplayFormat.formatId(graph.target()));
                 guiGraphics.drawString(fontSource.font, targetLine, getX() + 6, currentY, COLOUR_LABEL, false);
                 currentY += 12;
                 if (capacity != null) {
                     boolean enough = capacity.maxRate() >= graph.targetRate() * (1 - 1e-6);
-                    guiGraphics.drawString(fontSource.font, "Can make " + DisplayFormat.formatRate(capacity.maxRate(), perHour)
-                            + " of " + DisplayFormat.formatRate(graph.targetRate(), perHour),
+                    guiGraphics.drawString(fontSource.font, I18n.get("miforeman.detail.can_make", DisplayFormat.formatRate(capacity.maxRate(), perHour),
+                            DisplayFormat.formatRate(graph.targetRate(), perHour)),
                             getX() + 6, currentY, enough ? COLOUR_GREEN : COLOUR_AMBER, false);
                     currentY += 10;
                     var limits = !capacity.blockers().isEmpty() ? capacity.blockers() : capacity.bottlenecks();
                     if (!enough && !limits.isEmpty()) {
                         List<String> names = limits.stream().limit(2)
                                 .map(id -> DisplayFormat.formatId(ResourceLocation.parse(id))).toList();
-                        String more = limits.size() > 2 ? " and " + (limits.size() - 2) + " more" : "";
-                        String label = (!capacity.blockers().isEmpty() ? "No machines: " : "Limited by: ")
-                                + String.join(", ", names) + more;
+                        String list = String.join(", ", names);
+                        if (limits.size() > 2) list = I18n.get("miforeman.detail.and_more", list, limits.size() - 2);
+                        String label = I18n.get(!capacity.blockers().isEmpty()
+                                ? "miforeman.detail.no_machines" : "miforeman.detail.limited_by", list);
                         if (fontSource.font.width(label) > getWidth() - 16)
                             label = fontSource.font.plainSubstrByWidth(label, getWidth() - 24) + "..";
                         guiGraphics.drawString(fontSource.font, label, getX() + 10, currentY, COLOUR_MUTED, false);
                         currentY += 10;
                     }
-                    guiGraphics.drawString(fontSource.font, "(base speed, loaded machines)", getX() + 10, currentY, COLOUR_MUTED, false);
+                    guiGraphics.drawString(fontSource.font, I18n.get("miforeman.detail.capacity_note"), getX() + 10, currentY, COLOUR_MUTED, false);
                     currentY += 12;
                 }
             }
@@ -280,23 +283,23 @@ public class DetailCard extends AbstractWidget {
                 int gap = 6;
                 int panelWidth = (getWidth() - 12 - gap) / 2;
                 int panelStartY = currentY;
-                int inputsHeight = renderResourcePanel(guiGraphics, "Inputs", ColourKey.INPUT_PANEL,
+                int inputsHeight = renderResourcePanel(guiGraphics, I18n.get("miforeman.detail.inputs"), ColourKey.INPUT_PANEL,
                         inputRows, getX() + 6, panelStartY, panelWidth, mouseX, mouseY);
-                int outputsHeight = renderResourcePanel(guiGraphics, "Byproducts", ColourKey.OUTPUT_PANEL,
+                int outputsHeight = renderResourcePanel(guiGraphics, I18n.get("miforeman.detail.byproducts"), ColourKey.OUTPUT_PANEL,
                         outputRows, getX() + 6 + panelWidth + gap, panelStartY, panelWidth, mouseX, mouseY);
                 currentY = panelStartY + Math.max(inputsHeight, outputsHeight) + 8;
             } else {
                 int panelWidth = getWidth() - 12;
-                currentY += renderResourcePanel(guiGraphics, "Inputs", ColourKey.INPUT_PANEL,
+                currentY += renderResourcePanel(guiGraphics, I18n.get("miforeman.detail.inputs"), ColourKey.INPUT_PANEL,
                         inputRows, getX() + 6, currentY, panelWidth, mouseX, mouseY) + 6;
-                currentY += renderResourcePanel(guiGraphics, "Byproducts", ColourKey.OUTPUT_PANEL,
+                currentY += renderResourcePanel(guiGraphics, I18n.get("miforeman.detail.byproducts"), ColourKey.OUTPUT_PANEL,
                         outputRows, getX() + 6, currentY, panelWidth, mouseX, mouseY) + 8;
             }
 
-            String header = "Machines Needed:";
+            String header = I18n.get("miforeman.detail.machines_needed");
             guiGraphics.drawString(fontSource.font, header, getX() + 6, currentY + 1, COLOUR_GREEN, false);
 
-            String toggleText = showNumbers ? "# On" : "# Off";
+            String toggleText = I18n.get(showNumbers ? "miforeman.detail.numbers_on" : "miforeman.detail.numbers_off");
             int toggleTextW = fontSource.font.width(toggleText);
             int headerWidth = fontSource.font.width(header);
             numToggleBoxX = getX() + 6 + headerWidth + 6;
@@ -315,7 +318,7 @@ public class DetailCard extends AbstractWidget {
             currentY += 13;
             List<MachineRequirement> machines = plan.machines();
             if (machines.isEmpty()) {
-                guiGraphics.drawString(fontSource.font, " - None", getX() + 10, currentY, COLOUR_MUTED, false);
+                guiGraphics.drawString(fontSource.font, " - " + I18n.get("miforeman.detail.none"), getX() + 10, currentY, COLOUR_MUTED, false);
                 currentY += 10;
             } else {
                 for (MachineRequirement req : machines) {
@@ -334,13 +337,13 @@ public class DetailCard extends AbstractWidget {
         } else {
             String title = DisplayFormat.formatId(node.getId());
             if (node.getType() == NodeType.MACHINE) {
-                title = "Recipe: " + title;
+                title = I18n.get("miforeman.detail.recipe_title", title);
             }
             guiGraphics.drawString(fontSource.font, title, getX() + 6, currentY, COLOUR_TITLE, false);
             currentY += 13;
 
             boolean isHidden = callbacks.isHiddenPredicate() != null && callbacks.isHiddenPredicate().test(node.getId());
-            String visText = isHidden ? "Unhide from Canvas" : "Hide from Canvas";
+            String visText = I18n.get(isHidden ? "miforeman.detail.unhide" : "miforeman.detail.hide");
             int visTextW = fontSource.font.width(visText);
             nodeVisBoxX = getX() + 6;
             nodeVisBoxY = currentY;
@@ -355,7 +358,7 @@ public class DetailCard extends AbstractWidget {
             currentY += 15;
 
             if (node.getType() == NodeType.MACHINE) {
-                guiGraphics.drawString(fontSource.font, "Machine Count:", getX() + 6, currentY, COLOUR_LABEL, false);
+                guiGraphics.drawString(fontSource.font, I18n.get("miforeman.detail.machine_count"), getX() + 6, currentY, COLOUR_LABEL, false);
                 String countLine = String.format(" %.2f x %s", node.getMachineCount(), DisplayFormat.formatId(node.getMachineType()));
                 guiGraphics.drawString(fontSource.font, countLine, getX() + 10, currentY + 10, COLOUR_TEXT, false);
                 currentY += 24;
@@ -364,16 +367,16 @@ public class DetailCard extends AbstractWidget {
                 long baseEu = node.getBaseEuPerTick() > 0 ? node.getBaseEuPerTick() : (recipe != null ? recipe.eu : 0);
                 long totalEu = node.getTotalEuPerTick() > 0 ? node.getTotalEuPerTick() : (long) Math.ceil(node.getMachineCount() * baseEu);
                 if (recipe != null || totalEu > 0) {
-                    guiGraphics.drawString(fontSource.font, "Power & Duration:", getX() + 6, currentY, COLOUR_LABEL, false);
+                    guiGraphics.drawString(fontSource.font, I18n.get("miforeman.detail.power_duration"), getX() + 6, currentY, COLOUR_LABEL, false);
                     String infoLine = recipe != null
-                            ? String.format(" Duration: %.1fs | %d EU/t (%d total)", recipe.duration / 20.0, baseEu, totalEu)
-                            : String.format(" Power: %d EU/t (%d total)", baseEu, totalEu);
+                            ? " " + I18n.get("miforeman.detail.duration_power", String.format("%.1f", recipe.duration / 20.0), baseEu, totalEu)
+                            : " " + I18n.get("miforeman.detail.power", baseEu, totalEu);
                     guiGraphics.drawString(fontSource.font, infoLine, getX() + 10, currentY + 10, COLOUR_MUTED, false);
                     currentY += 24;
                 }
 
                 if (recipe != null && !recipe.conditions.isEmpty()) {
-                    guiGraphics.drawString(fontSource.font, "Requirements:", getX() + 6, currentY, COLOUR_AMBER, false);
+                    guiGraphics.drawString(fontSource.font, I18n.get("miforeman.detail.requirements"), getX() + 6, currentY, COLOUR_AMBER, false);
                     currentY += 10;
                     List<Component> conditionLines = new java.util.ArrayList<>();
                     for (var condition : recipe.conditions) {
@@ -386,10 +389,10 @@ public class DetailCard extends AbstractWidget {
                     currentY += 5;
                 }
 
-                guiGraphics.drawString(fontSource.font, "Recipe Inputs:", getX() + 6, currentY, COLOUR_CYAN, false);
+                guiGraphics.drawString(fontSource.font, I18n.get("miforeman.detail.recipe_inputs"), getX() + 6, currentY, COLOUR_CYAN, false);
                 currentY += 10;
                 if (node.getInputs().isEmpty()) {
-                    guiGraphics.drawString(fontSource.font, " - None", getX() + 10, currentY, COLOUR_MUTED, false);
+                    guiGraphics.drawString(fontSource.font, " - " + I18n.get("miforeman.detail.none"), getX() + 10, currentY, COLOUR_MUTED, false);
                     currentY += 10;
                 } else {
                     for (GraphEdge edge : node.getInputs()) {
@@ -400,10 +403,10 @@ public class DetailCard extends AbstractWidget {
                 }
                 currentY += 5;
 
-                guiGraphics.drawString(fontSource.font, "Recipe Outputs:", getX() + 6, currentY, COLOUR_GREEN, false);
+                guiGraphics.drawString(fontSource.font, I18n.get("miforeman.detail.recipe_outputs"), getX() + 6, currentY, COLOUR_GREEN, false);
                 currentY += 10;
                 if (node.getOutputs().isEmpty()) {
-                    guiGraphics.drawString(fontSource.font, " - None", getX() + 10, currentY, COLOUR_MUTED, false);
+                    guiGraphics.drawString(fontSource.font, " - " + I18n.get("miforeman.detail.none"), getX() + 10, currentY, COLOUR_MUTED, false);
                     currentY += 10;
                 } else {
                     for (GraphEdge edge : node.getOutputs()) {
@@ -414,19 +417,20 @@ public class DetailCard extends AbstractWidget {
                 }
 
             } else {
-                guiGraphics.drawString(fontSource.font, "Required Flow Rate:", getX() + 6, currentY, COLOUR_LABEL, false);
+                guiGraphics.drawString(fontSource.font, I18n.get("miforeman.detail.required_rate"), getX() + 6, currentY, COLOUR_LABEL, false);
                 double rateVal = node.getRequiredRate() * (perHour ? 60.0 : 1.0);
-                String rateText = String.format(" %.2f units / %s", rateVal, perHour ? "hour" : "min");
+                String rateText = " " + I18n.get(perHour ? "miforeman.detail.units_per_hour" : "miforeman.detail.units_per_min",
+                        String.format("%.2f", rateVal));
                 guiGraphics.drawString(fontSource.font, rateText, getX() + 10, currentY + 10, COLOUR_TEXT, false);
                 currentY += 24;
 
-                guiGraphics.drawString(fontSource.font, "Produced By:", getX() + 6, currentY, COLOUR_GREEN, false);
+                guiGraphics.drawString(fontSource.font, I18n.get("miforeman.detail.produced_by"), getX() + 6, currentY, COLOUR_GREEN, false);
                 currentY += 10;
                 if (node.getInputs().isEmpty()) {
-                    guiGraphics.drawString(fontSource.font, " - Raw Material Input", getX() + 10, currentY, COLOUR_MUTED, false);
+                    guiGraphics.drawString(fontSource.font, " - " + I18n.get("miforeman.detail.raw_input"), getX() + 10, currentY, COLOUR_MUTED, false);
                     currentY += 10;
                     if (hasMaterialCandidates()) {
-                        String expandText = "Expand Material";
+                        String expandText = I18n.get("miforeman.detail.expand_material");
                         int expandTextW = fontSource.font.width(expandText);
                         expandBoxX = getX() + 10;
                         expandBoxY = currentY;
@@ -447,10 +451,10 @@ public class DetailCard extends AbstractWidget {
                 }
                 currentY += 5;
 
-                guiGraphics.drawString(fontSource.font, "Consumed By:", getX() + 6, currentY, COLOUR_CYAN, false);
+                guiGraphics.drawString(fontSource.font, I18n.get("miforeman.detail.consumed_by"), getX() + 6, currentY, COLOUR_CYAN, false);
                 currentY += 10;
                 if (node.getOutputs().isEmpty()) {
-                    guiGraphics.drawString(fontSource.font, " - Final Target Product", getX() + 10, currentY, COLOUR_MUTED, false);
+                    guiGraphics.drawString(fontSource.font, " - " + I18n.get("miforeman.detail.final_product"), getX() + 10, currentY, COLOUR_MUTED, false);
                     currentY += 10;
                 } else {
                     for (GraphEdge edge : node.getOutputs()) {
@@ -462,16 +466,17 @@ public class DetailCard extends AbstractWidget {
 
             if (plan.graph() != null && plan.graph().unsourcedResourceIds().contains(node.getId())) {
                 currentY += 8;
-                guiGraphics.drawString(fontSource.font, "⚠ This loop has no outside input.", getX() + 6, currentY, COLOUR_AMBER, false);
+                GuiIcon.WARNING.draw(guiGraphics, getX() + 6, currentY - 1, COLOUR_AMBER);
+                guiGraphics.drawString(fontSource.font, I18n.get("miforeman.detail.dead_loop"), getX() + 8 + GuiIcon.WARNING.width(), currentY, COLOUR_AMBER, false);
                 currentY += 10;
-                guiGraphics.drawString(fontSource.font, "Pick a recipe that brings one in.", getX() + 10, currentY, COLOUR_MUTED, false);
+                guiGraphics.drawString(fontSource.font, I18n.get("miforeman.detail.dead_loop_hint"), getX() + 10, currentY, COLOUR_MUTED, false);
                 currentY += 10;
             }
             if (plan.graph() != null && plan.graph().autoImports().contains(node.getId())) {
                 currentY += 8;
-                guiGraphics.drawString(fontSource.font, "Imported: every recipe for it", getX() + 6, currentY, COLOUR_MUTED, false);
+                guiGraphics.drawString(fontSource.font, I18n.get("miforeman.detail.imported_1"), getX() + 6, currentY, COLOUR_MUTED, false);
                 currentY += 10;
-                guiGraphics.drawString(fontSource.font, "loops back with no outside input.", getX() + 10, currentY, COLOUR_MUTED, false);
+                guiGraphics.drawString(fontSource.font, I18n.get("miforeman.detail.imported_2"), getX() + 10, currentY, COLOUR_MUTED, false);
                 currentY += 10;
             }
 
@@ -480,7 +485,7 @@ public class DetailCard extends AbstractWidget {
                 boolean manual = owner != null && callbacks.hasManualSelection() != null
                         && callbacks.hasManualSelection().test(owner);
                 currentY += 8;
-                guiGraphics.drawString(fontSource.font, "Alternative Recipes:", getX() + 6, currentY, COLOUR_AMBER, false);
+                guiGraphics.drawString(fontSource.font, I18n.get("miforeman.detail.alternatives"), getX() + 6, currentY, COLOUR_AMBER, false);
                 currentY += 12;
 
                 cycleBoxX = getX() + 10;
@@ -496,9 +501,9 @@ public class DetailCard extends AbstractWidget {
                 guiGraphics.renderOutline(cycleBoxX, cycleBoxY, cycleBoxW, cycleBoxH, COLOUR_BORDER);
 
                 String cycleText = node.getSelectedAmbiguity() == null
-                        ? "Pick Recipe (" + node.getAmbiguityOptions().size() + ")"
-                        : "Cycle Recipe (" + (node.getAmbiguityOptions().indexOf(node.getSelectedAmbiguity()) + 1)
-                                + "/" + node.getAmbiguityOptions().size() + ")";
+                        ? I18n.get("miforeman.detail.pick_recipe", node.getAmbiguityOptions().size())
+                        : I18n.get("miforeman.detail.cycle_recipe", node.getAmbiguityOptions().indexOf(node.getSelectedAmbiguity()) + 1,
+                                node.getAmbiguityOptions().size());
                 int textWidth = fontSource.font.width(cycleText);
                 int textX = cycleBoxX + (cycleBoxW - textWidth) / 2;
                 guiGraphics.drawString(fontSource.font, cycleText, textX, cycleBoxY + 3, COLOUR_TEXT, false);
@@ -513,14 +518,15 @@ public class DetailCard extends AbstractWidget {
                     guiGraphics.fill(autoBoxX, autoBoxY, autoBoxX + autoBoxW, autoBoxY + autoBoxH,
                             isAutoBoxHovered ? COLOUR_CYCLE_HOVER : COLOUR_CYCLE_BOX);
                     guiGraphics.renderOutline(autoBoxX, autoBoxY, autoBoxW, autoBoxH, COLOUR_BORDER);
-                    guiGraphics.drawString(fontSource.font, "Auto", autoBoxX + (autoBoxW - fontSource.font.width("Auto")) / 2,
+                    String autoText = I18n.get("miforeman.detail.auto");
+                    guiGraphics.drawString(fontSource.font, autoText, autoBoxX + (autoBoxW - fontSource.font.width(autoText)) / 2,
                             autoBoxY + 3, COLOUR_TEXT, false);
                 }
                 currentY += 18;
                 if (owner != null && plan.graph() != null && plan.graph().autoSelections().containsKey(owner)) {
-                    guiGraphics.drawString(fontSource.font, "Picked: the default loops", getX() + 10, currentY, COLOUR_MUTED, false);
+                    guiGraphics.drawString(fontSource.font, I18n.get("miforeman.detail.auto_picked_1"), getX() + 10, currentY, COLOUR_MUTED, false);
                     currentY += 10;
-                    guiGraphics.drawString(fontSource.font, "with no outside input.", getX() + 10, currentY, COLOUR_MUTED, false);
+                    guiGraphics.drawString(fontSource.font, I18n.get("miforeman.detail.auto_picked_2"), getX() + 10, currentY, COLOUR_MUTED, false);
                     currentY += 10;
                 }
             }

@@ -9,25 +9,27 @@ import java.util.Map;
 
 public final class ColourPalette {
     public enum ColourKey {
-        LINKED(0xFF40CC52, "Linked machine"),
-        CANDIDATE(0xFFF2A60D, "Scan candidate"),
-        SELECTED(0xFF33E6F2, "Located machine"),
-        LOCATE_BUTTON(0xFFD8C3A5, "Locate button"),
-        LOCATED_BUTTON(0xFF9FE8EE, "Located button"),
+        LINKED(0xFF40CC52),
+        CANDIDATE(0xFFF2A60D),
+        SELECTED(0xFF33E6F2),
+        LOCATE_BUTTON(0xFFD8C3A5),
+        LOCATED_BUTTON(0xFF9FE8EE),
         // Inlined because calling ColourPalette.withAlpha during enum initialization loads the
         // outer class early, before these constants are assigned.
-        INPUT_PANEL((0x33 << 24) | (MachineStatus.RED.colour() & 0xFFFFFF), "Detail card inputs panel"),
-        OUTPUT_PANEL((0x33 << 24) | (MachineStatus.GREEN.colour() & 0xFFFFFF), "Detail card outputs panel"),
+        INPUT_PANEL((0x33 << 24) | (MachineStatus.RED.colour() & 0xFFFFFF)),
+        OUTPUT_PANEL((0x33 << 24) | (MachineStatus.GREEN.colour() & 0xFFFFFF)),
         // Unset means each wire keeps its own colour. This default only seeds the picker.
-        EDGE_HIGHLIGHT(0xFF8A7A68, "Highlighted graph wires"),
-        EDGE_GLOW(0x408A7A68, "Highlighted wire glow");
+        EDGE_HIGHLIGHT(0xFF8A7A68),
+        EDGE_GLOW(0x408A7A68);
 
         public final int defaultArgb;
-        public final String label;
 
-        ColourKey(int defaultArgb, String label) {
+        ColourKey(int defaultArgb) {
             this.defaultArgb = defaultArgb;
-            this.label = label;
+        }
+
+        public String translationKey() {
+            return "miforeman.colour." + name().toLowerCase(java.util.Locale.ROOT);
         }
     }
 

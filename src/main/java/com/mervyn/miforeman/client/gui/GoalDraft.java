@@ -24,7 +24,7 @@ class GoalDraft {
     double threshold;
 
     FactoryPlan currentPlan;
-    String errorMessage;
+    net.minecraft.network.chat.Component errorMessage;
     GraphLayoutState graphLayout = GraphLayoutState.EMPTY;
     ClipboardUiState uiState = ClipboardUiState.EMPTY;
 
@@ -80,7 +80,7 @@ class GoalDraft {
         this.errorMessage = null;
         ResourceLocation targetRes = ResourceLocation.tryParse(this.targetIdStr);
         if (targetRes == null) {
-            this.errorMessage = "Invalid Target ID format";
+            this.errorMessage = net.minecraft.network.chat.Component.translatable("miforeman.error.invalid_target_id");
             return null;
         }
         return new ProductionGoal(this.goalName, this.targetType, targetRes, adjustedRatePerMinute(),
@@ -90,7 +90,7 @@ class GoalDraft {
 
     void applyPlan(@org.jetbrains.annotations.Nullable FactoryPlan plan, @org.jetbrains.annotations.Nullable Exception error) {
         if (error != null) {
-            this.errorMessage = "Error calculating plan: " + error.getMessage();
+            this.errorMessage = net.minecraft.network.chat.Component.translatable("miforeman.error.plan_failed", String.valueOf(error.getMessage()));
             this.currentPlan = null;
             return;
         }

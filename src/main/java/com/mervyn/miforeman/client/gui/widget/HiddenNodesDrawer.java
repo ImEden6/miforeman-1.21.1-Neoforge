@@ -2,6 +2,7 @@ package com.mervyn.miforeman.client.gui.widget;
 
 import com.mervyn.miforeman.client.DisplayFormat;
 import com.mervyn.miforeman.client.gui.ColourPalette.ColourKey;
+import com.mervyn.miforeman.client.gui.GuiIcon;
 import com.mervyn.miforeman.goal.GraphLayoutState;
 import com.mervyn.miforeman.goal.MachineStatus;
 import com.mervyn.miforeman.goal.NodeType;
@@ -10,6 +11,7 @@ import com.mervyn.miforeman.goal.RecipeGraphNode;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 
@@ -36,8 +38,6 @@ public class HiddenNodesDrawer {
     public static final int TAB_WIDTH = 28;
     public static final int TAB_HEIGHT = 28;
     public static final int DRAWER_WIDTH = 156;
-    private static final String EYE_ICON = "👁"; // U+1F441 EYE
-    private static final double EYE_ICON_SCALE = 1.5;
 
     private int x, y;
     private int canvasHeight;
@@ -118,9 +118,8 @@ public class HiddenNodesDrawer {
 
             // With a badge showing, the icon sits below it.
             int eyeColour = hiddenCount > 0 ? COLOUR_GREEN : COLOUR_TEXT;
-            double eyeH = font.lineHeight * EYE_ICON_SCALE;
-            double eyeTop = hiddenCount > 0 ? y + 9 : y + (TAB_HEIGHT - eyeH) / 2.0;
-            drawEyeIcon(guiGraphics, x + TAB_WIDTH / 2.0, eyeTop, eyeColour);
+            int eyeTop = hiddenCount > 0 ? y + 12 : y + (TAB_HEIGHT - GuiIcon.EYE.height()) / 2;
+            GuiIcon.EYE.draw(guiGraphics, x + (TAB_WIDTH - GuiIcon.EYE.width()) / 2, eyeTop, eyeColour);
 
             if (hiddenCount > 0) {
                 String countText = String.valueOf(hiddenCount);
@@ -141,15 +140,14 @@ public class HiddenNodesDrawer {
         guiGraphics.fill(x, y + drawerH - 1, x + DRAWER_WIDTH, y + drawerH, COLOUR_BORDER_DARK);
         guiGraphics.fill(x + DRAWER_WIDTH - 1, y, x + DRAWER_WIDTH, y + drawerH, COLOUR_BORDER_DARK);
 
-        double headerIconW = font.width(EYE_ICON) * EYE_ICON_SCALE;
-        drawEyeIcon(guiGraphics, x + 6 + headerIconW / 2.0, y + 6, COLOUR_TITLE);
-        guiGraphics.drawString(font, " Hidden Nodes (" + hiddenCount + ")",
-                (int) (x + 8 + headerIconW), y + 6, COLOUR_TITLE, false);
+        GuiIcon.EYE.draw(guiGraphics, x + 6, y + 7, COLOUR_TITLE);
+        guiGraphics.drawString(font, I18n.get("miforeman.drawer.hidden_title", hiddenCount),
+                x + 10 + GuiIcon.EYE.width(), y + 6, COLOUR_TITLE, false);
 
         int currentY = y + 20;
 
         if (hiddenCount > 0) {
-            String unhideAllText = "Unhide All";
+            String unhideAllText = I18n.get("miforeman.drawer.unhide_all");
             int btnW = font.width(unhideAllText) + 10;
             int btnH = 12;
             unhideAllX = x + 6;
@@ -177,31 +175,29 @@ public class HiddenNodesDrawer {
         int itemY = listTop - scrollOffset;
 
         if (hiddenCount == 0) {
-            guiGraphics.drawString(font, "No hidden nodes", x + 8, itemY + 4, COLOUR_MUTED, false);
-            guiGraphics.drawString(font, "Right-click any node", x + 8, itemY + 16, COLOUR_MUTED, false);
-            guiGraphics.drawString(font, "on canvas to hide it.", x + 8, itemY + 26, COLOUR_MUTED, false);
+            guiGraphics.drawString(font, I18n.get("miforeman.drawer.empty"), x + 8, itemY + 4, COLOUR_MUTED, false);
+            guiGraphics.drawString(font, I18n.get("miforeman.drawer.empty_hint_1"), x + 8, itemY + 16, COLOUR_MUTED, false);
+            guiGraphics.drawString(font, I18n.get("miforeman.drawer.empty_hint_2"), x + 8, itemY + 26, COLOUR_MUTED, false);
             itemY += 40;
         } else {
             RecipeGraph graph = graphSupplier.get();
             for (ResourceLocation id : hiddenNodes) {
                 RecipeGraphNode node = graph != null ? graph.node(id) : null;
-                String icon = "[+]";
-                int iconW = font.width(icon);
                 int btnX = x + 6;
                 int btnY = itemY;
-                int btnW = iconW + 4;
+                int btnW = GuiIcon.EYE.width() + 4;
                 int btnH = 10;
 
                 boolean btnHover = mouseX >= btnX && mouseX < btnX + btnW && mouseY >= btnY && mouseY < btnY + btnH;
                 int btnBg = btnHover ? COLOUR_PILL_HOVER : COLOUR_PILL_BG;
                 guiGraphics.fill(btnX, btnY, btnX + btnW, btnY + btnH, btnBg);
                 guiGraphics.renderOutline(btnX, btnY, btnW, btnH, COLOUR_BORDER);
-                guiGraphics.drawString(font, icon, btnX + 2, btnY + 1, COLOUR_GREEN, false);
+                GuiIcon.EYE.drawCentered(guiGraphics, btnX, btnY, btnW, btnH, COLOUR_GREEN);
                 unhideTargets.add(new UnhideTarget(btnX, btnY, btnW, btnH, id));
 
                 String name = DisplayFormat.formatId(id);
                 if (node != null && node.getType() == NodeType.MACHINE) {
-                    name = "Recipe: " + name;
+                    name = I18n.get("miforeman.detail.recipe_title", name);
                 }
                 int maxLabelW = DRAWER_WIDTH - (btnW + 16);
                 if (font.width(name) > maxLabelW) {
@@ -269,13 +265,5 @@ public class HiddenNodesDrawer {
             return true;
         }
         return false;
-    }
-
-    private void drawEyeIcon(GuiGraphics guiGraphics, double centerX, double top, int colour) {
-        guiGraphics.pose().pushPose();
-        guiGraphics.pose().translate(centerX, top, 0);
-        guiGraphics.pose().scale((float) EYE_ICON_SCALE, (float) EYE_ICON_SCALE, 1f);
-        guiGraphics.drawString(font, EYE_ICON, -font.width(EYE_ICON) / 2, 0, colour, false);
-        guiGraphics.pose().popPose();
     }
 }

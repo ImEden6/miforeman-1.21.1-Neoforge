@@ -221,7 +221,7 @@ public class ClipboardScreen extends Screen {
         int y = contentY + 16;
 
         EditBox nameField = new EditBox(this.font, contentX, y + 10, contentW, FIELD_HEIGHT,
-                Component.literal("Goal Name"));
+                Component.translatable("miforeman.field.goal_name"));
         nameField.setMaxLength(64);
         nameField.setValue(this.goalDraft.goalName == null ? "" : this.goalDraft.goalName);
         nameField.setResponder(val -> {
@@ -232,10 +232,10 @@ public class ClipboardScreen extends Screen {
         y += 10 + FIELD_HEIGHT + 8;
 
         Button typeButton = new ClipboardButton(contentX, y + 10, 55, FIELD_HEIGHT,
-                Component.literal(this.goalDraft.targetType.name()), b -> {
+                targetTypeName(this.goalDraft.targetType), b -> {
                     this.goalDraft.targetType = this.goalDraft.targetType == TargetType.ITEM ? TargetType.FLUID
                             : TargetType.ITEM;
-                    b.setMessage(Component.literal(this.goalDraft.targetType.name()));
+                    b.setMessage(targetTypeName(this.goalDraft.targetType));
                     revalidateDefineGoal();
                 });
         this.addRenderableWidget(typeButton);
@@ -245,7 +245,7 @@ public class ClipboardScreen extends Screen {
 
         int targetIdWidth = contentW - 60 - emiButtonWidth;
         EditBox targetIdField = new EditBox(this.font, contentX + 60, y + 10, targetIdWidth, FIELD_HEIGHT,
-                Component.literal("Target ID"));
+                Component.translatable("miforeman.field.target_id"));
         targetIdField.setMaxLength(256);
         targetIdField.setValue(this.goalDraft.targetIdStr == null ? "" : this.goalDraft.targetIdStr);
         targetIdField.setResponder(val -> {
@@ -263,7 +263,7 @@ public class ClipboardScreen extends Screen {
         y += 10 + FIELD_HEIGHT + 8;
 
         EditBox rateField = new EditBox(this.font, contentX, y + 10, contentW - 80, FIELD_HEIGHT,
-                Component.literal("Rate"));
+                Component.translatable("miforeman.field.rate"));
         rateField.setValue(String.valueOf(this.goalDraft.rate));
         rateField.setResponder(val -> {
             try {
@@ -284,7 +284,7 @@ public class ClipboardScreen extends Screen {
         y += 10 + FIELD_HEIGHT + 8;
 
         EditBox thresholdField = new EditBox(this.font, contentX, y + 10, contentW, FIELD_HEIGHT,
-                Component.literal("Threshold"));
+                Component.translatable("miforeman.field.threshold"));
         thresholdField.setValue(String.valueOf((int) (this.goalDraft.threshold * 100)));
         thresholdField.setResponder(val -> {
             try {
@@ -322,7 +322,7 @@ public class ClipboardScreen extends Screen {
                             this.selectedNodeId = null;
                             goToStep(STEP_REVIEW_PLAN);
                         } else {
-                            String serverError = this.goalDraft.errorMessage;
+                            Component serverError = this.goalDraft.errorMessage;
                             rebuildStep(STEP_DEFINE_GOAL);
                             if (serverError != null) {
                                 this.goalDraft.errorMessage = serverError;
@@ -344,7 +344,7 @@ public class ClipboardScreen extends Screen {
     }
 
     private void revalidateDefineGoal() {
-        Optional<String> error = GoalFormValidation.validateGoalInputs(
+        Optional<Component> error = GoalFormValidation.validateGoalInputs(
                 this.goalDraft.goalName, this.goalDraft.targetIdStr, this.goalDraft.targetType,
                 this.goalDraft.rate, this.goalDraft.threshold);
         this.goalDraft.errorMessage = error.orElse(null);
@@ -845,11 +845,12 @@ public class ClipboardScreen extends Screen {
         currentY += 15;
 
         guiGraphics.drawString(this.font, Component.translatable("miforeman.label.target_type"), contentX, currentY, COLOUR_LABEL, false);
-        guiGraphics.drawString(this.font, Component.literal(this.goalDraft.targetType.name()), contentX + 80, currentY,
+        guiGraphics.drawString(this.font, targetTypeName(this.goalDraft.targetType), contentX + 80, currentY,
                 COLOUR_TEXT, false);
         currentY += 15;
 
-        String rateStr = String.format("%.2f units/%s", this.goalDraft.rate, this.goalDraft.perHour ? "hour" : "min");
+        String rateStr = I18n.get(this.goalDraft.perHour ? "miforeman.detail.units_per_hour" : "miforeman.detail.units_per_min",
+                String.format("%.2f", this.goalDraft.rate));
         guiGraphics.drawString(this.font, Component.translatable("miforeman.label.desired_rate"), contentX, currentY, COLOUR_LABEL, false);
         guiGraphics.drawString(this.font, Component.literal(rateStr), contentX + 80, currentY, COLOUR_TEXT, false);
         currentY += 15;
@@ -891,7 +892,7 @@ public class ClipboardScreen extends Screen {
         y += 10 + FIELD_HEIGHT + 6;
 
         if (this.goalDraft.errorMessage != null) {
-            guiGraphics.drawString(this.font, Component.literal(this.goalDraft.errorMessage), contentX, y, COLOUR_ERROR,
+            guiGraphics.drawString(this.font, this.goalDraft.errorMessage, contentX, y, COLOUR_ERROR,
                     false);
         }
     }
@@ -931,10 +932,14 @@ public class ClipboardScreen extends Screen {
         String prefix = I18n.get("miforeman.clipboard.machines_count", this.monitoringState.liveData.size());
         guiGraphics.drawString(this.font, Component.literal(prefix), contentX + 4, currentY, COLOUR_TEXT, false);
         int segX = contentX + 4 + this.font.width(prefix);
-        segX = drawStatusCount(guiGraphics, segX, currentY, red, "RED", COLOUR_ERROR);
-        segX = drawStatusCount(guiGraphics, segX, currentY, orange, "ORANGE", MachineStatus.ORANGE.colour());
-        segX = drawStatusCount(guiGraphics, segX, currentY, yellow, "YELLOW", COLOUR_AMBER);
-        drawStatusCount(guiGraphics, segX, currentY, green, "GREEN", COLOUR_GREEN);
+        segX = drawStatusCount(guiGraphics, segX, currentY, red, I18n.get("miforeman.status.red"), COLOUR_ERROR);
+        segX = drawStatusCount(guiGraphics, segX, currentY, orange, I18n.get("miforeman.status.orange"), MachineStatus.ORANGE.colour());
+        segX = drawStatusCount(guiGraphics, segX, currentY, yellow, I18n.get("miforeman.status.yellow"), COLOUR_AMBER);
+        drawStatusCount(guiGraphics, segX, currentY, green, I18n.get("miforeman.status.green"), COLOUR_GREEN);
+    }
+
+    private static Component targetTypeName(TargetType type) {
+        return Component.translatable("miforeman.target_type." + type.name().toLowerCase(java.util.Locale.ROOT));
     }
 
     private int drawStatusCount(GuiGraphics guiGraphics, int x, int y, int count, String label, int colour) {

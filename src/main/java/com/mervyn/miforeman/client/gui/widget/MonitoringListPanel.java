@@ -7,6 +7,7 @@ import com.mervyn.miforeman.goal.MachineStatus;
 import com.mervyn.miforeman.network.LiveMonitoringPayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.core.GlobalPos;
@@ -39,7 +40,7 @@ public class MonitoringListPanel extends AbstractWidget {
                                 List<MonitoringRow> rows, boolean perHour, @Nullable GlobalPos selectedPos,
                                 Consumer<MonitoringRow> onLocate,
                                 int initialScrollOffset, IntConsumer onScrollChange) {
-        super(x, y, width, height, Component.literal("Machine Monitoring List"));
+        super(x, y, width, height, Component.translatable("miforeman.widget.monitoring_list"));
         this.rows = rows;
         this.perHour = perHour;
         this.selectedPos = selectedPos;
@@ -89,8 +90,10 @@ public class MonitoringListPanel extends AbstractWidget {
                 guiGraphics.fill(getX() + 4, currentY + 4, getX() + 8, currentY + 8, colour);
 
                 double rateVal = machine.actualRate() * (perHour ? 60.0 : 1.0);
-                String text = String.format("%s: %.2f/%s (%s)%s", DisplayFormat.formatId(machine.machineId()), rateVal, perHour ? "hr" : "min", machine.status(),
-                        DisplayFormat.formatFailureReason(machine.reason()));
+                String text = I18n.get(perHour ? "miforeman.monitoring.row_per_hour" : "miforeman.monitoring.row_per_min",
+                        DisplayFormat.formatId(machine.machineId()), String.format("%.2f", rateVal),
+                        I18n.get("miforeman.status." + machine.status().name().toLowerCase(java.util.Locale.ROOT)))
+                        + DisplayFormat.formatFailureReason(machine.reason());
                 int maxTextWidth = actionButtonX() - (getX() + 12) - 4;
                 if (mc.font.width(text) > maxTextWidth && maxTextWidth > 0) {
                     text = mc.font.plainSubstrByWidth(text, Math.max(0, maxTextWidth - 8)) + "..";
@@ -106,7 +109,7 @@ public class MonitoringListPanel extends AbstractWidget {
                 guiGraphics.fill(btnX, btnY, btnX + ACTION_BUTTON_WIDTH, btnY + ACTION_BUTTON_HEIGHT,
                         ColourPalette.get(isSelected ? ColourKey.LOCATED_BUTTON : ColourKey.LOCATE_BUTTON));
                 guiGraphics.renderOutline(btnX, btnY, ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT, COLOUR_BORDER);
-                guiGraphics.drawString(mc.font, isSelected ? "Located" : "Locate", btnX + 3, btnY + 3, COLOUR_TEXT, false);
+                guiGraphics.drawString(mc.font, I18n.get(isSelected ? "miforeman.button.located" : "miforeman.button.locate"), btnX + 3, btnY + 3, COLOUR_TEXT, false);
             }
             currentY += ROW_HEIGHT;
         }

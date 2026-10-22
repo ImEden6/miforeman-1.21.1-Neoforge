@@ -23,7 +23,6 @@ public class GraphSearchBar {
     private static final int BAR_WIDTH = 172;
     private static final int BAR_HEIGHT = 20;
     private static final int ICON_BTN_SIZE = 28;
-    private static final int SEARCH_ICON_LENS = 6;
 
     private int x, y;
     private int anchorRightX, anchorTopY;
@@ -40,7 +39,7 @@ public class GraphSearchBar {
         this.font = font;
         this.onMatchChanged = onMatchChanged;
         this.onVisibilityChanged = onVisibilityChanged;
-        this.editBox = new EditBox(font, 0, 0, 76, 12, Component.literal("Search"));
+        this.editBox = new EditBox(font, 0, 0, 76, 12, Component.translatable("miforeman.screen.search"));
         this.editBox.setBordered(false);
         this.editBox.setTextColor(COLOUR_TEXT);
         this.editBox.setTextShadow(false);
@@ -117,8 +116,8 @@ public class GraphSearchBar {
             if (hover) {
                 guiGraphics.fill(x, y, x + ICON_BTN_SIZE, y + ICON_BTN_SIZE, COLOUR_HOVER_BTN);
             }
-            drawSearchIcon(guiGraphics, x + (ICON_BTN_SIZE - SEARCH_ICON_LENS - 3) / 2,
-                    y + (ICON_BTN_SIZE - SEARCH_ICON_LENS - 3) / 2, SEARCH_ICON_LENS, COLOUR_TEXT);
+            com.mervyn.miforeman.client.gui.GuiIcon.SEARCH.drawCentered(guiGraphics, x, y, ICON_BTN_SIZE, ICON_BTN_SIZE,
+                    COLOUR_TEXT);
             return;
         }
 
@@ -128,7 +127,7 @@ public class GraphSearchBar {
         guiGraphics.fill(x, y + BAR_HEIGHT - 1, x + BAR_WIDTH, y + BAR_HEIGHT, COLOUR_BORDER_DARK);
         guiGraphics.fill(x + BAR_WIDTH - 1, y, x + BAR_WIDTH, y + BAR_HEIGHT, COLOUR_BORDER_DARK);
 
-        drawSearchIcon(guiGraphics, x + 4, y + 5, SEARCH_ICON_LENS, COLOUR_MUTED);
+        com.mervyn.miforeman.client.gui.GuiIcon.SEARCH.draw(guiGraphics, x + 4, y + 5, COLOUR_MUTED);
 
         int ebX = x + 16;
         int ebY = y + 3;
@@ -161,21 +160,21 @@ public class GraphSearchBar {
         boolean hoverPrev = mouseX >= prevX && mouseX < prevX + btnW && mouseY >= btnY && mouseY < btnY + btnH;
         if (hoverPrev)
             guiGraphics.fill(prevX, btnY, prevX + btnW, btnY + btnH, COLOUR_HOVER_BTN);
-        guiGraphics.drawString(font, "▲", prevX + (btnW - font.width("▲")) / 2, btnY + 3,
-                state.getMatchCount() > 0 ? COLOUR_TEXT : COLOUR_MUTED, false);
+        com.mervyn.miforeman.client.gui.GuiIcon.ARROW_UP.drawCentered(guiGraphics, prevX, btnY, btnW, btnH,
+                state.getMatchCount() > 0 ? COLOUR_TEXT : COLOUR_MUTED);
 
         int nextX = x + 142;
         boolean hoverNext = mouseX >= nextX && mouseX < nextX + btnW && mouseY >= btnY && mouseY < btnY + btnH;
         if (hoverNext)
             guiGraphics.fill(nextX, btnY, nextX + btnW, btnY + btnH, COLOUR_HOVER_BTN);
-        guiGraphics.drawString(font, "▼", nextX + (btnW - font.width("▼")) / 2, btnY + 3,
-                state.getMatchCount() > 0 ? COLOUR_TEXT : COLOUR_MUTED, false);
+        com.mervyn.miforeman.client.gui.GuiIcon.ARROW_DOWN.drawCentered(guiGraphics, nextX, btnY, btnW, btnH,
+                state.getMatchCount() > 0 ? COLOUR_TEXT : COLOUR_MUTED);
 
         int closeX = x + 156;
         boolean hoverClose = mouseX >= closeX && mouseX < closeX + btnW && mouseY >= btnY && mouseY < btnY + btnH;
         if (hoverClose)
             guiGraphics.fill(closeX, btnY, closeX + btnW, btnY + btnH, COLOUR_HOVER_BTN);
-        guiGraphics.drawString(font, "✕", closeX + (btnW - font.width("✕")) / 2, btnY + 3, COLOUR_TEXT, false);
+        com.mervyn.miforeman.client.gui.GuiIcon.CLOSE.drawCentered(guiGraphics, closeX, btnY, btnW, btnH, COLOUR_TEXT);
     }
 
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
@@ -259,19 +258,4 @@ public class GraphSearchBar {
         return editBox.charTyped(codePoint, modifiers);
     }
 
-    private static final int SEARCH_ICON_HANDLE = 3;
-
-    /** Drawn from fills because the U+2315 glyph falls back to a blocky unifont smudge at this size. */
-    private static void drawSearchIcon(GuiGraphics guiGraphics, int left, int top, int lensSize, int colour) {
-        int lensLeft = left + SEARCH_ICON_HANDLE;
-        guiGraphics.fill(lensLeft + 1, top, lensLeft + lensSize - 1, top + 1, colour);
-        guiGraphics.fill(lensLeft + 1, top + lensSize - 1, lensLeft + lensSize - 1, top + lensSize, colour);
-        guiGraphics.fill(lensLeft, top + 1, lensLeft + 1, top + lensSize - 1, colour);
-        guiGraphics.fill(lensLeft + lensSize - 1, top + 1, lensLeft + lensSize, top + lensSize - 1, colour);
-
-        int hx = lensLeft;
-        int hy = top + lensSize - 1;
-        guiGraphics.fill(hx - 2, hy, hx, hy + 2, colour);
-        guiGraphics.fill(hx - 3, hy + 1, hx - 1, hy + 3, colour);
-    }
 }

@@ -103,7 +103,7 @@ public class ReviewMachinesScreen extends Screen {
         this.addRenderableWidget(redoButton);
 
         EditBox searchField = new EditBox(this.font, contentX + contentW - SEARCH_FIELD_WIDTH, contentY,
-                SEARCH_FIELD_WIDTH, 14, Component.literal("Search"));
+                SEARCH_FIELD_WIDTH, 14, Component.translatable("miforeman.screen.search"));
         searchField.setMaxLength(128);
         searchField.setHint(Component.translatable("miforeman.screen.search_hint").withColor(0xFF8A7A68));
         // setValue fires the attached responder, so restore the query before attaching it.

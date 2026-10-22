@@ -69,7 +69,7 @@ public class MonitoringScreen extends Screen {
         int contentW = guiWidth() - (PADDING + ClipboardChrome.MAIN_BORDER) * 2 - 4;
         int btnY = top + guiHeight() - PADDING - ClipboardChrome.MAIN_BORDER - 22;
 
-        EditBox searchField = new EditBox(this.font, contentX, contentY, contentW, 14, Component.literal("Search"));
+        EditBox searchField = new EditBox(this.font, contentX, contentY, contentW, 14, Component.translatable("miforeman.screen.search"));
         searchField.setMaxLength(128);
         searchField.setHint(Component.translatable("miforeman.screen.search_hint").withColor(0xFF8A7A68));
         // setValue fires the attached responder, so restore the value before attaching it.
